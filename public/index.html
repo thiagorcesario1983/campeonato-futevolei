@@ -1,0 +1,1981 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Futevôlei — Campeonato</title>
+<meta name="theme-color" content="#0B3C49">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@500&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sand:#EDE3CC;
+    --sand-dark:#C9B896;
+    --ocean:#0E7C7B;
+    --ocean-deep:#0B3C49;
+    --coral:#F2652A;
+    --grass:#4C9A64;
+    --white:#FFFCF6;
+    --ink:#0B3C49;
+    --muted:#6B7C7A;
+    --radius:16px;
+    --shadow: 0 10px 24px -12px rgba(11,60,73,.35);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Work Sans',sans-serif;
+    background: var(--sand);
+    color: var(--ink);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .stage{
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+  }
+  .app{
+    width:100%;
+    max-width:480px;
+    min-height:100vh;
+    background:var(--white);
+    position:relative;
+    box-shadow: var(--shadow);
+    display:flex;
+    flex-direction:column;
+  }
+  @media (min-width:481px){
+    body{padding:24px 0;}
+    .app{min-height:calc(100vh - 48px); border-radius:28px; overflow:hidden;}
+  }
+
+  /* ---------- Header ---------- */
+  header{
+    background: linear-gradient(160deg, var(--ocean) 0%, var(--ocean-deep) 100%);
+    color:var(--white);
+    padding:22px 20px 26px;
+    position:relative;
+    overflow:hidden;
+  }
+  header .eyebrow{
+    font-family:'DM Mono',monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    opacity:.75;
+  }
+  header h1{
+    font-family:'Bebas Neue',sans-serif;
+    font-size:34px;
+    letter-spacing:.03em;
+    margin:2px 0 0;
+    line-height:1;
+  }
+  .net-divider{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin:14px 0 0;
+  }
+  .net-divider .pole{width:3px;height:16px;background:rgba(255,255,255,.55);border-radius:1px;}
+  .net-divider .dashes{
+    flex:1;
+    height:0;
+    border-top:3px dashed rgba(255,255,255,.55);
+  }
+  .net-divider .ball{
+    width:10px;height:10px;border-radius:50%;background:var(--coral);
+    box-shadow:0 0 0 2px rgba(255,255,255,.7);
+  }
+
+  /* ---------- Content ---------- */
+  main{
+    flex:1;
+    padding:18px 18px 90px;
+  }
+  .section-title{
+    font-family:'Bebas Neue',sans-serif;
+    font-size:20px;
+    letter-spacing:.02em;
+    color:var(--ocean-deep);
+    margin:0 0 4px;
+  }
+  .section-sub{
+    font-size:12.5px;
+    color:var(--muted);
+    margin:0 0 14px;
+    line-height:1.4;
+  }
+
+  /* ---------- Cards ---------- */
+  .card{
+    background:var(--white);
+    border:1px solid #EDE7D8;
+    border-radius:var(--radius);
+    padding:14px 16px;
+    margin-bottom:12px;
+  }
+  .stat-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin-bottom:14px;
+  }
+  .stat{
+    border-radius:var(--radius);
+    padding:14px;
+    color:var(--white);
+    position:relative;
+    overflow:hidden;
+  }
+  .stat.ocean{background:linear-gradient(150deg,var(--ocean),var(--ocean-deep));}
+  .stat.coral{background:linear-gradient(150deg,var(--coral),#C94A16);}
+  .stat.grass{background:linear-gradient(150deg,var(--grass),#2E6E42);}
+  .stat.ink{background:linear-gradient(150deg,#33424A,var(--ocean-deep));}
+  .stat .num{
+    font-family:'DM Mono',monospace;
+    font-size:22px;
+    font-weight:500;
+    display:block;
+  }
+  .stat .lbl{
+    font-size:10.5px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    opacity:.85;
+  }
+
+  /* ---------- Duplas / Sorteio ---------- */
+  .dupla-row{
+    display:flex;align-items:center;gap:10px;margin-bottom:8px;
+  }
+  .dupla-row .num{
+    font-family:'DM Mono',monospace;
+    width:22px;text-align:center;color:var(--muted);font-size:13px;
+  }
+  .dupla-card{
+    border:1.5px solid var(--sand-dark);border-radius:12px;
+    padding:10px 12px;margin-bottom:10px;background:var(--white);
+  }
+  .dupla-card .top-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .tel-row{display:flex;gap:8px;}
+  .tel-row input{font-family:'DM Mono',monospace;font-size:12.5px;}
+  .tel-row input::placeholder{font-family:'Work Sans',sans-serif;}
+  .whats-list .dupla-card{padding:12px 14px;}
+  .whats-list .g-name{font-weight:700;font-size:14px;margin-bottom:2px;}
+  .whats-list .g-matches{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5;}
+  .msg-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .msg-block{display:flex;flex-direction:column;gap:6px;}
+  .btn-send{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    background:var(--coral);color:#fff;border:none;border-radius:10px;
+    font-family:'Work Sans',sans-serif;font-weight:600;font-size:12.5px;
+    padding:10px 8px;text-decoration:none;cursor:pointer;text-align:center;
+  }
+  .btn-send.disabled{background:var(--sand-dark);color:var(--muted);pointer-events:none;}
+  .tg-status{
+    font-size:10.5px;font-weight:700;text-align:center;border-radius:8px;padding:5px 6px;
+  }
+  .tg-status.ok{background:#E3F4FC;color:#0E7FB8;}
+  .tg-status.pending{background:#FDF1E7;color:var(--coral);}
+  .tg-settings{margin-bottom:14px;}
+  .tg-settings label{font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;}
+  .tg-settings .hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;}
+  .bulk-row{display:flex;gap:8px;margin-bottom:14px;}
+  .copy-note{
+    font-size:11px;color:var(--muted);text-align:center;margin-top:2px;opacity:0;transition:opacity .2s;
+  }
+  .copy-note.show{opacity:1;}
+  input[type=text]{
+    flex:1;
+    border:1.5px solid var(--sand-dark);
+    border-radius:10px;
+    padding:9px 12px;
+    font-size:14px;
+    font-family:'Work Sans',sans-serif;
+    color:var(--ink);
+    background:var(--white);
+  }
+  input[type=text]:focus{outline:none;border-color:var(--ocean);}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    background:var(--coral);color:var(--white);border:none;
+    font-family:'Work Sans',sans-serif;font-weight:600;font-size:14px;
+    padding:13px 18px;border-radius:12px;width:100%;cursor:pointer;
+    transition:transform .15s ease, box-shadow .15s ease;
+    box-shadow:0 8px 18px -8px rgba(242,101,42,.6);
+  }
+  .btn:active{transform:scale(.97);}
+  .btn.secondary{
+    background:transparent;color:var(--ocean-deep);
+    border:1.5px solid var(--sand-dark);box-shadow:none;
+  }
+  .btn.ghost{background:transparent;color:var(--muted);box-shadow:none;font-weight:500;}
+
+  .group-card{
+    border-radius:var(--radius);
+    border:1px solid #EDE7D8;
+    margin-bottom:10px;
+    overflow:hidden;
+  }
+  .group-head{
+    background:var(--ocean-deep);color:var(--white);
+    font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.04em;
+    padding:8px 14px;
+  }
+  .group-body{padding:10px 14px;}
+  .group-body .name{
+    display:flex;align-items:center;gap:8px;padding:6px 0;font-size:14px;font-weight:500;
+  }
+  .group-body .name .dot{width:7px;height:7px;border-radius:50%;background:var(--coral);flex-shrink:0;}
+
+  /* ---------- Tabs filter ---------- */
+  .chip-row{display:flex;gap:8px;margin-bottom:14px;}
+  .chip{
+    font-size:12px;font-weight:600;padding:7px 13px;border-radius:20px;
+    border:1.5px solid var(--sand-dark);color:var(--muted);cursor:pointer;
+    font-family:'Work Sans',sans-serif;
+  }
+  .chip.active{background:var(--ocean-deep);color:var(--white);border-color:var(--ocean-deep);}
+
+  /* ---------- Match rows ---------- */
+  .match{
+    display:flex;align-items:center;gap:8px;
+    padding:10px 0;border-bottom:1px solid #F1ECDD;
+  }
+  .match:last-child{border-bottom:none;}
+  .match .team{
+    flex:1;font-size:13.5px;font-weight:500;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .match .team.win{color:var(--grass);font-weight:700;}
+  .score-input{
+    width:40px;text-align:center;border:1.5px solid var(--sand-dark);
+    border-radius:8px;padding:7px 2px;font-family:'DM Mono',monospace;font-size:14px;
+    color:var(--ink);background:var(--sand);
+  }
+  .score-input:focus{outline:none;border-color:var(--coral);background:var(--white);}
+  .match .x{font-family:'DM Mono',monospace;color:var(--muted);font-size:12px;}
+  .group-tag{
+    font-family:'DM Mono',monospace;font-size:10px;color:var(--white);
+    background:var(--ocean);border-radius:6px;padding:2px 6px;flex-shrink:0;
+  }
+
+  /* ---------- Standings table ---------- */
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th{
+    font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;
+    color:var(--muted);text-align:center;padding:6px 3px;letter-spacing:.03em;
+  }
+  th.name-col, td.name-col{text-align:left;}
+  td{padding:7px 3px;text-align:center;border-top:1px solid #F1ECDD;}
+  tr.qualified td{background:#EAF4EE;font-weight:600;}
+  tr.qualified td.pos{color:var(--grass);}
+  td.pos{font-family:'DM Mono',monospace;font-weight:700;}
+
+  /* ---------- Bracket ---------- */
+  .round-label{
+    font-family:'DM Mono',monospace;font-size:11px;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--ocean);margin:18px 0 8px;
+  }
+  .round-label:first-child{margin-top:0;}
+  .bracket-match{
+    background:var(--white);border:1px solid #EDE7D8;border-radius:12px;
+    padding:10px 12px;margin-bottom:10px;
+  }
+  .bracket-match .lbl{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:6px;}
+  .bracket-row{display:flex;align-items:center;gap:8px;padding:4px 0;}
+  .bracket-row .team{flex:1;font-size:13.5px;font-weight:500;}
+  .bracket-row .team.win{color:var(--grass);font-weight:700;}
+  .bracket-row .team.tbd{color:var(--muted);font-style:italic;font-weight:400;}
+
+  .champion-banner{
+    background:linear-gradient(150deg,var(--coral),#C94A16);
+    color:var(--white);border-radius:var(--radius);
+    padding:22px 16px;text-align:center;margin-bottom:16px;
+  }
+  .champion-banner .eyebrow{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.85;}
+  .champion-banner .name{font-family:'Bebas Neue',sans-serif;font-size:30px;margin-top:4px;}
+
+  .empty{
+    text-align:center;padding:30px 10px;color:var(--muted);font-size:13.5px;
+  }
+  .empty .ball-icon{font-size:30px;display:block;margin-bottom:8px;}
+
+  /* ---------- Bottom nav ---------- */
+  nav.tabbar{
+    position:sticky;bottom:0;left:0;right:0;
+    background:var(--white);border-top:1px solid #EDE7D8;
+    display:flex;justify-content:space-around;
+    padding:8px 4px calc(8px + env(safe-area-inset-bottom));
+    z-index:10;
+  }
+  nav.tabbar button{
+    flex:1;background:none;border:none;display:flex;flex-direction:column;
+    align-items:center;gap:3px;padding:6px 2px;cursor:pointer;color:var(--muted);
+    font-family:'Work Sans',sans-serif;
+  }
+  nav.tabbar button svg{width:20px;height:20px;}
+  nav.tabbar button .lbl{font-size:10px;font-weight:600;}
+  nav.tabbar button.active{color:var(--coral);}
+  nav.tabbar button{position:relative;}
+  .nav-badge{
+    position:absolute;top:2px;right:calc(50% - 22px);
+    background:var(--coral);color:#fff;font-family:'DM Mono',monospace;
+    font-size:9.5px;font-weight:700;min-width:16px;height:16px;border-radius:8px;
+    display:none;align-items:center;justify-content:center;padding:0 3px;
+    box-shadow:0 0 0 2px var(--white);
+  }
+  .nav-badge.show{display:flex;}
+
+  .toast{
+    position:fixed;bottom:78px;left:50%;transform:translateX(-50%) translateY(10px);
+    background:var(--ocean-deep);color:var(--white);padding:10px 16px;border-radius:10px;
+    font-size:13px;opacity:0;transition:opacity .25s, transform .25s;pointer-events:none;z-index:50;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .tiebreak-note{
+    font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;
+  }
+
+  /* ---------- Login / Torneios ---------- */
+  .login-wrap{
+    min-height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:20px 10px;
+  }
+  .login-wrap .ball-big{font-size:56px;margin-bottom:10px;}
+  .login-wrap h2{font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--ocean-deep);margin:0 0 8px;}
+  .login-wrap p{font-size:13px;color:var(--muted);margin:0 0 22px;max-width:320px;line-height:1.5;}
+  #google-signin-btn{display:flex;justify-content:center;}
+  .gcid-box{width:100%;max-width:320px;text-align:left;}
+  .gcid-box label{font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;}
+  .gcid-box .hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;text-align:left;}
+
+  .torneio-bar{
+    display:flex;align-items:center;gap:8px;margin-top:8px;
+    font-size:12px;color:rgba(255,255,255,.85);
+  }
+  .torneio-bar .voltar{
+    background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;
+    padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:'Work Sans',sans-serif;
+  }
+  .user-chip{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+  .user-chip img{width:42px;height:42px;border-radius:50%;}
+  .user-chip .name{font-weight:700;font-size:14px;color:var(--ocean-deep);}
+  .user-chip .email{font-size:11px;color:var(--muted);}
+  .torneio-item{
+    border:1.5px solid var(--sand-dark);border-radius:12px;padding:12px 14px;margin-bottom:10px;
+    cursor:pointer;background:var(--white);
+  }
+  .torneio-item .row{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .torneio-item .nome{font-weight:700;font-size:14.5px;color:var(--ocean-deep);}
+  .torneio-item .sub{font-size:11px;color:var(--muted);margin-top:4px;}
+  .status-pill{
+    font-size:10.5px;font-weight:700;border-radius:20px;padding:4px 10px;white-space:nowrap;flex-shrink:0;
+  }
+  .status-pill.criado{background:#E3F4FC;color:#0E7FB8;}
+  .status-pill.andamento{background:#FDF1E7;color:var(--coral);}
+  .status-pill.finalizado{background:#E2EFDA;color:var(--grass);}
+  .btn-excluir{
+    background:none;border:none;color:#C0392B;font-size:11px;font-weight:600;
+    font-family:'Work Sans',sans-serif;cursor:pointer;padding:4px 6px;flex-shrink:0;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="app">
+    <header>
+      <div class="eyebrow">Beach Sports Club</div>
+      <h1>Futevôlei</h1>
+      <div id="torneio-bar"></div>
+      <div class="net-divider"><span class="pole"></span><span class="dashes"></span><span class="ball"></span><span class="dashes"></span><span class="pole"></span></div>
+    </header>
+    <main id="main"></main>
+    <div class="toast" id="toast"></div>
+    <nav class="tabbar">
+      <button data-tab="resumo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="lbl">Resumo</span></button>
+      <button data-tab="sorteio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 9h.01M16 9h.01M8 15l4-3 4 3"/></svg><span class="lbl">Duplas</span></button>
+      <button data-tab="jogos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Jogos</span></button>
+      <button data-tab="classificacao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V10M12 19V4M20 19v-6"/></svg><span class="lbl">Tabela</span></button>
+      <button data-tab="matamata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h4v4H4zM4 15h4v4H4zM16 10h4v4h-4zM8 7h4v0M8 17h4v0M12 7v6M12 13v4M12 12h4"/></svg><span class="lbl">Mata-mata</span><span class="nav-badge" id="nav-badge-matamata"></span></button>
+    </nav>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   ESTADO
+============================================================ */
+const STORAGE_KEY = "futevolei_state_v1";
+
+function defaultState(){
+  return {
+    tab: "resumo",
+    duplas: Array.from({length:12}, (_,i)=>({nome:`Dupla ${i+1}`, tel1:"", tel2:"", nomeDefault:true})),
+    drawn: false,
+    groups: [], // [[nome,nome,nome], ...] x4 (A,B,C,D)
+    groupMatches: [], // {group,jogo,a,b,pa,pb}
+    elim: {
+      qf: [{pa:null,pb:null},{pa:null,pb:null},{pa:null,pb:null},{pa:null,pb:null}],
+      sf: [{pa:null,pb:null},{pa:null,pb:null}],
+      final: {pa:null,pb:null},
+      terceiro: {pa:null,pb:null}
+    },
+    terceiroLugar: false,
+    filter: "todos",
+    tournamentId: null,
+    telegramBot: "",
+    elimNotified: {},
+    cloudId: null,
+    cloudNome: ""
+  };
+}
+
+let state = load();
+const AUTH_KEY = "futevolei_auth_v1";
+function loadAuth(){
+  try{ return JSON.parse(localStorage.getItem(AUTH_KEY)); }catch(e){ return null; }
+}
+let auth = loadAuth();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    return Object.assign(defaultState(), parsed);
+  }catch(e){ return defaultState(); }
+}
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if(auth) syncTorneio();
+}
+
+if(!state.tournamentId){
+  state.tournamentId = Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4);
+  save();
+}
+let telegramStatus = {};
+
+/* ============================================================
+   AUTENTICAÇÃO (Google) E TORNEIOS NA NUVEM
+============================================================ */
+const GCID_KEY = "futevolei_gclientid_v1";
+
+function saveAuth(a){ localStorage.setItem(AUTH_KEY, JSON.stringify(a)); }
+
+function loadClientId(){ return localStorage.getItem(GCID_KEY) || ""; }
+function saveClientId(v){ localStorage.setItem(GCID_KEY, (v||"").trim()); }
+
+function decodeJwt(token){
+  try{
+    const payload = token.split(".")[1];
+    const b64 = payload.replace(/-/g,"+").replace(/_/g,"/");
+    const json = decodeURIComponent(
+      atob(b64).split("").map(c => "%" + ("00"+c.charCodeAt(0).toString(16)).slice(-2)).join("")
+    );
+    return JSON.parse(json);
+  }catch(e){ return null; }
+}
+
+function handleGoogleCredential(response){
+  const payload = decodeJwt(response.credential);
+  if(!payload) return;
+  auth = { email: payload.email, name: payload.name, picture: payload.picture };
+  saveAuth(auth);
+  render();
+}
+
+function initGoogleSignIn(){
+  const clientId = loadClientId();
+  const btnDiv = document.getElementById("google-signin-btn");
+  if(!clientId || !btnDiv || !window.google || !google.accounts || !google.accounts.id) return;
+  try{
+    google.accounts.id.initialize({ client_id: clientId, callback: handleGoogleCredential });
+    google.accounts.id.renderButton(btnDiv, { theme:"outline", size:"large", width: 280 });
+  }catch(e){ /* client id inválido ou domínio não autorizado */ }
+}
+
+function logout(){
+  auth = null;
+  saveAuth(null);
+  try{ if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); }catch(e){}
+  render();
+}
+
+function statusTorneio(){
+  if(champion()) return "Finalizado";
+  if(state.drawn) return "Em andamento";
+  return "Criado";
+}
+
+let torneiosList = null;
+let torneiosLoading = false;
+let syncTimer = null;
+
+const LOCAL_TORNEIOS_KEY = "futevolei_local_torneios_v1";
+function getLocalTorneiosDB(){
+  try{ return JSON.parse(localStorage.getItem(LOCAL_TORNEIOS_KEY)) || {}; }catch(e){ return {}; }
+}
+function setLocalTorneiosDB(db){ localStorage.setItem(LOCAL_TORNEIOS_KEY, JSON.stringify(db)); }
+
+function saveTorneioLocalFallback(payload){
+  const db = getLocalTorneiosDB();
+  const id = payload.id || ("local-" + Math.random().toString(36).slice(2,10));
+  const now = new Date().toISOString();
+  const existing = db[id];
+  const meta = {
+    id, nome: payload.nome, status: payload.status,
+    ownerEmail: payload.ownerEmail, ownerName: payload.ownerName,
+    createdAt: existing?.createdAt || now, updatedAt: now
+  };
+  db[id] = { ...meta, state: payload.state };
+  setLocalTorneiosDB(db);
+  return meta;
+}
+
+function syncTorneio(){
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async ()=>{
+    if(!auth) return;
+    const payload = {
+      id: state.cloudId,
+      nome: state.cloudNome || "Torneio sem nome",
+      status: statusTorneio(),
+      ownerEmail: auth.email,
+      ownerName: auth.name,
+      state
+    };
+    try{
+      const res = await fetch("/api/torneios-save", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok) throw new Error("resposta não-ok");
+      const data = await res.json();
+      if(data.id && state.cloudId !== data.id){
+        state.cloudId = data.id;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
+    }catch(e){
+      // Sem servidor de functions disponível (ex: hospedagem local simples) — usa reserva local
+      const meta = saveTorneioLocalFallback(payload);
+      if(state.cloudId !== meta.id){
+        state.cloudId = meta.id;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
+    }
+  }, 800);
+}
+
+async function fetchTorneiosList(){
+  if(torneiosLoading) return;
+  torneiosLoading = true;
+  try{
+    const res = await fetch("/api/torneios-list");
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    torneiosList = data.torneios || [];
+  }catch(e){
+    const db = getLocalTorneiosDB();
+    torneiosList = Object.values(db).map(t=>({
+      id:t.id, nome:t.nome, status:t.status, ownerEmail:t.ownerEmail, ownerName:t.ownerName, updatedAt:t.updatedAt
+    }));
+  }
+  torneiosLoading = false;
+  render();
+}
+
+async function criarNovoTorneio(){
+  const nome = (prompt("Nome do torneio:", "Campeonato de Futevôlei") || "").trim();
+  if(!nome) return;
+  state = defaultState();
+  state.tournamentId = Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4);
+  state.cloudNome = nome;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  showToast("Criando torneio...");
+  try{
+    const res = await fetch("/api/torneios-save", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, state })
+    });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    if(data.id){ state.cloudId = data.id; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  }catch(e){
+    const meta = saveTorneioLocalFallback({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, state });
+    state.cloudId = meta.id;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    showToast("Sem conexão com a nuvem — torneio salvo só neste navegador.");
+  }
+  torneiosList = null;
+  render();
+}
+
+async function abrirTorneio(id){
+  showToast("Carregando torneio...");
+  try{
+    const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(id)}`);
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    if(!data || !data.state) throw new Error("sem dados");
+    abrirTorneioComDados(data);
+  }catch(e){
+    const db = getLocalTorneiosDB();
+    const local = db[id];
+    if(local && local.state){
+      abrirTorneioComDados(local);
+    } else {
+      showToast("Não foi possível carregar esse torneio.");
+    }
+  }
+}
+
+function abrirTorneioComDados(data){
+  state = Object.assign(defaultState(), data.state);
+  state.cloudId = data.id;
+  state.cloudNome = data.nome;
+  state.tab = "resumo";
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  telegramStatus = {};
+  render();
+  if(state.drawn) refreshTelegramStatus();
+  checkElimNotifications();
+  showToast(`"${data.nome}" carregado!`);
+}
+
+async function excluirTorneio(id, nome){
+  if(!confirm(`Excluir o torneio "${nome}"? Essa ação não pode ser desfeita.`)) return;
+  showToast("Excluindo torneio...");
+  try{
+    const res = await fetch("/api/torneios-delete", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id })
+    });
+    if(!res.ok) throw new Error("resposta não-ok");
+  }catch(e){
+    // sem servidor de functions disponível — remove também da reserva local
+  }
+  const db = getLocalTorneiosDB();
+  if(db[id]){ delete db[id]; setLocalTorneiosDB(db); }
+
+  if(state.cloudId === id){
+    state.cloudId = null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+  torneiosList = null;
+  showToast("Torneio excluído.");
+  render();
+}
+
+function voltarParaTorneios(){
+  state.cloudId = null;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  torneiosList = null;
+  render();
+}
+
+async function migrarTorneioLocal(){
+  const nome = (prompt("Nome para este torneio:", "Meu torneio") || "").trim();
+  if(!nome) return;
+  state.cloudNome = nome;
+  showToast("Enviando torneio para a nuvem...");
+  const payload = { id:null, nome, status: statusTorneio(), ownerEmail:auth.email, ownerName:auth.name, state };
+  try{
+    const res = await fetch("/api/torneios-save", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    if(data.id){
+      state.cloudId = data.id;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      torneiosList = null;
+      showToast("Torneio adicionado!");
+      render();
+    }
+  }catch(e){
+    const meta = saveTorneioLocalFallback(payload);
+    state.cloudId = meta.id;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    torneiosList = null;
+    showToast("Sem conexão com a nuvem — torneio salvo só neste navegador.");
+    render();
+  }
+}
+
+/* ============================================================
+   LÓGICA DO TORNEIO
+============================================================ */
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+
+function sortear(){
+  const nomes = state.duplas.map(d => (d.nome||"").trim() || "Dupla sem nome");
+  const embaralhado = shuffle(nomes);
+  const groups = [
+    embaralhado.slice(0,3),
+    embaralhado.slice(3,6),
+    embaralhado.slice(6,9),
+    embaralhado.slice(9,12)
+  ];
+  const pairs = [[0,1],[0,2],[1,2]];
+  const letters = ["A","B","C","D"];
+  const groupMatches = [];
+  groups.forEach((g, gi)=>{
+    pairs.forEach((p, pi)=>{
+      groupMatches.push({group:letters[gi], jogo:pi+1, a:g[p[0]], b:g[p[1]], pa:null, pb:null});
+    });
+  });
+  state.groups = groups;
+  state.groupMatches = groupMatches;
+  state.drawn = true;
+  state.elim = defaultState().elim;
+  save();
+}
+
+function resetTudo(){
+  state = defaultState();
+  save();
+}
+
+function standingsFor(letter){
+  const idx = ["A","B","C","D"].indexOf(letter);
+  const nomes = state.groups[idx] || [];
+  const rows = nomes.map(nome => ({nome, j:0, v:0, d:0, pp:0, pc:0}));
+  state.groupMatches.filter(m=>m.group===letter).forEach(m=>{
+    if(m.pa===null || m.pb===null || m.pa==="" || m.pb==="") return;
+    const pa = Number(m.pa), pb = Number(m.pb);
+    const ra = rows.find(r=>r.nome===m.a);
+    const rb = rows.find(r=>r.nome===m.b);
+    ra.j++; rb.j++;
+    ra.pp += pa; ra.pc += pb;
+    rb.pp += pb; rb.pc += pa;
+    if(pa>pb){ra.v++; rb.d++;} else if(pb>pa){rb.v++; ra.d++;}
+  });
+  rows.forEach(r=>{ r.saldo = r.pp - r.pc; r.pts = r.v*3; });
+  rows.sort((a,b)=> b.pts-a.pts || b.saldo-a.saldo || b.pp-a.pp);
+  return rows;
+}
+
+function allGroupsFilled(){
+  return state.drawn && state.groupMatches.length===12 &&
+    state.groupMatches.every(m=> m.pa!==null && m.pb!==null && m.pa!=="" && m.pb!=="");
+}
+
+function qfTeams(){
+  if(!allGroupsFilled()) return [[null,null],[null,null],[null,null],[null,null]];
+  const A = standingsFor("A"), B = standingsFor("B"), C = standingsFor("C"), D = standingsFor("D");
+  return [
+    [A[0]?.nome, B[1]?.nome],
+    [C[0]?.nome, D[1]?.nome],
+    [B[0]?.nome, A[1]?.nome],
+    [D[0]?.nome, C[1]?.nome]
+  ];
+}
+function winner(a,b,pa,pb){
+  if(a==null||b==null) return null;
+  if(pa===null||pb===null||pa===""||pb==="") return null;
+  const na=Number(pa), nb=Number(pb);
+  if(na>nb) return a; if(nb>na) return b; return null;
+}
+function qfWinners(){
+  const teams = qfTeams();
+  return state.elim.qf.map((m,i)=> winner(teams[i][0], teams[i][1], m.pa, m.pb));
+}
+function sfTeams(){
+  const w = qfWinners();
+  return [[w[0],w[1]],[w[2],w[3]]];
+}
+function sfWinners(){
+  const teams = sfTeams();
+  return state.elim.sf.map((m,i)=> winner(teams[i][0], teams[i][1], m.pa, m.pb));
+}
+function finalTeams(){
+  const w = sfWinners();
+  return [w[0], w[1]];
+}
+function sfLosers(){
+  const teams = sfTeams();
+  return state.elim.sf.map((m,i)=>{
+    const [a,b] = teams[i];
+    const w = winner(a,b,m.pa,m.pb);
+    if(!w || !a || !b) return null;
+    return w===a ? b : a;
+  });
+}
+function terceiroWinner(){
+  const [a,b] = sfLosers();
+  return winner(a,b, state.elim.terceiro.pa, state.elim.terceiro.pb);
+}
+function champion(){
+  const [a,b] = finalTeams();
+  return winner(a,b, state.elim.final.pa, state.elim.final.pb);
+}
+function faseAtual(){
+  if(champion()) return "Encerrado";
+  if(finalTeams()[0] && finalTeams()[1]) return "Final";
+  if(sfTeams().every(t=>t[0]&&t[1])) return "Semifinal";
+  if(allGroupsFilled()) return "Quartas de Final";
+  if(state.drawn) return "Fase de Grupos";
+  return "Sorteio pendente";
+}
+
+/* ---------- WhatsApp ---------- */
+function matchesForDupla(nome){
+  return state.groupMatches.filter(m => m.a===nome || m.b===nome);
+}
+function groupLetterForDupla(nome){
+  const m = matchesForDupla(nome)[0];
+  return m ? m.group : null;
+}
+function mensagemWhatsApp(nome){
+  const matches = matchesForDupla(nome);
+  const letter = groupLetterForDupla(nome);
+  if(!matches.length) return "";
+  const linhas = matches.map((m,idx)=>{
+    const oponente = m.a===nome ? m.b : m.a;
+    return `Jogo ${idx+1}: vs ${oponente}`;
+  });
+  return `Olá, dupla ${nome}! 🏐\n\nVocê está no Grupo ${letter} do Campeonato de Futevôlei.\n\nSeus jogos da fase de grupos:\n${linhas.join("\n")}\n\nBoa sorte! 🏆`;
+}
+function mensagemMataMata(faseLabel, nome, oponente){
+  return `Olá, dupla ${nome}! 🏐\n\nSeu próximo jogo (${faseLabel}) já está definido:\nvs ${oponente}\n\nBoa sorte! 🏆`;
+}
+function duplaIndexByName(nome){
+  return state.duplas.findIndex(d => ((d.nome||"").trim() || "Dupla sem nome") === nome);
+}
+function telefoneParaWa(tel){
+  const digits = (tel||"").replace(/\D/g,"");
+  if(!digits) return null;
+  return digits.length <= 11 ? "55"+digits : digits;
+}
+function waLink(tel, msg){
+  const phone = telefoneParaWa(tel);
+  if(!phone) return null;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+}
+
+/* ---------- Telegram ---------- */
+function codigoDupla(i, slot){
+  return `${state.tournamentId}_${i}_${slot}`;
+}
+function telegramLink(i, slot){
+  const bot = (state.telegramBot||"").trim().replace(/^@/,"");
+  if(!bot) return null;
+  return `https://t.me/${bot}?start=${codigoDupla(i, slot)}`;
+}
+async function refreshTelegramStatus(){
+  if(!state.drawn) return;
+  const codes = [];
+  state.duplas.forEach((_,i)=>{ codes.push(codigoDupla(i,1), codigoDupla(i,2)); });
+  try{
+    const res = await fetch(`/api/telegram-status?codes=${encodeURIComponent(codes.join(","))}`);
+    if(!res.ok) return;
+    const data = await res.json();
+    telegramStatus = data.status || {};
+    render();
+    checkElimNotifications();
+  }catch(e){ /* função ainda não publicada ou sem conexão — ignora silenciosamente */ }
+}
+function itensTelegramDupla(i){
+  const d = state.duplas[i];
+  const nome = (d.nome||"").trim() || "Dupla sem nome";
+  const msg = mensagemWhatsApp(nome);
+  const items = [];
+  if(d.tel1 && telegramStatus[codigoDupla(i,1)]) items.push({code: codigoDupla(i,1), message: msg});
+  if(d.tel2 && telegramStatus[codigoDupla(i,2)]) items.push({code: codigoDupla(i,2), message: msg});
+  return items;
+}
+async function enviarTelegramTodos(silent){
+  const items = [];
+  state.duplas.forEach((d,i)=>{ items.push(...itensTelegramDupla(i)); });
+  if(!items.length){ if(!silent) showToast("Nenhuma dupla ativou o Telegram ainda."); return; }
+  try{
+    const res = await fetch("/api/telegram-send", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({items})
+    });
+    const data = await res.json();
+    const okCount = (data.results||[]).filter(r=>r.ok).length;
+    showToast(`${okCount} de ${items.length} enviadas pelo Telegram!`);
+  }catch(e){ if(!silent) showToast("Erro ao enviar pelo Telegram."); }
+}
+
+/* ---------- Notificações automáticas do mata-mata ---------- */
+function elimMatchList(){
+  const qt = qfTeams(), st = sfTeams(), ft = finalTeams();
+  const list = [];
+  qt.forEach(([a,b],idx)=>{
+    list.push({round:"qf", idx, side:"a", faseLabel:"Quartas de Final", nome:a, oponente:b});
+    list.push({round:"qf", idx, side:"b", faseLabel:"Quartas de Final", nome:b, oponente:a});
+  });
+  st.forEach(([a,b],idx)=>{
+    list.push({round:"sf", idx, side:"a", faseLabel:"Semifinal", nome:a, oponente:b});
+    list.push({round:"sf", idx, side:"b", faseLabel:"Semifinal", nome:b, oponente:a});
+  });
+  list.push({round:"final", idx:0, side:"a", faseLabel:"Final", nome:ft[0], oponente:ft[1]});
+  list.push({round:"final", idx:0, side:"b", faseLabel:"Final", nome:ft[1], oponente:ft[0]});
+  if(state.terceiroLugar){
+    const [la,lb] = sfLosers();
+    list.push({round:"terceiro", idx:0, side:"a", faseLabel:"Disputa de 3º Lugar", nome:la, oponente:lb});
+    list.push({round:"terceiro", idx:0, side:"b", faseLabel:"Disputa de 3º Lugar", nome:lb, oponente:la});
+  }
+  return list;
+}
+function checkElimNotifications(){
+  let changed = false;
+  elimMatchList().forEach(({round, idx, side, faseLabel, nome, oponente})=>{
+    if(!nome || !oponente) return;
+    const key = `${round}-${idx}-${side}`;
+    const rec = (state.elimNotified[key] && state.elimNotified[key].nome===nome)
+      ? state.elimNotified[key]
+      : {nome, slot1:false, slot2:false};
+    const i = duplaIndexByName(nome);
+    if(i<0){ return; }
+    const d = state.duplas[i];
+    const msg = mensagemMataMata(faseLabel, nome, oponente);
+    const pendentes = [];
+    if(d.tel1 && telegramStatus[codigoDupla(i,1)] && !rec.slot1) pendentes.push({slot:1, code:codigoDupla(i,1), message:msg});
+    if(d.tel2 && telegramStatus[codigoDupla(i,2)] && !rec.slot2) pendentes.push({slot:2, code:codigoDupla(i,2), message:msg});
+    if(pendentes.length){
+      enviarNotificacaoElim(key, rec, pendentes);
+    } else if(!state.elimNotified[key] || state.elimNotified[key].nome!==nome){
+      state.elimNotified[key] = rec;
+      changed = true;
+    }
+  });
+  if(changed) save();
+}
+async function enviarNotificacaoElim(key, rec, pendentes){
+  try{
+    const res = await fetch("/api/telegram-send", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({items: pendentes.map(p=>({code:p.code, message:p.message}))})
+    });
+    const data = await res.json();
+    (data.results||[]).forEach((r,idx)=>{
+      if(r.ok){
+        const slot = pendentes[idx].slot;
+        if(slot===1) rec.slot1 = true; else rec.slot2 = true;
+      }
+    });
+  }catch(e){ /* tenta de novo na próxima checagem */ }
+  state.elimNotified[key] = rec;
+  save();
+  render();
+}
+function limparPendenciasElim(){
+  const pend = pendingElimMessages();
+  pend.forEach(p=>{
+    const rec = (state.elimNotified[p.key] && state.elimNotified[p.key].nome===p.nome)
+      ? state.elimNotified[p.key]
+      : {nome:p.nome, slot1:false, slot2:false};
+    if(p.slot===1) rec.slot1 = true; else rec.slot2 = true;
+    state.elimNotified[p.key] = rec;
+  });
+  save();
+  render();
+}
+
+/* ============================================================
+   RENDER
+============================================================ */
+const main = document.getElementById("main");
+
+/* ---------- Story (imagem para compartilhar) ---------- */
+function drawStoryCanvas(){
+  const canvas = document.getElementById("story-canvas");
+  if(!canvas) return;
+  const neededH = renderStory(canvas, 1920);
+  if(neededH > 1920){
+    renderStory(canvas, Math.ceil(neededH/20)*20 + 20);
+  }
+}
+
+function renderStory(canvas, H){
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;
+  const OCEAN = "#0E7C7B", OCEAN_DEEP = "#0B3C49", SAND = "#EDE3CC", CORAL = "#F2652A", WHITE = "#FFFCF6", MUTED = "#6B7C7A";
+
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = SAND;
+  ctx.fillRect(0,0,W,H);
+
+  const headerH = 300;
+  const grad = ctx.createLinearGradient(0,0,W,headerH);
+  grad.addColorStop(0, OCEAN);
+  grad.addColorStop(1, OCEAN_DEEP);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,headerH);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,255,255,.75)";
+  ctx.font = "600 24px Arial, sans-serif";
+  ctx.fillText("BEACH SPORTS CLUB", W/2, 90);
+
+  ctx.fillStyle = WHITE;
+  ctx.font = "bold 96px Arial, sans-serif";
+  ctx.fillText("FUTEVÔLEI", W/2, 190);
+
+  const netY = 250;
+  ctx.strokeStyle = "rgba(255,255,255,.6)";
+  ctx.lineWidth = 5;
+  ctx.setLineDash([22,16]);
+  ctx.beginPath();
+  ctx.moveTo(140, netY);
+  ctx.lineTo(W-140, netY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = CORAL;
+  ctx.beginPath(); ctx.arc(W/2, netY, 18, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = OCEAN_DEEP;
+  ctx.fillRect(130, netY-36, 10, 72);
+  ctx.fillRect(W-140, netY-36, 10, 72);
+
+  let cursorY;
+  if(!state.drawn){
+    ctx.textAlign = "center";
+    ctx.fillStyle = OCEAN_DEEP;
+    ctx.font = "600 42px Arial, sans-serif";
+    ctx.fillText("Sorteie os grupos para", W/2, headerH+180);
+    ctx.fillText("gerar a imagem do campeonato", W/2, headerH+240);
+    cursorY = headerH+300;
+  } else {
+    const groupsBottom = drawGroupsSection(ctx, W, headerH+80);
+    cursorY = drawBracket(ctx, W, groupsBottom+50);
+  }
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = MUTED;
+  ctx.font = "32px Arial, sans-serif";
+  ctx.fillText("Campeonato de Futevôlei", W/2, H-70);
+
+  return cursorY + 140;
+}
+
+function drawGroupsSection(ctx, W, startY){
+  const OCEAN_DEEP = "#0B3C49", MUTED = "#6B7C7A", WHITE = "#FFFCF6", LIGHTGREEN = "#DCEEE1";
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = MUTED;
+  ctx.font = "600 26px Arial, sans-serif";
+  ctx.fillText("FASE DE GRUPOS", W/2, startY);
+
+  const cardW = 480, gap = 40;
+  const margin = (W - (cardW*2+gap))/2;
+  const rowGap = 30;
+  const headerBarH = 42, rowH = 46;
+  const cardH = headerBarH + rowH*3;
+  const row1Y = startY + 36;
+  const row2Y = row1Y + cardH + rowGap;
+
+  const positions = [
+    {letter:"A", x:margin, y:row1Y},
+    {letter:"B", x:margin+cardW+gap, y:row1Y},
+    {letter:"C", x:margin, y:row2Y},
+    {letter:"D", x:margin+cardW+gap, y:row2Y},
+  ];
+
+  positions.forEach(p=>{
+    ctx.fillStyle = OCEAN_DEEP;
+    roundRect(ctx, p.x, p.y, cardW, headerBarH, 8);
+    ctx.fill();
+    ctx.fillStyle = WHITE;
+    ctx.font = "bold 23px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("GRUPO " + p.letter, p.x+cardW/2, p.y+headerBarH/2+8);
+
+    const rows = standingsFor(p.letter);
+    rows.forEach((r,i)=>{
+      const ry = p.y + headerBarH + i*rowH;
+      ctx.fillStyle = i<2 ? LIGHTGREEN : WHITE;
+      roundRect(ctx, p.x, ry+3, cardW, rowH-6, 6);
+      ctx.fill();
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = OCEAN_DEEP;
+      ctx.font = (i<2 ? "bold " : "600 ") + "23px Arial, sans-serif";
+      ctx.fillText(truncate(ctx, `${i+1}º  ${r.nome}`, cardW-110), p.x+16, ry+rowH/2+5);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = MUTED;
+      ctx.font = "600 19px Arial, sans-serif";
+      ctx.fillText(r.pts + " pts", p.x+cardW-16, ry+rowH/2+4);
+    });
+  });
+
+  return row2Y + cardH;
+}
+
+/* ---------- Chaveamento (bracket) ---------- */
+function drawTeamBar(ctx, x, y, w, h, text, destaque){
+  const WHITE = "#FFFCF6", GOLD_BG = "#FFF2D9", OCEAN_DEEP = "#0B3C49", CORAL = "#F2652A";
+  ctx.fillStyle = destaque ? GOLD_BG : WHITE;
+  roundRect(ctx, x, y, w, h, 10);
+  ctx.fill();
+  if(destaque){
+    ctx.strokeStyle = CORAL;
+    ctx.lineWidth = 3;
+    roundRect(ctx, x+1.5, y+1.5, w-3, h-3, 9);
+    ctx.stroke();
+  }
+  ctx.fillStyle = OCEAN_DEEP;
+  ctx.font = (destaque ? "bold " : "600 ") + "27px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(truncate(ctx, text || "A definir", w-36), x+w/2, y+h/2+9);
+}
+function drawMatchBox(ctx, x, y, w, a, b, win, barH){
+  barH = barH || 50;
+  const gap = 5;
+  drawTeamBar(ctx, x, y, w, barH, a, win && a===win);
+  drawTeamBar(ctx, x, y+barH+gap, w, barH, b, win && b===win);
+  return y + barH*2 + gap;
+}
+function elbowConnectorH(ctx, xLeft, xRight, y1, y2){
+  const OCEAN_DEEP = "#0B3C49";
+  const xMid = xLeft + (xRight-xLeft)*0.5;
+  ctx.strokeStyle = OCEAN_DEEP;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(xLeft, y1); ctx.lineTo(xMid, y1);
+  ctx.moveTo(xLeft, y2); ctx.lineTo(xMid, y2);
+  ctx.moveTo(xMid, y1); ctx.lineTo(xMid, y2);
+  ctx.moveTo(xMid, (y1+y2)/2); ctx.lineTo(xRight, (y1+y2)/2);
+  ctx.stroke();
+}
+
+function drawBracket(ctx, W, startY){
+  const OCEAN_DEEP = "#0B3C49", CORAL = "#F2652A", MUTED = "#6B7C7A";
+
+  const colLabel = (text, cx, y)=>{
+    ctx.textAlign = "center";
+    ctx.fillStyle = MUTED;
+    ctx.font = "600 25px Arial, sans-serif";
+    ctx.fillText(text.toUpperCase(), cx, y);
+  };
+
+  const qt = qfTeams(), st = sfTeams(), ft = finalTeams();
+  const qfWin = state.elim.qf.map((m,i)=> winner(qt[i][0], qt[i][1], m.pa, m.pb));
+  const sfWin = state.elim.sf.map((m,i)=> winner(st[i][0], st[i][1], m.pa, m.pb));
+  const finalWin = winner(ft[0], ft[1], state.elim.final.pa, state.elim.final.pb);
+
+  // ---- 3 colunas: Quartas | Semifinal | Final (esquerda -> direita) ----
+  const margin = 30;
+  const qfW = 280, sfW = 280, finalW = 250;
+  const colGap = 90;
+  const qfX = margin;
+  const sfX = qfX + qfW + colGap;
+  const finalX = sfX + sfW + colGap;
+
+  const labelY = startY + 30;
+  colLabel("Quartas", qfX + qfW/2, labelY);
+  colLabel("Semifinal", sfX + sfW/2, labelY);
+  colLabel("Final", finalX + finalW/2, labelY);
+
+  // ---- Quartas: 4 caixas empilhadas ----
+  const qfTop0 = labelY + 40;
+  const qfBarH = 46, qfBoxH = qfBarH*2+5, qfRowGap = 46;
+  const qfTops = [0,1,2,3].map(i => qfTop0 + i*(qfBoxH+qfRowGap));
+  const qfBottoms = qfTops.map((t,i) => drawMatchBox(ctx, qfX, t, qfW, qt[i][0], qt[i][1], qfWin[i], qfBarH));
+  const qfCenters = qfTops.map((t,i) => (t + qfBottoms[i])/2);
+
+  // ---- Semifinal: 2 caixas, centradas entre os pares de quartas ----
+  const sfCenters = [ (qfCenters[0]+qfCenters[1])/2, (qfCenters[2]+qfCenters[3])/2 ];
+  const sfBarH = 52, sfBoxH = sfBarH*2+5;
+  const sfTops = sfCenters.map(c => c - sfBoxH/2);
+  const sfBottoms = sfTops.map((t,i) => drawMatchBox(ctx, sfX, t, sfW, st[i][0], st[i][1], sfWin[i], sfBarH));
+
+  elbowConnectorH(ctx, qfX+qfW, sfX, qfCenters[0], qfCenters[1]);
+  elbowConnectorH(ctx, qfX+qfW, sfX, qfCenters[2], qfCenters[3]);
+
+  // ---- Final: 1 caixa, centrada entre as duas semifinais ----
+  const finalCenter = (sfCenters[0]+sfCenters[1])/2;
+  const finalBarH = 58, finalBoxH = finalBarH*2+5;
+  const finalTop = finalCenter - finalBoxH/2;
+  const finalBottom = drawMatchBox(ctx, finalX, finalTop, finalW, ft[0], ft[1], finalWin, finalBarH);
+
+  elbowConnectorH(ctx, sfX+sfW, finalX, sfCenters[0], sfCenters[1]);
+
+  let cursorY = Math.max(qfBottoms[3], finalBottom) + 80;
+
+  if(finalWin){
+    ctx.textAlign = "center";
+    ctx.fillStyle = CORAL;
+    ctx.font = "600 30px Arial, sans-serif";
+    ctx.fillText("🏆 CAMPEÃO DO TORNEIO", W/2, cursorY);
+    cursorY += 66;
+    ctx.fillStyle = OCEAN_DEEP;
+    ctx.font = "bold 62px Arial, sans-serif";
+    ctx.fillText(truncate(ctx, finalWin, W-160), W/2, cursorY);
+  }
+
+  if(state.terceiroLugar){
+    const [la, lb] = sfLosers();
+    const tWin = winner(la, lb, state.elim.terceiro.pa, state.elim.terceiro.pb);
+    cursorY += 90;
+    colLabel("3º e 4º lugar", W/2, cursorY-20);
+    const terceiroW = 420, terceiroX = (W-terceiroW)/2;
+    cursorY = drawMatchBox(ctx, terceiroX, cursorY, terceiroW, la, lb, tWin);
+  }
+
+  return cursorY;
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+function truncate(ctx, text, maxWidth){
+  let t = text;
+  while(ctx.measureText(t).width > maxWidth && t.length > 3){
+    t = t.slice(0, -1);
+  }
+  return t === text ? text : t.trim() + "…";
+}
+function wrapText(ctx, text, x, y, maxWidth, lineHeight, font){
+  ctx.font = font;
+  ctx.textAlign = "center";
+  const words = text.split(" ");
+  let line = "";
+  const lines = [];
+  words.forEach(w=>{
+    const test = line ? line + " " + w : w;
+    if(ctx.measureText(test).width > maxWidth && line){
+      lines.push(line);
+      line = w;
+    } else {
+      line = test;
+    }
+  });
+  if(line) lines.push(line);
+  const startY = y - (lines.length-1)*lineHeight/2;
+  lines.forEach((l,i)=> ctx.fillText(l, x, startY + i*lineHeight));
+}
+function isIOS(){
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
+async function shareStoryImage(){
+  const canvas = document.getElementById("story-canvas");
+  if(!canvas) return;
+  canvas.toBlob(async (blob)=>{
+    if(!blob) return;
+    const file = new File([blob], "campeonato-futevolei.png", {type:"image/png"});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{
+        await navigator.share({files:[file], title:"Campeonato de Futevôlei"});
+      }catch(e){ /* usuário cancelou o compartilhamento */ }
+    } else {
+      showToast("Compartilhamento direto não é suportado aqui — usando download.");
+      downloadStoryImage();
+    }
+  }, "image/png");
+}
+function downloadStoryImage(){
+  const canvas = document.getElementById("story-canvas");
+  if(!canvas) return;
+  canvas.toBlob((blob)=>{
+    if(!blob) return;
+    const url = URL.createObjectURL(blob);
+    if(isIOS()){
+      window.open(url, "_blank");
+      showToast("Toque e segure a imagem que abriu e escolha 'Salvar imagem'.");
+    } else {
+      const link = document.createElement("a");
+      link.download = "campeonato-futevolei.png";
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast("Imagem baixada!");
+    }
+    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  }, "image/png");
+}
+
+function pendingElimMessages(){
+  if(!state.drawn || !allGroupsFilled()) return [];
+  const pend = [];
+  elimMatchList().forEach(({round, idx, side, faseLabel, nome, oponente})=>{
+    if(!nome || !oponente) return;
+    const i = duplaIndexByName(nome);
+    if(i<0) return;
+    const d = state.duplas[i];
+    const key = `${round}-${idx}-${side}`;
+    const rec = state.elimNotified[key];
+    [1,2].forEach(slot=>{
+      const tel = slot===1 ? d.tel1 : d.tel2;
+      if(!tel) return;
+      const sent = !!(rec && rec.nome===nome && (slot===1 ? rec.slot1 : rec.slot2));
+      if(!sent) pend.push({key, slot, i, nome, oponente, faseLabel, tel});
+    });
+  });
+  return pend;
+}
+
+function render(){
+  const nav = document.querySelector("nav.tabbar");
+  const torneioBar = document.getElementById("torneio-bar");
+
+  if(!auth){
+    nav.style.display = "none";
+    torneioBar.innerHTML = "";
+    main.innerHTML = renderLoginScreen();
+    bindEvents();
+    setTimeout(initGoogleSignIn, 50);
+    return;
+  }
+
+  if(!state.cloudId){
+    nav.style.display = "none";
+    torneioBar.innerHTML = "";
+    main.innerHTML = renderTorneiosScreen();
+    bindEvents();
+    return;
+  }
+
+  nav.style.display = "flex";
+  torneioBar.innerHTML = `<div class="torneio-bar">
+    <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}</span>
+    <button class="voltar" id="btn-voltar-torneios">Trocar torneio</button>
+  </div>`;
+
+  document.querySelectorAll("nav.tabbar button").forEach(b=>{
+    b.classList.toggle("active", b.dataset.tab===state.tab);
+  });
+  const badge = document.getElementById("nav-badge-matamata");
+  if(badge){
+    const n = pendingElimMessages().length;
+    badge.textContent = n > 9 ? "9+" : String(n);
+    badge.classList.toggle("show", n > 0);
+  }
+  if(state.tab==="resumo") { main.innerHTML = renderResumo(); if(state.drawn) drawStoryCanvas(); }
+  else if(state.tab==="sorteio") main.innerHTML = renderSorteio();
+  else if(state.tab==="jogos") main.innerHTML = renderJogos();
+  else if(state.tab==="classificacao") main.innerHTML = renderClassificacao();
+  else if(state.tab==="matamata") main.innerHTML = renderMataMata();
+  bindEvents();
+}
+
+function isLocalHost(){
+  const h = location.hostname;
+  return h==="localhost" || h==="127.0.0.1" || h==="" || location.protocol==="file:";
+}
+
+function handleAdminLogin(){
+  const val = (document.getElementById("input-admin-pass")||{}).value || "";
+  if(val === "123456"){
+    auth = { email:"admin@local.teste", name:"Admin (teste local)", picture:"" };
+    saveAuth(auth);
+    render();
+  } else {
+    showToast("Senha incorreta.");
+  }
+}
+
+function renderLoginScreen(){
+  const clientId = loadClientId();
+  let html = `<div class="login-wrap">
+    <div class="ball-big">🏐</div>
+    <h2>Bem-vindo!</h2>
+    <p>Entre com sua conta Google para criar ou acessar os torneios de futevôlei do seu grupo.</p>`;
+
+  if(!clientId){
+    html += `<div class="gcid-box card">
+      <label>Google Client ID</label>
+      <input type="text" id="input-gcid" placeholder="algo.apps.googleusercontent.com">
+      <button class="btn" id="btn-save-gcid" style="margin-top:10px;">Salvar</button>
+      <div class="hint">Precisa criar um Client ID gratuito no Google Cloud Console (OAuth) autorizado para este domínio. Depois de salvar aqui, o botão de login aparece para todo mundo que acessar o app.</div>
+    </div>`;
+  } else {
+    html += `<div id="google-signin-btn"></div>
+      <button class="btn ghost ver-config" id="btn-edit-gcid" style="margin-top:18px;width:auto;">⚙️ Configurar Client ID</button>`;
+  }
+
+  html += `<div class="gcid-box card" style="margin-top:18px;border-color:var(--coral);">
+    <label>⚠️ Acesso de teste</label>
+    <input type="password" id="input-admin-pass" placeholder="Senha de teste">
+    <button class="btn secondary" id="btn-admin-login" style="margin-top:10px;">Entrar como teste</button>
+    <div class="hint">Acesso simplificado para testes (sem precisar do Google). Use com cuidado: qualquer pessoa com essa senha consegue entrar.</div>
+  </div>`;
+
+  html += `</div>`;
+  return html;
+}
+
+function renderTorneiosScreen(){
+  if(torneiosList===null && !torneiosLoading) fetchTorneiosList();
+
+  let html = `<div class="user-chip">
+      ${auth.picture
+        ? `<img src="${auth.picture}" referrerpolicy="no-referrer">`
+        : `<div style="width:42px;height:42px;border-radius:50%;background:var(--ocean);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;">${escapeHtml((auth.name||"?").charAt(0).toUpperCase())}</div>`
+      }
+      <div style="flex:1;">
+        <div class="name">${escapeHtml(auth.name||"")}</div>
+        <div class="email">${escapeHtml(auth.email||"")}</div>
+      </div>
+      <button class="btn ghost" id="btn-logout" style="width:auto;padding:7px 14px;">Sair</button>
+    </div>
+    <div class="section-title">Torneios</div>
+    <div class="section-sub">Criados por você e por qualquer pessoa do seu grupo que já entrou no app.</div>
+    <button class="btn" id="btn-novo-torneio" style="margin-bottom:18px;">➕ Criar novo torneio</button>`;
+
+  const localOrfao = !state.cloudId && state.drawn;
+  if(localOrfao){
+    html += `<div class="card" style="border:1.5px solid var(--coral);">
+      <div style="font-weight:700;font-size:13px;color:var(--coral);margin-bottom:6px;">📱 Torneio local não sincronizado</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Encontramos um torneio feito neste aparelho antes do login. Quer adicioná-lo à lista?</div>
+      <button class="btn secondary" id="btn-migrar-local">Adicionar à lista de torneios</button>
+    </div>`;
+  }
+
+  if(torneiosList===null){
+    html += `<div class="card empty">Carregando torneios...</div>`;
+  } else if(!torneiosList.length){
+    html += `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum torneio criado ainda.<br>Toque em "Criar novo torneio" para começar.</div>`;
+  } else {
+    torneiosList.slice().sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")).forEach(t=>{
+      const statusClass = t.status==="Finalizado" ? "finalizado" : (t.status==="Em andamento" ? "andamento" : "criado");
+      html += `<div class="torneio-item" data-open-torneio="${t.id}">
+        <div class="row">
+          <span class="nome">${escapeHtml(t.nome||"Torneio sem nome")}</span>
+          <span class="status-pill ${statusClass}">${escapeHtml(t.status||"Criado")}</span>
+        </div>
+        <div class="row" style="margin-top:6px;align-items:center;">
+          <div class="sub">Organizador: ${escapeHtml(t.ownerName||"—")}</div>
+          <button class="btn-excluir" data-del-torneio="${t.id}" data-del-nome="${escapeHtml(t.nome||"Torneio sem nome")}">🗑️ Excluir</button>
+        </div>
+      </div>`;
+    });
+  }
+  return html;
+}
+
+function renderResumo(){
+  const jogosGrupo = state.groupMatches.filter(m=>m.pa!==null && m.pb!==null && m.pa!=="" && m.pb!=="").length;
+  const elimTotal = [...state.elim.qf, ...state.elim.sf, state.elim.final];
+  const elimFeitos = elimTotal.filter(m=>m.pa!==null&&m.pb!==null&&m.pa!==""&&m.pb!=="").length;
+  const camp = champion();
+
+  let html = `
+    <div class="section-title">Resumo do Campeonato</div>
+    <div class="section-sub">Visão geral em tempo real, direto da fase de grupos ao título.</div>
+    <div class="stat-grid">
+      <div class="stat ocean"><span class="num">${jogosGrupo} / 12</span><span class="lbl">Jogos · Grupos</span></div>
+      <div class="stat coral"><span class="num">${elimFeitos} / 7</span><span class="lbl">Jogos · Mata-mata</span></div>
+      <div class="stat ink"><span class="num" style="font-size:15px">${faseAtual()}</span><span class="lbl">Fase atual</span></div>
+      <div class="stat grass"><span class="num" style="font-size:15px">${camp || "A definir"}</span><span class="lbl">Campeão</span></div>
+    </div>`;
+
+  if(!state.drawn){
+    html += `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum sorteio realizado ainda.<br>Vá em <b>Duplas</b> para começar.</div>`;
+    return html;
+  }
+
+  html += `<div class="section-title" style="margin-top:6px;">Classificação parcial</div>`;
+  ["A","B","C","D"].forEach(letter=>{
+    const rows = standingsFor(letter);
+    html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
+    rows.forEach((r,i)=>{
+      html += `<div class="name"><span class="dot" style="background:${i<2?'#4C9A64':'#C9B896'}"></span>${r.nome} <span style="margin-left:auto;font-family:'DM Mono',monospace;color:var(--muted);font-size:12px;">${r.pts} pts</span></div>`;
+    });
+    html += `</div></div>`;
+  });
+
+  const pendentes = state.groupMatches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="").slice(0,3);
+  if(pendentes.length){
+    html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
+    pendentes.forEach(m=>{
+      html += `<div class="match"><span class="group-tag">${m.group}${m.jogo}</span><span class="team">${m.a}</span><span class="x">vs</span><span class="team">${m.b}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="section-title" style="margin-top:14px;">Compartilhar</div>
+    <div class="card" style="text-align:center;">
+      <canvas id="story-canvas" width="1080" height="1920" style="width:100%;height:auto;max-width:260px;border-radius:14px;box-shadow:var(--shadow);background:#EDE3CC;"></canvas>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn" id="btn-story-share" style="flex:1;">📤 Compartilhar</button>
+        <button class="btn secondary" id="btn-story-download" style="flex:1;">⬇️ Baixar</button>
+      </div>
+      <div class="section-sub" style="margin-top:8px;margin-bottom:0;text-align:left;">Gera uma imagem no formato Stories com os próximos jogos (ou o campeão, se já definido). Toque em Compartilhar para escolher o Instagram no menu do celular.</div>
+    </div>`;
+  return html;
+}
+
+function renderContatoBlock(i, slot, tel, baseMsg, trackKey){
+  if(!tel){
+    return `<div class="msg-block"><span class="btn-send disabled">Sem Telefone ${slot}</span></div>`;
+  }
+  const jaAtivado = !!telegramStatus[codigoDupla(i, slot)];
+  const link = telegramLink(i, slot);
+  let msg = baseMsg;
+  if(link && !jaAtivado){
+    msg += `\n\n📲 Quer receber os próximos jogos automaticamente, sem precisar abrir o WhatsApp? Ative nosso bot gratuito no Telegram (é só apertar Iniciar uma vez):\n${link}`;
+  }
+  const href = waLink(tel, msg);
+  const botOk = !!(state.telegramBot||"").trim();
+
+  let statusHtml = "";
+  if(trackKey){
+    const rec = state.elimNotified[trackKey];
+    const enviado = !!(rec && (slot===1 ? rec.slot1 : rec.slot2));
+    statusHtml = enviado
+      ? `<div class="tg-status ok">✅ Mensagem enviada</div>`
+      : `<div class="tg-status pending">⏳ Mensagem pendente</div>`;
+  } else if(botOk){
+    statusHtml = jaAtivado
+      ? `<div class="tg-status ok">✅ Telegram: ativado</div>`
+      : `<div class="tg-status pending">⏳ Telegram: aguardando ativação</div>`;
+  }
+
+  const trackAttr = trackKey ? `data-track-key="${trackKey}" data-track-slot="${slot}"` : "";
+  return `<div class="msg-block">
+    <a class="btn-send" href="${href}" target="_blank" rel="noopener" ${trackAttr}>📱 Enviar mensagem</a>
+    ${statusHtml}
+  </div>`;
+}
+
+function renderSorteio(){
+  let html = `
+    <div class="section-title">Duplas</div>
+    <div class="section-sub">Preencha o nome e, se quiser, até 2 telefones por dupla (para enviar os jogos via WhatsApp e/ou Telegram depois do sorteio).</div>
+    <div class="card tg-settings">
+      <label>Bot do Telegram (usuário, sem @)</label>
+      <input type="text" id="input-telegram-bot" placeholder="ex: meucampeonatobot" value="${escapeHtml(state.telegramBot||"")}">
+      <div class="hint">Crie um bot gratuito com o @BotFather no Telegram e cole aqui o usuário dele (termina em "bot"). Cada dupla vai precisar apertar "Iniciar" uma única vez para poder receber os jogos automaticamente.</div>
+    </div>`;
+  state.duplas.forEach((d,i)=>{
+    html += `<div class="dupla-card">
+      <div class="top-row">
+        <span class="num">${String(i+1).padStart(2,"0")}</span>
+        <input type="text" data-dupla="${i}" data-field="nome" placeholder="Nome da dupla" value="${escapeHtml(d.nome)}" ${state.drawn?"disabled":""}>
+      </div>
+      <div class="tel-row">
+        <input type="tel" data-dupla="${i}" data-field="tel1" placeholder="Tel. jogador 1 (WhatsApp)" value="${escapeHtml(d.tel1||"")}">
+        <input type="tel" data-dupla="${i}" data-field="tel2" placeholder="Tel. jogador 2 (WhatsApp)" value="${escapeHtml(d.tel2||"")}">
+      </div>
+    </div>`;
+  });
+
+  if(!state.drawn){
+    html += `<button class="btn" id="btn-sortear">Sortear grupos 🏐</button>`;
+  } else {
+    html += `<button class="btn secondary" id="btn-resortear">Sortear novamente</button>`;
+    html += `<div class="section-title" style="margin-top:18px;">Grupos sorteados</div>`;
+    ["A","B","C","D"].forEach((letter,gi)=>{
+      html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
+      (state.groups[gi]||[]).forEach(n=>{
+        html += `<div class="name"><span class="dot"></span>${escapeHtml(n)}</div>`;
+      });
+      html += `</div></div>`;
+    });
+
+    html += `<div class="section-title" style="margin-top:18px;">Enviar jogos</div>
+      <div class="section-sub">Toque em "Enviar mensagem" para abrir o WhatsApp já com os jogos da dupla (e o link de ativação do Telegram, se configurado). Depois que a dupla ativar o bot, os próximos jogos chegam automaticamente por lá também.</div>`;
+
+    const botOk = !!(state.telegramBot||"").trim();
+    if(botOk){
+      html += `<div class="bulk-row">
+        <button class="btn secondary" id="btn-tg-refresh" style="width:auto;flex:1;">🔄 Atualizar status</button>
+        <button class="btn" id="btn-tg-all" style="width:auto;flex:1;background:#2AABEE;box-shadow:none;">📲 Enviar todas (Telegram)</button>
+      </div>`;
+    }
+
+    html += `<div class="whats-list">`;
+    state.duplas.forEach((d,i)=>{
+      const nome = (d.nome||"").trim()||"Dupla sem nome";
+      const matches = matchesForDupla(nome);
+      const letter = groupLetterForDupla(nome);
+      const resumoJogos = matches.map(m => m.a===nome ? `vs ${m.b}` : `vs ${m.a}`).join(" · ");
+      html += `<div class="dupla-card">
+        <div class="g-name">${escapeHtml(nome)} <span style="color:var(--muted);font-weight:500;">· Grupo ${letter}</span></div>
+        <div class="g-matches">${resumoJogos || "Sem jogos"}</div>
+        <div class="msg-grid">
+          ${renderContatoBlock(i, 1, d.tel1, mensagemWhatsApp(nome))}
+          ${renderContatoBlock(i, 2, d.tel2, mensagemWhatsApp(nome))}
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  html += `<button class="btn ghost" id="btn-reset" style="margin-top:18px;">Reiniciar torneio</button>`;
+  return html;
+}
+
+function renderJogos(){
+  if(!state.drawn){
+    return `<div class="section-title">Jogos</div><div class="card empty"><span class="ball-icon">🏐</span>Sorteie os grupos primeiro na aba Duplas.</div>`;
+  }
+  const filters = [["todos","Todos"],["pendentes","Pendentes"],["realizados","Realizados"]];
+  let html = `
+    <div class="section-title">Fase de Grupos</div>
+    <div class="section-sub">Cada confronto tem um único set. Registre os pontos de cada dupla.</div>
+    <div class="chip-row">`;
+  filters.forEach(([key,label])=>{
+    html += `<div class="chip ${state.filter===key?"active":""}" data-filter="${key}">${label}</div>`;
+  });
+  html += `</div>`;
+
+  ["A","B","C","D"].forEach(letter=>{
+    let matches = state.groupMatches.filter(m=>m.group===letter);
+    if(state.filter==="pendentes") matches = matches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="");
+    if(state.filter==="realizados") matches = matches.filter(m=>m.pa!==null&&m.pb!==null&&m.pa!==""&&m.pb!=="");
+    if(!matches.length) return;
+    html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
+    matches.forEach(m=>{
+      const idx = state.groupMatches.indexOf(m);
+      const win = winner(m.a,m.b,m.pa,m.pb);
+      html += `<div class="match">
+        <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="a" value="${m.pa??""}">
+        <span class="x">×</span>
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="b" value="${m.pb??""}">
+        <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
+      </div>`;
+    });
+    html += `</div></div>`;
+  });
+  return html;
+}
+
+function renderClassificacao(){
+  if(!state.drawn){
+    return `<div class="section-title">Classificação</div><div class="card empty"><span class="ball-icon">🏐</span>Sorteie os grupos primeiro na aba Duplas.</div>`;
+  }
+  let html = `
+    <div class="section-title">Classificação</div>
+    <div class="section-sub">Critério de desempate: 1º pontos (vitória = 3), 2º saldo de pontos, 3º pontos pró.</div>`;
+  ["A","B","C","D"].forEach(letter=>{
+    const rows = standingsFor(letter);
+    html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body" style="padding:6px 10px;">
+      <table><thead><tr>
+        <th>#</th><th class="name-col">Dupla</th><th>J</th><th>V</th><th>D</th><th>PP</th><th>PC</th><th>Saldo</th><th>Pts</th>
+      </tr></thead><tbody>`;
+    rows.forEach((r,i)=>{
+      html += `<tr class="${i<2?'qualified':''}">
+        <td class="pos">${i+1}</td><td class="name-col">${escapeHtml(r.nome)}</td>
+        <td>${r.j}</td><td>${r.v}</td><td>${r.d}</td><td>${r.pp}</td><td>${r.pc}</td>
+        <td>${r.saldo>0?'+':''}${r.saldo}</td><td>${r.pts}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  });
+  html += `<div class="tiebreak-note">Duplas em verde avançam para o mata-mata (1º e 2º de cada grupo).</div>`;
+  return html;
+}
+
+function renderMataMata(){
+  if(!allGroupsFilled()){
+    return `<div class="section-title">Mata-mata</div><div class="card empty"><span class="ball-icon">🏐</span>O chaveamento aparece aqui quando todos os jogos da fase de grupos forem concluídos.</div>`;
+  }
+  const camp = champion();
+  let html = `<div class="section-title">Mata-mata</div>
+    <div class="section-sub">
+      <b>Quartas:</b> 1ºA×2ºB · 1ºC×2ºD · 1ºB×2ºA · 1ºD×2ºC<br>
+      <b>Semifinal:</b> vencedor QF1 × vencedor QF2 · vencedor QF3 × vencedor QF4<br>
+      <b>Final:</b> vencedor SF1 × vencedor SF2${state.terceiroLugar ? `<br><b>3º/4º lugar:</b> perdedor SF1 × perdedor SF2` : ``}
+    </div>
+    <div class="card" style="padding:10px 14px;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ocean-deep);cursor:pointer;">
+        <input type="checkbox" id="chk-terceiro" ${state.terceiroLugar?"checked":""} style="width:17px;height:17px;">
+        Disputar jogo de 3º e 4º lugar
+      </label>
+    </div>`;
+
+  const pendentes = pendingElimMessages();
+  if(pendentes.length){
+    html += `<div class="card" style="border:1.5px solid var(--coral);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <div style="font-weight:700;font-size:13.5px;color:var(--coral);">📣 ${pendentes.length} mensage${pendentes.length>1?'ns':'m'} pendente${pendentes.length>1?'s':''}</div>
+        <button class="btn ghost" id="btn-clear-pendentes" style="width:auto;padding:4px 10px;font-size:11.5px;">Limpar</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;">Telegram já tentou enviar automaticamente para quem ativou. Estes aqui precisam do seu toque no WhatsApp.</div>`;
+    pendentes.forEach(p=>{
+      const baseMsg = mensagemMataMata(p.faseLabel, p.nome, p.oponente);
+      html += `<div style="margin-bottom:10px;">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:4px;">${escapeHtml(p.nome)} <span style="color:var(--muted);font-weight:500;">· ${p.faseLabel} vs ${escapeHtml(p.oponente)}</span></div>
+        ${renderContatoBlock(p.i, p.slot, p.tel, baseMsg, p.key)}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if(camp){
+    html += `<div class="champion-banner"><div class="eyebrow">Campeão do torneio</div><div class="name">🏆 ${escapeHtml(camp)}</div></div>`;
+  }
+
+  const qt = qfTeams();
+  html += `<div class="round-label">Quartas de final</div>`;
+  state.elim.qf.forEach((m,i)=>{
+    const [a,b] = qt[i];
+    html += bracketMatchHtml(`QF${i+1}`, "Quartas de Final", "qf", i, a, b, m.pa, m.pb);
+  });
+
+  const st = sfTeams();
+  html += `<div class="round-label">Semifinal</div>`;
+  state.elim.sf.forEach((m,i)=>{
+    const [a,b] = st[i];
+    html += bracketMatchHtml(`SF${i+1}`, "Semifinal", "sf", i, a, b, m.pa, m.pb);
+  });
+
+  const [fa,fb] = finalTeams();
+  html += `<div class="round-label">Final</div>`;
+  html += bracketMatchHtml("FINAL", "Final", "final", 0, fa, fb, state.elim.final.pa, state.elim.final.pb);
+
+  if(state.terceiroLugar){
+    const [la,lb] = sfLosers();
+    html += `<div class="round-label">Disputa de 3º e 4º lugar</div>`;
+    html += bracketMatchHtml("3º LUGAR", "Disputa de 3º Lugar", "terceiro", 0, la, lb, state.elim.terceiro.pa, state.elim.terceiro.pb);
+  }
+
+  return html;
+}
+
+function bracketMatchHtml(label, faseLabel, round, idx, a, b, pa, pb){
+  const win = (a && b) ? winner(a,b,pa,pb) : null;
+  const teamBlock = (nome, oponente, side, isWin)=>{
+    if(!nome) return `<div class="bracket-row"><span class="team tbd">Aguardando resultados</span></div>`;
+    const scoreVal = side==="a" ? (pa??"") : (pb??"");
+    const di = duplaIndexByName(nome);
+    let contatos = "";
+    if(di>=0 && oponente){
+      const d = state.duplas[di];
+      const baseMsg = mensagemMataMata(faseLabel, nome, oponente);
+      const trackKey = `${round}-${idx}-${side}`;
+      contatos = `<div class="msg-grid" style="margin-top:6px;margin-bottom:10px;">
+        ${renderContatoBlock(di, 1, d.tel1, baseMsg, trackKey)}
+        ${renderContatoBlock(di, 2, d.tel2, baseMsg, trackKey)}
+      </div>`;
+    }
+    return `<div class="bracket-row">
+      <span class="team ${isWin?'win':''}">${escapeHtml(nome)}</span>
+      <input class="score-input" type="number" min="0" inputmode="numeric" data-round="${round}" data-idx="${idx}" data-side="${side}" value="${scoreVal}">
+    </div>${contatos}`;
+  };
+  return `<div class="bracket-match">
+    <div class="lbl">${label}</div>
+    ${teamBlock(a, b, "a", win===a)}
+    ${teamBlock(b, a, "b", win===b)}
+  </div>`;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ============================================================
+   EVENTOS
+============================================================ */
+function bindEvents(){
+  const btnSaveGcid = document.getElementById("btn-save-gcid");
+  if(btnSaveGcid) btnSaveGcid.addEventListener("click", ()=>{
+    const val = document.getElementById("input-gcid").value.trim();
+    if(!val){ showToast("Cole o Client ID do Google."); return; }
+    saveClientId(val);
+    render();
+  });
+  const btnEditGcid = document.getElementById("btn-edit-gcid");
+  if(btnEditGcid) btnEditGcid.addEventListener("click", ()=>{
+    saveClientId("");
+    render();
+  });
+  const btnLogout = document.getElementById("btn-logout");
+  if(btnLogout) btnLogout.addEventListener("click", ()=>{
+    if(confirm("Sair da sua conta Google neste aparelho?")) logout();
+  });
+  const btnAdminLogin = document.getElementById("btn-admin-login");
+  if(btnAdminLogin) btnAdminLogin.addEventListener("click", handleAdminLogin);
+  const inputAdminPass = document.getElementById("input-admin-pass");
+  if(inputAdminPass) inputAdminPass.addEventListener("keydown", e=>{
+    if(e.key==="Enter") handleAdminLogin();
+  });
+  const btnNovoTorneio = document.getElementById("btn-novo-torneio");
+  if(btnNovoTorneio) btnNovoTorneio.addEventListener("click", criarNovoTorneio);
+  const btnMigrar = document.getElementById("btn-migrar-local");
+  if(btnMigrar) btnMigrar.addEventListener("click", migrarTorneioLocal);
+  main.querySelectorAll("[data-open-torneio]").forEach(el=>{
+    el.addEventListener("click", ()=> abrirTorneio(el.dataset.openTorneio));
+  });
+  main.querySelectorAll("[data-del-torneio]").forEach(btn=>{
+    btn.addEventListener("click", e=>{
+      e.stopPropagation();
+      excluirTorneio(btn.dataset.delTorneio, btn.dataset.delNome);
+    });
+  });
+  const btnVoltar = document.getElementById("btn-voltar-torneios");
+  if(btnVoltar) btnVoltar.addEventListener("click", voltarParaTorneios);
+
+  main.querySelectorAll("input[data-dupla]").forEach(inp=>{
+    inp.addEventListener("input", e=>{
+      const i = Number(e.target.dataset.dupla);
+      const field = e.target.dataset.field;
+      state.duplas[i][field] = e.target.value;
+      if(field==="nome") state.duplas[i].nomeDefault = false;
+      save();
+    });
+    if(inp.dataset.field==="nome"){
+      inp.addEventListener("focus", e=>{
+        const i = Number(e.target.dataset.dupla);
+        if(state.duplas[i].nomeDefault){
+          e.target.value = "";
+          state.duplas[i].nome = "";
+          state.duplas[i].nomeDefault = false;
+          save();
+        }
+      });
+    }
+  });
+  const btnSortear = document.getElementById("btn-sortear");
+  if(btnSortear) btnSortear.addEventListener("click", async ()=>{
+    sortear(); render(); showToast("Grupos sorteados!");
+    await refreshTelegramStatus();
+    await enviarTelegramTodos(true);
+  });
+  const btnResortear = document.getElementById("btn-resortear");
+  if(btnResortear) btnResortear.addEventListener("click", async ()=>{
+    if(confirm("Isso vai gerar novos grupos e apagar todos os resultados registrados. Continuar?")){
+      sortear(); render(); showToast("Novo sorteio realizado!");
+      await refreshTelegramStatus();
+      await enviarTelegramTodos(true);
+    }
+  });
+  const btnReset = document.getElementById("btn-reset");
+  if(btnReset) btnReset.addEventListener("click", ()=>{
+    if(confirm("Isso vai apagar duplas, grupos e todos os resultados. Continuar?")){
+      resetTudo(); render(); showToast("Torneio reiniciado.");
+    }
+  });
+
+  const inputBot = document.getElementById("input-telegram-bot");
+  if(inputBot) inputBot.addEventListener("input", e=>{ state.telegramBot = e.target.value; save(); });
+
+  const btnTgRefresh = document.getElementById("btn-tg-refresh");
+  if(btnTgRefresh) btnTgRefresh.addEventListener("click", ()=>{ showToast("Verificando ativações..."); refreshTelegramStatus(); });
+
+  const btnTgAll = document.getElementById("btn-tg-all");
+  if(btnTgAll) btnTgAll.addEventListener("click", ()=>{ enviarTelegramTodos(); });
+
+  main.querySelectorAll(".chip").forEach(chip=>{
+    chip.addEventListener("click", ()=>{ state.filter = chip.dataset.filter; save(); render(); });
+  });
+
+  main.querySelectorAll("input[data-gm]").forEach(inp=>{
+    inp.addEventListener("change", e=>{
+      const gm = Number(e.target.dataset.gm);
+      const side = e.target.dataset.side;
+      state.groupMatches[gm][side==="a"?"pa":"pb"] = e.target.value===""?"":e.target.value;
+      save();
+      render();
+      checkElimNotifications();
+    });
+    inp.addEventListener("keydown", e=>{
+      if(e.key==="Enter") e.target.blur();
+    });
+  });
+
+  main.querySelectorAll("input[data-round]").forEach(inp=>{
+    inp.addEventListener("change", e=>{
+      const round = e.target.dataset.round, idx = Number(e.target.dataset.idx), side = e.target.dataset.side;
+      const key = side==="a"?"pa":"pb";
+      if(round==="final" || round==="terceiro") state.elim[round][key] = e.target.value===""?"":e.target.value;
+      else state.elim[round][idx][key] = e.target.value===""?"":e.target.value;
+      save();
+      render();
+      checkElimNotifications();
+    });
+    inp.addEventListener("keydown", e=>{
+      if(e.key==="Enter") e.target.blur();
+    });
+  });
+
+  main.querySelectorAll("a.btn-send[data-track-key]").forEach(a=>{
+    a.addEventListener("click", ()=>{
+      const key = a.dataset.trackKey;
+      const slot = Number(a.dataset.trackSlot);
+      if(!state.elimNotified[key]) state.elimNotified[key] = {nome:null, slot1:false, slot2:false};
+      if(slot===1) state.elimNotified[key].slot1 = true; else state.elimNotified[key].slot2 = true;
+      save();
+      setTimeout(render, 300);
+    });
+  });
+
+  const btnStoryShare = document.getElementById("btn-story-share");
+  if(btnStoryShare) btnStoryShare.addEventListener("click", shareStoryImage);
+  const btnStoryDownload = document.getElementById("btn-story-download");
+  if(btnStoryDownload) btnStoryDownload.addEventListener("click", downloadStoryImage);
+
+  const chkTerceiro = document.getElementById("chk-terceiro");
+  if(chkTerceiro) chkTerceiro.addEventListener("change", e=>{
+    state.terceiroLugar = e.target.checked;
+    save();
+    render();
+    checkElimNotifications();
+  });
+
+  const btnClearPend = document.getElementById("btn-clear-pendentes");
+  if(btnClearPend) btnClearPend.addEventListener("click", ()=>{
+    if(confirm("Isso vai marcar todas as mensagens pendentes como resolvidas, sem enviar nada. Continuar?")){
+      limparPendenciasElim();
+      showToast("Pendências limpas.");
+    }
+  });
+}
+
+
+
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+document.querySelectorAll("nav.tabbar button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    state.tab = btn.dataset.tab;
+    save();
+    render();
+    if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
+    if(state.tab==="matamata" && state.drawn) checkElimNotifications();
+  });
+});
+
+render();
+if(auth && state.cloudId){
+  if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
+  if(state.drawn) checkElimNotifications();
+}
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>

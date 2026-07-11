@@ -1,0 +1,15 @@
+{
+  "name": "campeonato-futevolei",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-06-05",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "DB",
+      "id": "e5f15195f2084b19ad39ad13111b5151"
+    }
+  ]
+}
