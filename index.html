@@ -675,6 +675,29 @@ function abrirTorneioComDados(data){
   showToast(`"${data.nome}" carregado!`);
 }
 
+// Busca a versão mais recente do torneio já aberto (usado ao carregar/recarregar a página,
+// já que um F5 sozinho não ia até a nuvem — só reaproveitava o que já estava salvo neste navegador).
+async function refreshTorneioAtual(){
+  if(!auth || !state.cloudId) return;
+  try{
+    const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(state.cloudId)}`, { cache:"no-store" });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    if(data && data.state){
+      const tabAtual = state.tab;
+      state = Object.assign(defaultState(), data.state);
+      state.cloudId = data.id;
+      state.cloudNome = data.nome;
+      state.tab = tabAtual;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      telegramStatus = {};
+      render();
+      if(state.drawn) refreshTelegramStatus();
+      checkElimNotifications();
+    }
+  }catch(e){ /* sem conexão — mantém os dados locais que já tinha */ }
+}
+
 async function excluirTorneio(id, nome){
   if(!confirm(`Excluir o torneio "${nome}"? Essa ação não pode ser desfeita.`)) return;
   showToast("Excluindo torneio...");
@@ -1989,6 +2012,7 @@ document.querySelectorAll("nav.tabbar button").forEach(btn=>{
 
 render();
 if(auth && state.cloudId){
+  refreshTorneioAtual();
   if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
   if(state.drawn) checkElimNotifications();
 }
