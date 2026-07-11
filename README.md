@@ -1,4 +1,4 @@
-# Futevôlei — App do Campeonato (Cloudflare Workers)
+# Futevôlei — App do Campeonato (Cloudflare Workers) - New
 
 Esta é a versão migrada do Netlify para o **Cloudflare Workers**. Mesmo app, mesmas funcionalidades (sorteio, jogos, classificação, mata-mata, WhatsApp, Telegram automático, torneios na nuvem com login Google) — só o "motor" por trás mudou.
 
