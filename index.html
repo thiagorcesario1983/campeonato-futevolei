@@ -603,7 +603,7 @@ async function fetchTorneiosList(){
   if(torneiosLoading) return;
   torneiosLoading = true;
   try{
-    const res = await fetch("/api/torneios-list");
+    const res = await fetch("/api/torneios-list", { cache: "no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     torneiosList = data.torneios || [];
@@ -646,7 +646,7 @@ async function criarNovoTorneio(){
 async function abrirTorneio(id){
   showToast("Carregando torneio...");
   try{
-    const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(id)}`);
+    const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(id)}`, { cache: "no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     if(!data || !data.state) throw new Error("sem dados");
@@ -908,7 +908,7 @@ async function refreshTelegramStatus(){
   const codes = [];
   state.duplas.forEach((_,i)=>{ codes.push(codigoDupla(i,1), codigoDupla(i,2)); });
   try{
-    const res = await fetch(`/api/telegram-status?codes=${encodeURIComponent(codes.join(","))}`);
+    const res = await fetch(`/api/telegram-status?codes=${encodeURIComponent(codes.join(","))}`, { cache: "no-store" });
     if(!res.ok) return;
     const data = await res.json();
     telegramStatus = data.status || {};
