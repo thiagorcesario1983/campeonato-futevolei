@@ -388,6 +388,100 @@
     background:none;border:none;color:#C0392B;font-size:11px;font-weight:600;
     font-family:'Work Sans',sans-serif;cursor:pointer;padding:4px 6px;flex-shrink:0;
   }
+
+  /* ---------- Ações de arbitragem (mini botões sob cada jogo) ---------- */
+  .ref-actions-row{display:flex;gap:8px;padding:0 2px 10px;margin-top:-2px;}
+  .ref-mini-btn{
+    flex:1;border:none;border-radius:9px;padding:7px 6px;font-size:11.5px;font-weight:700;
+    font-family:'Work Sans',sans-serif;cursor:pointer;background:var(--ocean-deep);color:var(--white);
+  }
+  .ref-mini-btn.ghost{background:var(--sand);color:var(--ocean-deep);border:1px solid var(--sand-dark);}
+  .ref-mini-btn:active{transform:scale(.96);}
+
+  /* ---------- Tela do juiz (Apitar jogo) ---------- */
+  .ref-screen{
+    position:fixed;inset:0;background:var(--ocean-deep);color:var(--white);z-index:200;
+    display:flex;flex-direction:column;align-items:center;padding:18px 18px 30px;
+    font-family:'Work Sans',sans-serif;overflow-y:auto;
+  }
+  .ref-top{width:100%;max-width:420px;display:flex;align-items:center;gap:12px;margin-bottom:6px;}
+  .ref-close{
+    width:34px;height:34px;border-radius:50%;border:none;background:rgba(255,255,255,.12);
+    color:var(--white);font-size:16px;cursor:pointer;flex-shrink:0;
+  }
+  .ref-label{font-family:'Bebas Neue',sans-serif;font-size:19px;letter-spacing:.02em;opacity:.9;}
+  .ref-timer-box{text-align:center;margin:14px 0 6px;}
+  .ref-timer{font-family:'DM Mono',monospace;font-size:46px;font-weight:600;letter-spacing:.02em;}
+  .status-tecnico .ref-timer{color:var(--coral);}
+  .status-finalizada .ref-timer{color:var(--grass);}
+  .ref-timer-status{font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;margin-top:2px;}
+  .ref-board{
+    display:flex;align-items:center;justify-content:center;gap:14px;
+    width:100%;max-width:420px;margin:14px 0 6px;
+  }
+  .ref-team-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;background:rgba(255,255,255,.06);border-radius:20px;padding:14px 8px 16px;}
+  .ref-vs{font-family:'Bebas Neue',sans-serif;font-size:20px;opacity:.6;}
+  .ref-score-btn{
+    width:56px;height:44px;border-radius:12px;border:none;font-size:24px;font-weight:700;
+    cursor:pointer;color:var(--ocean-deep);
+  }
+  .ref-score-btn.plus{background:var(--grass);color:var(--white);}
+  .ref-score-btn.minus{background:rgba(255,255,255,.85);}
+  .ref-score-btn:active{transform:scale(.94);}
+  .ref-score-btn:disabled{opacity:.35;pointer-events:none;}
+  .ref-score-num{font-family:'DM Mono',monospace;font-size:52px;font-weight:600;line-height:1;}
+  .ref-team-nome{font-size:13px;font-weight:600;text-align:center;max-width:110px;}
+  .ref-actions{width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px;margin-top:16px;}
+  .ref-actions .btn{margin:0;}
+  .ref-btn-fim{border:1.5px solid var(--coral)!important;color:var(--coral)!important;}
+  .ref-final-msg{
+    background:rgba(255,255,255,.1);border-radius:12px;padding:12px;text-align:center;
+    font-size:13.5px;font-weight:600;
+  }
+  .ref-tv-link{
+    margin-top:18px;background:none;border:none;color:rgba(255,255,255,.75);font-size:12.5px;
+    text-decoration:underline;cursor:pointer;font-family:'Work Sans',sans-serif;
+  }
+
+  /* ---------- Popup de troca de lado ---------- */
+  .popup-troca{
+    position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;
+    background:rgba(11,60,73,.55);opacity:0;pointer-events:none;transition:opacity .2s;
+  }
+  .popup-troca.show{opacity:1;pointer-events:auto;}
+  .popup-troca-inner{
+    background:var(--white);color:var(--ink);border-radius:20px;padding:26px 24px;text-align:center;
+    max-width:280px;box-shadow:var(--shadow);
+  }
+  .popup-troca-icon{font-size:38px;margin-bottom:8px;}
+  .popup-troca-msg{font-family:'Bebas Neue',sans-serif;font-size:20px;margin-bottom:16px;}
+  .popup-troca-ok{
+    background:var(--coral);color:var(--white);border:none;border-radius:10px;
+    padding:9px 26px;font-weight:700;font-size:13.5px;cursor:pointer;font-family:'Work Sans',sans-serif;
+  }
+
+  /* ---------- Placar para TV ---------- */
+  .tv-screen{
+    position:fixed;inset:0;background:var(--ocean-deep);color:var(--white);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:'Work Sans',sans-serif;text-align:center;padding:30px;
+  }
+  .tv-loading{font-size:22px;opacity:.8;}
+  .tv-label{
+    font-family:'Bebas Neue',sans-serif;font-size:clamp(24px,4vw,44px);letter-spacing:.03em;
+    opacity:.85;margin-bottom:4vh;
+  }
+  .tv-board{display:flex;align-items:center;justify-content:center;gap:6vw;width:100%;}
+  .tv-team{flex:1;max-width:38%;}
+  .tv-team-nome{
+    font-family:'Bebas Neue',sans-serif;font-size:clamp(22px,3.4vw,40px);letter-spacing:.02em;
+    margin-bottom:2vh;word-break:break-word;
+  }
+  .tv-score{font-family:'DM Mono',monospace;font-weight:700;font-size:clamp(70px,14vw,180px);line-height:1;}
+  .tv-x{font-family:'Bebas Neue',sans-serif;font-size:clamp(28px,4vw,50px);opacity:.5;}
+  .tv-footer{margin-top:6vh;}
+  .tv-timer{font-family:'DM Mono',monospace;font-size:clamp(30px,5vw,60px);font-weight:600;}
+  .tv-status{font-size:clamp(14px,2vw,20px);letter-spacing:.08em;text-transform:uppercase;opacity:.75;margin-top:6px;}
 </style>
 </head>
 <body>
@@ -436,7 +530,9 @@ function defaultState(){
     telegramBot: "",
     elimNotified: {},
     cloudId: null,
-    cloudNome: ""
+    cloudNome: "",
+    arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
+    apitoMatchId: null
   };
 }
 
@@ -917,6 +1013,175 @@ function waLink(tel, msg){
   return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
 }
 
+/* ============================================================
+   ARBITRAGEM (JUIZ DE PARTIDA)
+============================================================ */
+function makeMatchId(round, idx){
+  return (round==="final" || round==="terceiro") ? round : round+idx;
+}
+function matchIdIsElim(matchId){
+  return !/^g\d+$/.test(matchId);
+}
+function getMatchObj(matchId){
+  if(/^g\d+$/.test(matchId)) return state.groupMatches[Number(matchId.slice(1))];
+  if(matchId==="final") return state.elim.final;
+  if(matchId==="terceiro") return state.elim.terceiro;
+  const m = matchId.match(/^(qf|sf)(\d+)$/);
+  if(m) return state.elim[m[1]][Number(m[2])];
+  return null;
+}
+function getMatchTeams(matchId){
+  if(/^g\d+$/.test(matchId)){ const mm = state.groupMatches[Number(matchId.slice(1))]; return [mm.a, mm.b]; }
+  if(matchId==="final") return finalTeams();
+  if(matchId==="terceiro") return sfLosers();
+  const m = matchId.match(/^(qf|sf)(\d+)$/);
+  if(m){
+    const idx = Number(m[2]);
+    return m[1]==="qf" ? qfTeams()[idx] : sfTeams()[idx];
+  }
+  return [null,null];
+}
+function getMatchLabel(matchId){
+  if(/^g\d+$/.test(matchId)){ const mm = state.groupMatches[Number(matchId.slice(1))]; return `Grupo ${mm.group} · Jogo ${mm.jogo}`; }
+  if(matchId==="final") return "Final";
+  if(matchId==="terceiro") return "Disputa de 3º e 4º Lugar";
+  const m = matchId.match(/^(qf|sf)(\d+)$/);
+  if(m) return (m[1]==="qf" ? "Quartas de Final · QF" : "Semifinal · SF") + (Number(m[2])+1);
+  return "";
+}
+function getArb(matchId){
+  if(!state.arbitragem) state.arbitragem = {};
+  if(!state.arbitragem[matchId]){
+    state.arbitragem[matchId] = {
+      status: "nao_iniciada", // nao_iniciada | andamento | tecnico | finalizada
+      placarA: 0,
+      placarB: 0,
+      acumuladoMs: 0,
+      inicioMs: null,
+      ultimoMultiploTroca: 0,
+      duracaoFinalSegundos: null
+    };
+  }
+  return state.arbitragem[matchId];
+}
+function tempoDecorridoMs(arb){
+  return arb.acumuladoMs + (arb.inicioMs ? (Date.now() - arb.inicioMs) : 0);
+}
+function formatTempo(ms){
+  const totalSec = Math.max(0, Math.floor(ms/1000));
+  const m = Math.floor(totalSec/60), s = totalSec%60;
+  return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+}
+function checkTrocaLado(arb){
+  const soma = arb.placarA + arb.placarB;
+  const multiploAtual = soma>0 ? Math.floor(soma/6)*6 : 0;
+  let deveTrocar = false;
+  if(multiploAtual>0 && multiploAtual>(arb.ultimoMultiploTroca||0)){
+    arb.ultimoMultiploTroca = multiploAtual;
+    deveTrocar = true;
+  } else if(soma < (arb.ultimoMultiploTroca||0)){
+    arb.ultimoMultiploTroca = multiploAtual;
+  }
+  return deveTrocar;
+}
+function arbSalvarAgora(){
+  save();
+  flushSyncTorneio();
+}
+function arbIniciar(matchId){
+  const arb = getArb(matchId);
+  if(arb.status!=="nao_iniciada") return;
+  arb.inicioMs = Date.now();
+  arb.status = "andamento";
+  arbSalvarAgora();
+  render();
+}
+function arbTempoTecnico(matchId){
+  const arb = getArb(matchId);
+  if(arb.status==="andamento"){
+    arb.acumuladoMs += Date.now() - arb.inicioMs;
+    arb.inicioMs = null;
+    arb.status = "tecnico";
+  } else if(arb.status==="tecnico"){
+    arb.inicioMs = Date.now();
+    arb.status = "andamento";
+  } else {
+    return;
+  }
+  arbSalvarAgora();
+  render();
+}
+function arbFinalizar(matchId){
+  const arb = getArb(matchId);
+  if(arb.status!=="andamento" && arb.status!=="tecnico") return;
+  if(arb.status==="andamento" && arb.inicioMs){
+    arb.acumuladoMs += Date.now() - arb.inicioMs;
+    arb.inicioMs = null;
+  }
+  arb.status = "finalizada";
+  arb.duracaoFinalSegundos = Math.floor(arb.acumuladoMs/1000);
+  const m = getMatchObj(matchId);
+  if(m){ m.pa = arb.placarA; m.pb = arb.placarB; }
+  arbSalvarAgora();
+  render();
+  checkElimNotifications();
+  showToast("Partida finalizada e placar salvo!");
+}
+function arbReabrir(matchId){
+  const arb = getArb(matchId);
+  if(arb.status!=="finalizada") return;
+  arb.status = "tecnico";
+  arbSalvarAgora();
+  render();
+}
+function arbPonto(matchId, lado, delta){
+  const arb = getArb(matchId);
+  if(arb.status==="finalizada") return;
+  const campo = lado==="a" ? "placarA" : "placarB";
+  arb[campo] = Math.max(0, arb[campo]+delta);
+  const trocar = checkTrocaLado(arb);
+  arbSalvarAgora();
+  render();
+  if(trocar) mostrarPopupTroca();
+}
+function mostrarPopupTroca(){
+  const el = document.getElementById("popup-troca");
+  if(!el) return;
+  el.classList.add("show");
+  clearTimeout(window.__popupTrocaTimer);
+  window.__popupTrocaTimer = setTimeout(()=>{ el.classList.remove("show"); }, 4500);
+}
+function abrirApito(matchId){
+  state.apitoMatchId = matchId;
+  state.tab = "apito";
+  save();
+  render();
+}
+function fecharApito(){
+  state.tab = matchIdIsElim(state.apitoMatchId) ? "matamata" : "jogos";
+  save();
+  render();
+}
+function abrirPlacarTV(matchId){
+  if(!state.cloudId){ showToast("Salve o torneio na nuvem antes de abrir o placar para TV."); return; }
+  const url = `${location.origin}${location.pathname}?placarTV=${encodeURIComponent(matchId)}&torneio=${encodeURIComponent(state.cloudId)}`;
+  window.open(url, "_blank");
+}
+let refTickInterval = null;
+function stopRefTick(){
+  if(refTickInterval){ clearInterval(refTickInterval); refTickInterval = null; }
+}
+function iniciarRefTick(){
+  stopRefTick();
+  refTickInterval = setInterval(()=>{
+    if(state.tab!=="apito"){ stopRefTick(); return; }
+    const arb = getArb(state.apitoMatchId);
+    if(arb.status!=="andamento") return;
+    const el = document.getElementById("ref-timer-txt");
+    if(el) el.textContent = formatTempo(tempoDecorridoMs(arb));
+  }, 1000);
+}
+
 /* ---------- Telegram ---------- */
 function codigoDupla(i, slot){
   return `${state.tournamentId}_${i}_${slot}`;
@@ -1383,6 +1648,7 @@ function pendingElimMessages(){
 function render(){
   const nav = document.querySelector("nav.tabbar");
   const torneioBar = document.getElementById("torneio-bar");
+  stopRefTick();
 
   if(!auth){
     nav.style.display = "none";
@@ -1398,6 +1664,15 @@ function render(){
     torneioBar.innerHTML = "";
     main.innerHTML = renderTorneiosScreen();
     bindEvents();
+    return;
+  }
+
+  if(state.tab==="apito" && state.apitoMatchId){
+    nav.style.display = "none";
+    torneioBar.innerHTML = "";
+    main.innerHTML = renderApito();
+    bindEvents();
+    iniciarRefTick();
     return;
   }
 
@@ -1421,6 +1696,7 @@ function render(){
   else if(state.tab==="jogos") main.innerHTML = renderJogos();
   else if(state.tab==="classificacao") main.innerHTML = renderClassificacao();
   else if(state.tab==="matamata") main.innerHTML = renderMataMata();
+  else main.innerHTML = renderJogos();
   bindEvents();
 }
 
@@ -1694,12 +1970,17 @@ function renderJogos(){
     matches.forEach(m=>{
       const idx = state.groupMatches.indexOf(m);
       const win = winner(m.a,m.b,m.pa,m.pb);
+      const matchId = "g"+idx;
       html += `<div class="match">
         <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
         <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="a" value="${m.pa??""}">
         <span class="x">×</span>
         <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="b" value="${m.pb??""}">
         <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
+      </div>
+      <div class="ref-actions-row">
+        <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
+        <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
       </div>`;
     });
     html += `</div></div>`;
@@ -1800,6 +2081,68 @@ function renderMataMata(){
   return html;
 }
 
+function renderApito(){
+  const matchId = state.apitoMatchId;
+  const [a,b] = getMatchTeams(matchId);
+  const label = getMatchLabel(matchId);
+  const arb = getArb(matchId);
+  const statusLabel = {
+    nao_iniciada: "Não iniciada",
+    andamento: "Em andamento",
+    tecnico: "⏸️ Tempo técnico",
+    finalizada: "✅ Finalizada"
+  }[arb.status] || "";
+
+  let acoes = "";
+  if(arb.status==="nao_iniciada"){
+    acoes += `<button class="btn" id="btn-ref-iniciar">▶️ Iniciar partida</button>`;
+  }
+  if(arb.status==="andamento" || arb.status==="tecnico"){
+    acoes += `<button class="btn secondary" id="btn-ref-tecnico">${arb.status==="tecnico" ? "▶️ Retomar" : "⏸️ Tempo técnico"}</button>`;
+    acoes += `<button class="btn ghost ref-btn-fim" id="btn-ref-finalizar">🏁 Fim de partida</button>`;
+  }
+  if(arb.status==="finalizada"){
+    acoes += `<div class="ref-final-msg">✅ Partida finalizada · duração ${formatTempo(arb.acumuladoMs)}</div>
+      <button class="btn ghost" id="btn-ref-reabrir" style="margin-top:8px;">🔓 Reabrir partida</button>`;
+  }
+
+  return `
+  <div class="ref-screen">
+    <div class="ref-top">
+      <button class="ref-close" id="btn-ref-fechar">✕</button>
+      <div class="ref-label">${escapeHtml(label)}</div>
+    </div>
+    <div class="ref-timer-box status-${arb.status}">
+      <div class="ref-timer" id="ref-timer-txt">${formatTempo(tempoDecorridoMs(arb))}</div>
+      <div class="ref-timer-status">${statusLabel}</div>
+    </div>
+    <div class="ref-board">
+      <div class="ref-team-col">
+        <button class="ref-score-btn plus" data-ponto="a" data-delta="1" ${arb.status==="finalizada"?"disabled":""}>+</button>
+        <div class="ref-score-num">${arb.placarA}</div>
+        <button class="ref-score-btn minus" data-ponto="a" data-delta="-1" ${arb.status==="finalizada"?"disabled":""}>−</button>
+        <div class="ref-team-nome">${escapeHtml(a||"—")}</div>
+      </div>
+      <div class="ref-vs">×</div>
+      <div class="ref-team-col">
+        <button class="ref-score-btn plus" data-ponto="b" data-delta="1" ${arb.status==="finalizada"?"disabled":""}>+</button>
+        <div class="ref-score-num">${arb.placarB}</div>
+        <button class="ref-score-btn minus" data-ponto="b" data-delta="-1" ${arb.status==="finalizada"?"disabled":""}>−</button>
+        <div class="ref-team-nome">${escapeHtml(b||"—")}</div>
+      </div>
+    </div>
+    <div class="ref-actions">${acoes}</div>
+    <button class="ref-tv-link" id="btn-ref-abrir-tv">📺 Abrir placar para TV</button>
+  </div>
+  <div class="popup-troca" id="popup-troca">
+    <div class="popup-troca-inner">
+      <div class="popup-troca-icon">🔄</div>
+      <div class="popup-troca-msg">Troca de lado das equipes.</div>
+      <button class="popup-troca-ok" id="btn-fechar-popup-troca">OK</button>
+    </div>
+  </div>`;
+}
+
 function bracketMatchHtml(label, faseLabel, round, idx, a, b, pa, pb){
   const win = (a && b) ? winner(a,b,pa,pb) : null;
   const teamBlock = (nome, oponente, side, isWin)=>{
@@ -1821,10 +2164,16 @@ function bracketMatchHtml(label, faseLabel, round, idx, a, b, pa, pb){
       <input class="score-input" type="number" min="0" inputmode="numeric" data-round="${round}" data-idx="${idx}" data-side="${side}" value="${scoreVal}">
     </div>${contatos}`;
   };
+  const matchId = makeMatchId(round, idx);
+  const acoes = (a && b) ? `<div class="ref-actions-row">
+      <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
+      <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
+    </div>` : "";
   return `<div class="bracket-match">
     <div class="lbl">${label}</div>
     ${teamBlock(a, b, "a", win===a)}
     ${teamBlock(b, a, "b", win===b)}
+    ${acoes}
   </div>`;
 }
 
@@ -1988,6 +2337,35 @@ function bindEvents(){
       showToast("Pendências limpas.");
     }
   });
+
+  main.querySelectorAll("[data-apitar]").forEach(btn=>{
+    btn.addEventListener("click", ()=> abrirApito(btn.dataset.apitar));
+  });
+  main.querySelectorAll("[data-placartv]").forEach(btn=>{
+    btn.addEventListener("click", ()=> abrirPlacarTV(btn.dataset.placartv));
+  });
+  const btnRefFechar = document.getElementById("btn-ref-fechar");
+  if(btnRefFechar) btnRefFechar.addEventListener("click", fecharApito);
+  const btnRefIniciar = document.getElementById("btn-ref-iniciar");
+  if(btnRefIniciar) btnRefIniciar.addEventListener("click", ()=> arbIniciar(state.apitoMatchId));
+  const btnRefTecnico = document.getElementById("btn-ref-tecnico");
+  if(btnRefTecnico) btnRefTecnico.addEventListener("click", ()=> arbTempoTecnico(state.apitoMatchId));
+  const btnRefFinalizar = document.getElementById("btn-ref-finalizar");
+  if(btnRefFinalizar) btnRefFinalizar.addEventListener("click", ()=>{
+    if(confirm("Finalizar a partida? O placar e o tempo de jogo serão salvos.")) arbFinalizar(state.apitoMatchId);
+  });
+  const btnRefReabrir = document.getElementById("btn-ref-reabrir");
+  if(btnRefReabrir) btnRefReabrir.addEventListener("click", ()=> arbReabrir(state.apitoMatchId));
+  const btnAbrirTv = document.getElementById("btn-ref-abrir-tv");
+  if(btnAbrirTv) btnAbrirTv.addEventListener("click", ()=> abrirPlacarTV(state.apitoMatchId));
+  main.querySelectorAll("[data-ponto]").forEach(btn=>{
+    btn.addEventListener("click", ()=> arbPonto(state.apitoMatchId, btn.dataset.ponto, Number(btn.dataset.delta)));
+  });
+  const btnFecharPopup = document.getElementById("btn-fechar-popup-troca");
+  if(btnFecharPopup) btnFecharPopup.addEventListener("click", ()=>{
+    const el = document.getElementById("popup-troca");
+    if(el) el.classList.remove("show");
+  });
 }
 
 
@@ -2000,27 +2378,102 @@ function showToast(msg){
   window.__toastTimer = setTimeout(()=>t.classList.remove("show"), 2200);
 }
 
-document.querySelectorAll("nav.tabbar button").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    state.tab = btn.dataset.tab;
-    save();
-    render();
-    if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
-    if(state.tab==="matamata" && state.drawn) checkElimNotifications();
-  });
-});
+/* ============================================================
+   PLACAR PARA TV (tela separada, somente leitura, via link)
+============================================================ */
+let __tvUltimoArb = null;
+function iniciarPlacarTV(torneioId, matchId){
+  document.body.innerHTML = `<div class="tv-screen" id="tv-screen"><div class="tv-loading">🏐 Carregando placar...</div></div>`;
 
-render();
-if(auth && state.cloudId){
-  refreshTorneioAtual();
-  if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
-  if(state.drawn) checkElimNotifications();
+  async function atualizar(){
+    try{
+      const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(torneioId)}`, { cache:"no-store" });
+      if(!res.ok) throw new Error("resposta não-ok");
+      const data = await res.json();
+      if(data && data.state){
+        state = Object.assign(defaultState(), data.state);
+        renderTV(matchId);
+      }
+    }catch(e){
+      const el = document.getElementById("tv-screen");
+      if(el && !el.dataset.loaded) el.innerHTML = `<div class="tv-loading">⚠️ Sem conexão com o servidor. Tentando novamente...</div>`;
+    }
+  }
+
+  setInterval(()=>{
+    if(!__tvUltimoArb || __tvUltimoArb.status!=="andamento") return;
+    const el = document.querySelector(".tv-timer");
+    if(el) el.textContent = formatTempo(tempoDecorridoMs(__tvUltimoArb));
+  }, 1000);
+
+  atualizar();
+  setInterval(atualizar, 2500);
 }
 
-if("serviceWorker" in navigator){
-  window.addEventListener("load", ()=>{
-    navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+function renderTV(matchId){
+  const screen = document.getElementById("tv-screen");
+  if(!screen) return;
+  const [a,b] = getMatchTeams(matchId);
+  const label = getMatchLabel(matchId);
+  const arb = getArb(matchId);
+  __tvUltimoArb = arb;
+  const tempoMs = tempoDecorridoMs(arb);
+  const statusLabel = {
+    nao_iniciada: "Aguardando início",
+    andamento: "🔴 Em andamento",
+    tecnico: "⏸️ Tempo técnico",
+    finalizada: "✅ Finalizada"
+  }[arb.status] || "";
+
+  screen.dataset.loaded = "1";
+  screen.innerHTML = `
+    <div class="tv-label">${escapeHtml(label)}</div>
+    <div class="tv-board">
+      <div class="tv-team">
+        <div class="tv-team-nome">${escapeHtml(a||"—")}</div>
+        <div class="tv-score">${arb.placarA}</div>
+      </div>
+      <div class="tv-x">×</div>
+      <div class="tv-team">
+        <div class="tv-team-nome">${escapeHtml(b||"—")}</div>
+        <div class="tv-score">${arb.placarB}</div>
+      </div>
+    </div>
+    <div class="tv-footer">
+      <div class="tv-timer">${formatTempo(tempoMs)}</div>
+      <div class="tv-status">${statusLabel}</div>
+    </div>`;
+}
+
+const __urlParams = new URLSearchParams(location.search);
+const __tvMatchId = __urlParams.get("placarTV");
+const __tvTorneioId = __urlParams.get("torneio");
+
+if(__tvMatchId && __tvTorneioId){
+  iniciarPlacarTV(__tvTorneioId, __tvMatchId);
+} else {
+  document.querySelectorAll("nav.tabbar button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      state.tab = btn.dataset.tab;
+      save();
+      render();
+      if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
+      if(state.tab==="matamata" && state.drawn) checkElimNotifications();
+    });
   });
+
+  render();
+  if(auth && state.cloudId){
+    refreshTorneioAtual();
+    if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
+    if(state.drawn) checkElimNotifications();
+  }
+
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", ()=>{
+      navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+    });
+  }
 }
 </script>
 </body>
