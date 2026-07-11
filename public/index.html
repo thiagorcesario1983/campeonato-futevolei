@@ -543,45 +543,67 @@ function saveTorneioLocalFallback(payload){
   return meta;
 }
 
+function montarPayloadTorneio(){
+  return {
+    id: state.cloudId,
+    nome: state.cloudNome || "Torneio sem nome",
+    status: statusTorneio(),
+    ownerEmail: auth.email,
+    ownerName: auth.name,
+    state
+  };
+}
+
+async function enviarTorneioAgora(payload, keepalive){
+  try{
+    const res = await fetch("/api/torneios-save", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload),
+      keepalive: !!keepalive
+    });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    if(data.id && state.cloudId !== data.id){
+      state.cloudId = data.id;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+  }catch(e){
+    // Sem servidor de functions disponível (ex: hospedagem local simples) — usa reserva local
+    const meta = saveTorneioLocalFallback(payload);
+    if(state.cloudId !== meta.id){
+      state.cloudId = meta.id;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+  }
+}
+
 function syncTorneio(){
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(async ()=>{
+  syncTimer = setTimeout(()=>{
     if(!auth) return;
-    const payload = {
-      id: state.cloudId,
-      nome: state.cloudNome || "Torneio sem nome",
-      status: statusTorneio(),
-      ownerEmail: auth.email,
-      ownerName: auth.name,
-      state
-    };
-    try{
-      const res = await fetch("/api/torneios-save", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify(payload)
-      });
-      if(!res.ok) throw new Error("resposta não-ok");
-      const data = await res.json();
-      if(data.id && state.cloudId !== data.id){
-        state.cloudId = data.id;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      }
-    }catch(e){
-      // Sem servidor de functions disponível (ex: hospedagem local simples) — usa reserva local
-      const meta = saveTorneioLocalFallback(payload);
-      if(state.cloudId !== meta.id){
-        state.cloudId = meta.id;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      }
-    }
+    enviarTorneioAgora(montarPayloadTorneio(), false);
   }, 800);
 }
+
+// Envio de emergência: garante que a última alteração não fique só no aparelho
+// se a página for fechada/minimizada antes do envio programado (800ms) terminar.
+function flushSyncTorneio(){
+  if(!syncTimer) return; // nada pendente
+  clearTimeout(syncTimer);
+  syncTimer = null;
+  if(!auth || !state.cloudId) return;
+  enviarTorneioAgora(montarPayloadTorneio(), true);
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "hidden") flushSyncTorneio();
+});
+window.addEventListener("pagehide", flushSyncTorneio);
 
 async function fetchTorneiosList(){
   if(torneiosLoading) return;
   torneiosLoading = true;
   try{
-    const res = await fetch("/api/torneios-list");
+    const res = await fetch("/api/torneios-list", { cache: "no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     torneiosList = data.torneios || [];
@@ -624,7 +646,7 @@ async function criarNovoTorneio(){
 async function abrirTorneio(id){
   showToast("Carregando torneio...");
   try{
-    const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(id)}`);
+    const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(id)}`, { cache: "no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     if(!data || !data.state) throw new Error("sem dados");
@@ -886,7 +908,7 @@ async function refreshTelegramStatus(){
   const codes = [];
   state.duplas.forEach((_,i)=>{ codes.push(codigoDupla(i,1), codigoDupla(i,2)); });
   try{
-    const res = await fetch(`/api/telegram-status?codes=${encodeURIComponent(codes.join(","))}`);
+    const res = await fetch(`/api/telegram-status?codes=${encodeURIComponent(codes.join(","))}`, { cache: "no-store" });
     if(!res.ok) return;
     const data = await res.json();
     telegramStatus = data.status || {};
