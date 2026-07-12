@@ -143,6 +143,10 @@ async function getIndex(env: Env): Promise<any[]> {
   return [];
 }
 
+function normEmail(v: unknown): string {
+  return String(v || "").trim().toLowerCase();
+}
+
 async function torneiosSave(request: Request, env: Env): Promise<Response> {
   let body: any;
   try {
@@ -151,17 +155,25 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     return json({ error: "JSON inválido" }, 400);
   }
 
+  const solicitanteEmail = normEmail(body.ownerEmail);
+  if (!solicitanteEmail) return json({ error: "ownerEmail obrigatório" }, 400);
+
   const id = body.id || crypto.randomUUID();
   const now = new Date().toISOString();
   const index = await getIndex(env);
   const existing = index.find((t: any) => t.id === id);
 
+  // Só o dono original pode atualizar um torneio já existente.
+  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail) {
+    return json({ error: "Sem permissão para alterar este torneio" }, 403);
+  }
+
   const meta = {
     id,
     nome: body.nome || "Torneio sem nome",
     status: body.status || "Criado",
-    ownerEmail: body.ownerEmail || existing?.ownerEmail || null,
-    ownerName: body.ownerName || existing?.ownerName || null,
+    ownerEmail: existing?.ownerEmail || body.ownerEmail || null,
+    ownerName: existing?.ownerName || body.ownerName || null,
     createdAt: existing?.createdAt || now,
     updatedAt: now
   };
@@ -178,12 +190,38 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   return json(meta);
 }
 
-async function torneiosList(_request: Request, env: Env): Promise<Response> {
+async function torneiosList(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const solicitanteEmail = normEmail(url.searchParams.get("email"));
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+
   const index = await getIndex(env);
-  return json({ torneios: index });
+  const meus = index.filter((t: any) => normEmail(t.ownerEmail) === solicitanteEmail);
+  return json({ torneios: meus });
 }
 
 async function torneiosGet(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const id = url.searchParams.get("id");
+  const solicitanteEmail = normEmail(url.searchParams.get("email"));
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+
+  const raw = await env.DB.get(`torneio:${id}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+
+  const dados = JSON.parse(raw);
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail) {
+    return json({ error: "Sem permissão para ver este torneio" }, 403);
+  }
+
+  return json(dados);
+}
+
+// Rota pública para o "Placar para TV": não exige login/e-mail, só o ID do torneio
+// (aleatório, como já era antes). Precisa continuar aberta porque esse link é feito
+// pra ser compartilhado e aberto em qualquer tela, sem ninguém logar.
+async function torneiosGetPublico(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const id = url.searchParams.get("id");
   if (!id) return json({ error: "id obrigatório" }, 400);
@@ -196,17 +234,24 @@ async function torneiosGet(request: Request, env: Env): Promise<Response> {
 
 async function torneiosDelete(request: Request, env: Env): Promise<Response> {
   let id: string | null = null;
+  let solicitanteEmail = "";
   try {
     const body: any = await request.json();
     id = body?.id || null;
+    solicitanteEmail = normEmail(body?.ownerEmail);
   } catch {}
-  if (!id) {
-    const url = new URL(request.url);
-    id = url.searchParams.get("id");
-  }
+  const url = new URL(request.url);
+  if (!id) id = url.searchParams.get("id");
+  if (!solicitanteEmail) solicitanteEmail = normEmail(url.searchParams.get("email"));
   if (!id) return json({ error: "id obrigatório" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
 
   const index = await getIndex(env);
+  const existing = index.find((t: any) => t.id === id);
+  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail) {
+    return json({ error: "Sem permissão para excluir este torneio" }, 403);
+  }
+
   try {
     await env.DB.delete(`torneio:${id}`);
     const newIndex = index.filter((t: any) => t.id !== id);
@@ -244,6 +289,9 @@ export default {
     }
     if (path === "/api/torneios-get") {
       return torneiosGet(request, env);
+    }
+    if (path === "/api/torneios-tv") {
+      return torneiosGetPublico(request, env);
     }
     if (path === "/api/torneios-delete") {
       return method === "POST" || method === "DELETE"
