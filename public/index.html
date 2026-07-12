@@ -515,10 +515,14 @@ function defaultState(){
   return {
     tab: "resumo",
     duplas: Array.from({length:6}, (_,i)=>({nome:`Dupla ${i+1}`, tel1:"", tel2:"", nomeDefault:true})),
-    numGrupos: 4, // quantidade de grupos escolhida antes do sorteio (deve dividir a qtde de duplas igualmente)
+    formato: "grupos", // "grupos" | "eliminacao" — escolhido antes do sorteio
+    numGrupos: 4, // (formato "grupos") quantidade de grupos, deve dividir a qtde de duplas igualmente
+    elimTarget: 4, // (formato "eliminacao") quantidade de duplas que avançam pro mata-mata (potência de 2)
     drawn: false,
     groups: [], // [[nomes do grupo 0], [grupo 1], ...] — quantidade e tamanho dinâmicos
     groupMatches: [], // {group,jogo,a,b,pa,pb}
+    elimRodadas: [], // (formato "eliminacao") [{matches:[{a,b,pa,pb}], bye:nome|null}, ...]
+    bracketSeed: null, // (formato "eliminacao") lista fixa de classificados (com folgas=null) que abre a 1ª rodada do mata-mata
     bracket: [], // [[{pa,pb}, ...], [...], ...] — cada posição é uma rodada do mata-mata (tamanho = log2(qualificados))
     terceiro: {pa:null,pb:null},
     terceiroLugar: false,
@@ -895,6 +899,18 @@ function qualificadosCount(){
   return (state.numGrupos || 4) * 2;
 }
 function sortear(){
+  if(state.formato==="eliminacao"){
+    state.groups = [];
+    state.groupMatches = [];
+    state.elimRodadas = [];
+    state.bracketSeed = null;
+    state.bracket = [];
+    state.terceiro = {pa:null, pb:null};
+    state.drawn = true;
+    sortearRodadaEliminacao();
+    save();
+    return;
+  }
   const nomes = state.duplas.map(d => (d.nome||"").trim() || "Dupla sem nome");
   const numGrupos = state.numGrupos || 4;
   const tamanhoGrupo = nomes.length / numGrupos;
@@ -920,18 +936,100 @@ function sortear(){
   state.terceiro = {pa:null, pb:null};
   save();
 }
-// Configuração de duplas/grupos é válida quando: nº de grupos é potência de 2 (1,2,4,8,16...)
-// — assim 2x essa quantidade de qualificados também é potência de 2, o que permite montar
-// um chaveamento normal (mata-mata) — e a qtde de duplas é múltipla do nº de grupos, com
+// Configuração de duplas/grupos (formato "grupos") é válida quando: nº de grupos é potência de 2
+// (1,2,4,8,16...) — assim 2x essa quantidade de qualificados também é potência de 2, o que permite
+// montar um chaveamento normal (mata-mata) — e a qtde de duplas é múltipla do nº de grupos, com
 // pelo menos 3 duplas por grupo (para a fase de grupos fazer sentido).
+// Já no formato "eliminacao", só validamos a quantidade de duplas que avançam pro mata-mata.
 function configuracaoValida(){
   const n = state.duplas.length;
+  if(state.formato==="eliminacao"){
+    const t = state.elimTarget || 4;
+    if(n < 3) return {ok:false, msg:"São necessárias pelo menos 3 duplas."};
+    if(t<2 || (t & (t-1))!==0) return {ok:false, msg:"A quantidade de duplas que avançam pro mata-mata precisa ser uma potência de 2 (2, 4, 8...)."};
+    if(t >= n) return {ok:false, msg:`Escolha um número de qualificados menor que o total de duplas (${n}).`};
+    return {ok:true, msg:""};
+  }
   const g = state.numGrupos || 4;
   if(g<1 || (g & (g-1))!==0) return {ok:false, msg:"A quantidade de grupos precisa ser uma potência de 2 (1, 2, 4, 8...)."};
   if(n % g !== 0) return {ok:false, msg:`${n} duplas não dividem igualmente em ${g} grupos. Ajuste a quantidade de duplas ou de grupos.`};
   const tamanho = n/g;
   if(tamanho < 3) return {ok:false, msg:`Cada grupo ficaria com só ${tamanho} dupla(s). São necessárias pelo menos 3 duplas por grupo.`};
   return {ok:true, msg:""};
+}
+
+/* ---------- Modo Eliminação: sorteio por rodadas, 2 derrotas = eliminada ---------- */
+function duplasNomes(){
+  return state.duplas.map(d => (d.nome||"").trim() || "Dupla sem nome");
+}
+// Nº de derrotas de cada dupla, somando todas as rodadas já sorteadas (derivado, sempre recalculado —
+// se um placar for corrigido depois, a contagem se ajusta sozinha).
+function elimPerdasPorDupla(){
+  const perdas = {};
+  state.elimRodadas.forEach(r=>{
+    r.matches.forEach(m=>{
+      const w = winner(m.a, m.b, m.pa, m.pb);
+      if(!w) return;
+      const loser = w===m.a ? m.b : m.a;
+      perdas[loser] = (perdas[loser]||0) + 1;
+    });
+  });
+  return perdas;
+}
+function elimPerdasDe(nome){ return elimPerdasPorDupla()[nome] || 0; }
+function elimEliminada(nome){ return elimPerdasDe(nome) >= 2; }
+// Duplas ainda vivas (0 ou 1 derrota) — são elas que entram no sorteio da próxima rodada
+// e, quando atingirem a meta de qualificados, avançam direto pro mata-mata.
+function elimVivas(){
+  return duplasNomes().filter(n => !elimEliminada(n));
+}
+function elimRodadaAtual(){
+  return state.elimRodadas[state.elimRodadas.length-1] || null;
+}
+function elimRodadaCompleta(rodada){
+  if(!rodada) return true;
+  return rodada.matches.every(m => m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="");
+}
+// Sorteia uma nova rodada entre as duplas vivas. Se o nº de vivas for ímpar, uma delas folga
+// nesta rodada (avança sem jogar e sem correr risco de derrota).
+function sortearRodadaEliminacao(){
+  const vivos = shuffle(elimVivas());
+  let bye = null;
+  if(vivos.length % 2 === 1) bye = vivos.pop();
+  const matches = [];
+  for(let i=0;i<vivos.length;i+=2){
+    matches.push({a:vivos[i], b:vivos[i+1], pa:null, pb:null});
+  }
+  state.elimRodadas.push({matches, bye});
+  save();
+}
+// true quando a rodada mais recente já foi totalmente registrada E o nº de vivas já
+// bateu (ou ficou abaixo d)a meta de qualificados — ou seja, dá para ir pro mata-mata.
+function elimProntoParaMataMata(){
+  const r = elimRodadaAtual();
+  if(!r || !elimRodadaCompleta(r)) return false;
+  return elimVivas().length <= (state.elimTarget||4);
+}
+function proximaPotenciaDeDois(n){
+  let p = 1;
+  while(p < n) p *= 2;
+  return Math.max(1,p);
+}
+// Fecha a fase de eliminação e monta a 1ª rodada do mata-mata com quem sobrou vivo.
+// Se a quantidade não for uma potência de 2 exata, completa com folgas (byes) distribuídas
+// aleatoriamente, usando o motor de chaveamento genérico já existente.
+function iniciarMataMataEliminacao(){
+  const vivas = shuffle(elimVivas());
+  const tamanhoBracket = proximaPotenciaDeDois(Math.max(2, vivas.length));
+  const comFolgas = vivas.slice();
+  while(comFolgas.length < tamanhoBracket) comFolgas.push(null);
+  state.bracketSeed = shuffle(comFolgas);
+  state.bracket = criarBracketVazio(tamanhoBracket);
+  state.terceiro = {pa:null, pb:null};
+  save();
+}
+function matamataPronto(){
+  return state.formato==="eliminacao" ? !!(state.bracketSeed && state.bracketSeed.length) : allGroupsFilled();
 }
 
 function resetTudo(){
@@ -964,7 +1062,9 @@ function allGroupsFilled(){
 }
 
 function winner(a,b,pa,pb){
-  if(a==null||b==null) return null;
+  if(a==null && b==null) return null;
+  if(a==null) return b; // folga (bye): b avança automaticamente, sem precisar jogar
+  if(b==null) return a;
   if(pa===null||pb===null||pa===""||pb==="") return null;
   const na=Number(pa), nb=Number(pb);
   if(na>nb) return a; if(nb>na) return b; return null;
@@ -986,6 +1086,12 @@ function totalRoundsBracket(){
 // Times da rodada 0 (primeira rodada do mata-mata), a partir da classificação dos grupos,
 // cruzando grupos dois a dois (1ºA×2ºB, 1ºB×2ºA, 1ºC×2ºD, 1ºD×2ºC, ...).
 function primeiraRodadaTeams(){
+  if(state.formato==="eliminacao"){
+    const seed = state.bracketSeed || [];
+    const teams = [];
+    for(let i=0;i<seed.length;i+=2) teams.push([seed[i]??null, seed[i+1]??null]);
+    return teams;
+  }
   const letters = groupLettersState();
   const nMatches = state.bracket[0] ? state.bracket[0].length : 0;
   if(!allGroupsFilled()) return Array.from({length:nMatches}, ()=>[null,null]);
@@ -1051,7 +1157,12 @@ function nomeRodada(r, totalRounds){
 }
 function faseAtual(){
   if(champion()) return "Encerrado";
-  if(!allGroupsFilled()) return state.drawn ? "Fase de Grupos" : "Sorteio pendente";
+  if(state.formato==="eliminacao"){
+    if(!state.drawn) return "Sorteio pendente";
+    if(!matamataPronto()) return `Eliminação · Rodada ${state.elimRodadas.length}`;
+  } else {
+    if(!allGroupsFilled()) return state.drawn ? "Fase de Grupos" : "Sorteio pendente";
+  }
   const rounds = totalRoundsBracket();
   for(let r=0; r<rounds; r++){
     const teams = bracketTeamsForRound(r);
@@ -1103,7 +1214,9 @@ function waLink(tel, msg){
    ARBITRAGEM (JUIZ DE PARTIDA)
 ============================================================ */
 function makeMatchId(round, idx){
-  return round==="terceiro" ? "terceiro" : `b${round}_${idx}`;
+  if(round==="terceiro") return "terceiro";
+  if(typeof round==="string" && round.startsWith("e")) return `${round}_${idx}`;
+  return `b${round}_${idx}`;
 }
 function matchIdIsElim(matchId){
   return !/^g\d+$/.test(matchId);
@@ -1111,6 +1224,8 @@ function matchIdIsElim(matchId){
 function getMatchObj(matchId){
   if(/^g\d+$/.test(matchId)) return state.groupMatches[Number(matchId.slice(1))];
   if(matchId==="terceiro") return state.terceiro;
+  const me = matchId.match(/^e(\d+)_(\d+)$/);
+  if(me) return state.elimRodadas[Number(me[1])].matches[Number(me[2])];
   const m = matchId.match(/^b(\d+)_(\d+)$/);
   if(m) return state.bracket[Number(m[1])][Number(m[2])];
   return null;
@@ -1118,6 +1233,8 @@ function getMatchObj(matchId){
 function getMatchTeams(matchId){
   if(/^g\d+$/.test(matchId)){ const mm = state.groupMatches[Number(matchId.slice(1))]; return [mm.a, mm.b]; }
   if(matchId==="terceiro") return semifinalLosers();
+  const me = matchId.match(/^e(\d+)_(\d+)$/);
+  if(me){ const mm = state.elimRodadas[Number(me[1])].matches[Number(me[2])]; return [mm.a, mm.b]; }
   const m = matchId.match(/^b(\d+)_(\d+)$/);
   if(m) return bracketTeamsForRound(Number(m[1]))[Number(m[2])];
   return [null,null];
@@ -1125,6 +1242,8 @@ function getMatchTeams(matchId){
 function getMatchLabel(matchId){
   if(/^g\d+$/.test(matchId)){ const mm = state.groupMatches[Number(matchId.slice(1))]; return `Grupo ${mm.group} · Jogo ${mm.jogo}`; }
   if(matchId==="terceiro") return "Disputa de 3º e 4º Lugar";
+  const me = matchId.match(/^e(\d+)_(\d+)$/);
+  if(me) return `Rodada ${Number(me[1])+1} · Jogo ${Number(me[2])+1}`;
   const m = matchId.match(/^b(\d+)_(\d+)$/);
   if(m){
     const r = Number(m[1]), i = Number(m[2]);
@@ -1317,19 +1436,30 @@ async function enviarTelegramTodos(silent){
 /* ---------- Notificações automáticas do mata-mata ---------- */
 function elimMatchList(){
   const list = [];
-  const rounds = totalRoundsBracket();
-  for(let r=0; r<rounds; r++){
-    const teams = bracketTeamsForRound(r);
-    const label = nomeRodada(r, rounds);
-    teams.forEach(([a,b],idx)=>{
-      list.push({round:r, idx, side:"a", faseLabel:label, nome:a, oponente:b});
-      list.push({round:r, idx, side:"b", faseLabel:label, nome:b, oponente:a});
+  if(state.formato==="eliminacao"){
+    state.elimRodadas.forEach((r, ri)=>{
+      const label = `Rodada ${ri+1}`;
+      r.matches.forEach((m, idx)=>{
+        list.push({round:`e${ri}`, idx, side:"a", faseLabel:label, nome:m.a, oponente:m.b});
+        list.push({round:`e${ri}`, idx, side:"b", faseLabel:label, nome:m.b, oponente:m.a});
+      });
     });
   }
-  if(state.terceiroLugar){
-    const [la,lb] = semifinalLosers();
-    list.push({round:"terceiro", idx:0, side:"a", faseLabel:"Disputa de 3º Lugar", nome:la, oponente:lb});
-    list.push({round:"terceiro", idx:0, side:"b", faseLabel:"Disputa de 3º Lugar", nome:lb, oponente:la});
+  if(matamataPronto()){
+    const rounds = totalRoundsBracket();
+    for(let r=0; r<rounds; r++){
+      const teams = bracketTeamsForRound(r);
+      const label = nomeRodada(r, rounds);
+      teams.forEach(([a,b],idx)=>{
+        list.push({round:r, idx, side:"a", faseLabel:label, nome:a, oponente:b});
+        list.push({round:r, idx, side:"b", faseLabel:label, nome:b, oponente:a});
+      });
+    }
+    if(state.terceiroLugar){
+      const [la,lb] = semifinalLosers();
+      list.push({round:"terceiro", idx:0, side:"a", faseLabel:"Disputa de 3º Lugar", nome:la, oponente:lb});
+      list.push({round:"terceiro", idx:0, side:"b", faseLabel:"Disputa de 3º Lugar", nome:lb, oponente:la});
+    }
   }
   return list;
 }
@@ -1449,9 +1579,21 @@ function renderStory(canvas, H){
     ctx.textAlign = "center";
     ctx.fillStyle = OCEAN_DEEP;
     ctx.font = "600 42px Arial, sans-serif";
-    ctx.fillText("Sorteie os grupos para", W/2, headerH+180);
+    ctx.fillText("Sorteie as duplas para", W/2, headerH+180);
     ctx.fillText("gerar a imagem do campeonato", W/2, headerH+240);
     cursorY = headerH+300;
+  } else if(state.formato==="eliminacao" && !matamataPronto()){
+    ctx.textAlign = "center";
+    ctx.fillStyle = OCEAN_DEEP;
+    ctx.font = "600 42px Arial, sans-serif";
+    ctx.fillText("Fase de eliminação", W/2, headerH+160);
+    ctx.fillText(`Rodada ${state.elimRodadas.length} em andamento`, W/2, headerH+220);
+    ctx.font = "600 30px Arial, sans-serif";
+    ctx.fillStyle = MUTED;
+    ctx.fillText(`${elimVivas().length} duplas seguem vivas`, W/2, headerH+280);
+    cursorY = headerH+340;
+  } else if(state.formato==="eliminacao"){
+    cursorY = drawBracket(ctx, W, headerH+80);
   } else {
     const groupsBottom = drawGroupsSection(ctx, W, headerH+80);
     cursorY = drawBracket(ctx, W, groupsBottom+50);
@@ -1723,7 +1865,7 @@ function downloadStoryImage(){
 }
 
 function pendingElimMessages(){
-  if(!state.drawn || !allGroupsFilled()) return [];
+  if(!state.drawn) return [];
   const pend = [];
   elimMatchList().forEach(({round, idx, side, faseLabel, nome, oponente})=>{
     if(!nome || !oponente) return;
@@ -1893,43 +2035,73 @@ function renderTorneiosScreen(){
 }
 
 function renderResumo(){
-  const jogosGrupo = state.groupMatches.filter(m=>m.pa!==null && m.pb!==null && m.pa!=="" && m.pb!=="").length;
   const elimTotal = state.bracket.reduce((acc,round)=>acc.concat(round), []);
   const elimFeitos = elimTotal.filter(m=>m.pa!==null&&m.pb!==null&&m.pa!==""&&m.pb!=="").length;
   const camp = champion();
 
-  let html = `
-    <div class="section-title">Resumo do Campeonato</div>
-    <div class="section-sub">Visão geral em tempo real, direto da fase de grupos ao título.</div>
-    <div class="stat-grid">
+  let html = `<div class="section-title">Resumo do Campeonato</div>
+    <div class="section-sub">Visão geral em tempo real, direto do sorteio ao título.</div>`;
+
+  if(state.formato==="eliminacao"){
+    const vivas = state.drawn ? elimVivas().length : 0;
+    html += `<div class="stat-grid">
+      <div class="stat ocean"><span class="num">${state.elimRodadas.length}</span><span class="lbl">Rodadas · Eliminação</span></div>
+      <div class="stat coral"><span class="num">${elimFeitos} / ${elimTotal.length}</span><span class="lbl">Jogos · Mata-mata</span></div>
+      <div class="stat ink"><span class="num" style="font-size:15px">${faseAtual()}</span><span class="lbl">Fase atual</span></div>
+      <div class="stat grass"><span class="num" style="font-size:15px">${camp || "A definir"}</span><span class="lbl">Campeão</span></div>
+    </div>`;
+
+    if(!state.drawn){
+      html += `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum sorteio realizado ainda.<br>Vá em <b>Duplas</b> para começar.</div>`;
+      return html;
+    }
+
+    html += `<div class="section-title" style="margin-top:6px;">Situação das duplas</div>`;
+    html += renderSituacaoEliminacaoLista();
+
+    const rodadaAtual = elimRodadaAtual();
+    if(rodadaAtual){
+      const pendentesRodada = rodadaAtual.matches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="").slice(0,3);
+      if(pendentesRodada.length){
+        html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
+        pendentesRodada.forEach(m=>{
+          html += `<div class="match"><span class="team">${escapeHtml(m.a)}</span><span class="x">vs</span><span class="team">${escapeHtml(m.b)}</span></div>`;
+        });
+        html += `</div>`;
+      }
+    }
+  } else {
+    const jogosGrupo = state.groupMatches.filter(m=>m.pa!==null && m.pb!==null && m.pa!=="" && m.pb!=="").length;
+    html += `<div class="stat-grid">
       <div class="stat ocean"><span class="num">${jogosGrupo} / ${state.groupMatches.length}</span><span class="lbl">Jogos · Grupos</span></div>
       <div class="stat coral"><span class="num">${elimFeitos} / ${elimTotal.length}</span><span class="lbl">Jogos · Mata-mata</span></div>
       <div class="stat ink"><span class="num" style="font-size:15px">${faseAtual()}</span><span class="lbl">Fase atual</span></div>
       <div class="stat grass"><span class="num" style="font-size:15px">${camp || "A definir"}</span><span class="lbl">Campeão</span></div>
     </div>`;
 
-  if(!state.drawn){
-    html += `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum sorteio realizado ainda.<br>Vá em <b>Duplas</b> para começar.</div>`;
-    return html;
-  }
+    if(!state.drawn){
+      html += `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum sorteio realizado ainda.<br>Vá em <b>Duplas</b> para começar.</div>`;
+      return html;
+    }
 
-  html += `<div class="section-title" style="margin-top:6px;">Classificação parcial</div>`;
-  groupLettersState().forEach(letter=>{
-    const rows = standingsFor(letter);
-    html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
-    rows.forEach((r,i)=>{
-      html += `<div class="name"><span class="dot" style="background:${i<2?'#4C9A64':'#C9B896'}"></span>${r.nome} <span style="margin-left:auto;font-family:'DM Mono',monospace;color:var(--muted);font-size:12px;">${r.pts} pts</span></div>`;
+    html += `<div class="section-title" style="margin-top:6px;">Classificação parcial</div>`;
+    groupLettersState().forEach(letter=>{
+      const rows = standingsFor(letter);
+      html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
+      rows.forEach((r,i)=>{
+        html += `<div class="name"><span class="dot" style="background:${i<2?'#4C9A64':'#C9B896'}"></span>${r.nome} <span style="margin-left:auto;font-family:'DM Mono',monospace;color:var(--muted);font-size:12px;">${r.pts} pts</span></div>`;
+      });
+      html += `</div></div>`;
     });
-    html += `</div></div>`;
-  });
 
-  const pendentes = state.groupMatches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="").slice(0,3);
-  if(pendentes.length){
-    html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
-    pendentes.forEach(m=>{
-      html += `<div class="match"><span class="group-tag">${m.group}${m.jogo}</span><span class="team">${m.a}</span><span class="x">vs</span><span class="team">${m.b}</span></div>`;
-    });
-    html += `</div>`;
+    const pendentes = state.groupMatches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="").slice(0,3);
+    if(pendentes.length){
+      html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
+      pendentes.forEach(m=>{
+        html += `<div class="match"><span class="group-tag">${m.group}${m.jogo}</span><span class="team">${m.a}</span><span class="x">vs</span><span class="team">${m.b}</span></div>`;
+      });
+      html += `</div>`;
+    }
   }
 
   html += `<div class="section-title" style="margin-top:14px;">Compartilhar</div>
@@ -1989,10 +2161,31 @@ function renderSorteio(){
 
   if(!state.drawn){
     html += `<div class="card">
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Quantidade de grupos</label>
-      <input type="number" min="1" step="1" id="input-num-grupos" value="${state.numGrupos}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
-      <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (1, 2, 4, 8...) e dividir a quantidade de duplas em partes iguais, com no mínimo 3 duplas por grupo. Os 2 primeiros de cada grupo avançam para o mata-mata.</div>
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:8px;">Formato do campeonato</label>
+      <div style="display:flex;gap:8px;">
+        <div class="chip ${state.formato!=="eliminacao"?"active":""}" data-formato="grupos" style="flex:1;text-align:center;">Por grupos</div>
+        <div class="chip ${state.formato==="eliminacao"?"active":""}" data-formato="eliminacao" style="flex:1;text-align:center;">Eliminação</div>
+      </div>
+      <div class="hint" style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;">
+        ${state.formato==="eliminacao"
+          ? "Todo mundo joga; quem perde 2 jogos é eliminado. Os sorteios acontecem rodada a rodada até sobrar a quantidade de duplas escolhida abaixo — que aí disputam o mata-mata."
+          : "Duplas divididas em grupos, todos jogam contra todos dentro do grupo; os 2 primeiros de cada grupo avançam para o mata-mata."}
+      </div>
     </div>`;
+
+    if(state.formato==="eliminacao"){
+      html += `<div class="card">
+        <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Duplas que avançam para o mata-mata</label>
+        <input type="number" min="2" step="1" id="input-elim-target" value="${state.elimTarget}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
+        <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (2, 4, 8...) e menor que a quantidade total de duplas.</div>
+      </div>`;
+    } else {
+      html += `<div class="card">
+        <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Quantidade de grupos</label>
+        <input type="number" min="1" step="1" id="input-num-grupos" value="${state.numGrupos}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
+        <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (1, 2, 4, 8...) e dividir a quantidade de duplas em partes iguais, com no mínimo 3 duplas por grupo. Os 2 primeiros de cada grupo avançam para o mata-mata.</div>
+      </div>`;
+    }
   }
 
   state.duplas.forEach((d,i)=>{
@@ -2015,7 +2208,21 @@ function renderSorteio(){
     if(!cfg.ok){
       html += `<div class="card" style="border-color:var(--coral);color:var(--coral);font-size:12.5px;margin-bottom:14px;">⚠️ ${escapeHtml(cfg.msg)}</div>`;
     }
-    html += `<button class="btn" id="btn-sortear" ${cfg.ok?"":'disabled style="opacity:.5;"'}>Sortear grupos 🏐</button>`;
+    const labelBtn = state.formato==="eliminacao" ? "Sortear 1ª rodada 🏐" : "Sortear grupos 🏐";
+    html += `<button class="btn" id="btn-sortear" ${cfg.ok?"":'disabled style="opacity:.5;"'}>${labelBtn}</button>`;
+  } else if(state.formato==="eliminacao"){
+    html += `<div class="card" style="text-align:center;">
+      <div style="font-weight:700;color:var(--ocean-deep);margin-bottom:4px;">✅ 1ª rodada sorteada</div>
+      <div class="section-sub" style="margin:0;">Acompanhe as rodadas, registre os resultados e sorteie as próximas etapas na aba <b>Jogos</b>.</div>
+    </div>`;
+
+    const botOk = !!(state.telegramBot||"").trim();
+    if(botOk){
+      html += `<div class="bulk-row">
+        <button class="btn secondary" id="btn-tg-refresh" style="width:auto;flex:1;">🔄 Atualizar status</button>
+        <button class="btn" id="btn-tg-all" style="width:auto;flex:1;background:#2AABEE;box-shadow:none;">📲 Enviar todas (Telegram)</button>
+      </div>`;
+    }
   } else {
     html += `<button class="btn secondary" id="btn-resortear">Sortear novamente</button>`;
     html += `<div class="section-title" style="margin-top:18px;">Grupos sorteados</div>`;
@@ -2059,10 +2266,94 @@ function renderSorteio(){
   return html;
 }
 
+function renderSituacaoEliminacaoLista(){
+  const perdas = elimPerdasPorDupla();
+  const nomes = duplasNomes();
+  let html = `<div class="card">`;
+  nomes.slice().sort((a,b)=> (perdas[a]||0) - (perdas[b]||0)).forEach(nome=>{
+    const l = perdas[nome] || 0;
+    const cor = l>=2 ? "#C0392B" : (l===1 ? "#F2652A" : "#4C9A64");
+    const status = l>=2 ? "❌ Eliminada" : (l===1 ? "⚠️ 1 derrota" : "✅ Sem derrotas");
+    html += `<div class="name"><span class="dot" style="background:${cor}"></span>${escapeHtml(nome)} <span style="margin-left:auto;font-size:11.5px;color:var(--muted);">${status}</span></div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+function renderRodadasEliminacao(){
+  let html = `
+    <div class="section-title">Rodadas · Eliminação</div>
+    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. As duplas que sobrarem avançam para o mata-mata.</div>`;
+
+  const pendentes = pendingElimMessages().filter(p=>String(p.key).startsWith("e"));
+  if(pendentes.length){
+    html += `<div class="card" style="border:1.5px solid var(--coral);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <div style="font-weight:700;font-size:13.5px;color:var(--coral);">📣 ${pendentes.length} mensage${pendentes.length>1?'ns':'m'} pendente${pendentes.length>1?'s':''}</div>
+        <button class="btn ghost" id="btn-clear-pendentes" style="width:auto;padding:4px 10px;font-size:11.5px;">Limpar</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;">Telegram já tentou enviar automaticamente para quem ativou. Estes aqui precisam do seu toque no WhatsApp.</div>`;
+    pendentes.forEach(p=>{
+      const baseMsg = mensagemMataMata(p.faseLabel, p.nome, p.oponente);
+      html += `<div style="margin-bottom:10px;">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:4px;">${escapeHtml(p.nome)} <span style="color:var(--muted);font-weight:500;">· ${p.faseLabel} vs ${escapeHtml(p.oponente)}</span></div>
+        ${renderContatoBlock(p.i, p.slot, p.tel, baseMsg, p.key)}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  state.elimRodadas.forEach((r, ri)=>{
+    html += `<div class="group-card"><div class="group-head">Rodada ${ri+1}</div><div class="group-body">`;
+    r.matches.forEach((m, mi)=>{
+      const win = winner(m.a,m.b,m.pa,m.pb);
+      const matchId = `e${ri}_${mi}`;
+      html += `<div class="match">
+        <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="a" value="${m.pa??""}">
+        <span class="x">×</span>
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="b" value="${m.pb??""}">
+        <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
+      </div>
+      <div class="ref-actions-row">
+        <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
+        <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
+      </div>`;
+    });
+    if(r.bye) html += `<div class="tiebreak-note">🎟️ ${escapeHtml(r.bye)} folgou nesta rodada (avança direto, sem jogar).</div>`;
+    html += `</div></div>`;
+  });
+
+  const rodadaAtual = elimRodadaAtual();
+  const completa = elimRodadaCompleta(rodadaAtual);
+  const vivas = elimVivas();
+  const meta = state.elimTarget || 4;
+
+  if(!completa){
+    html += `<div class="card empty" style="padding:16px;">Registre os resultados de todos os jogos da rodada para liberar a próxima etapa.</div>`;
+  } else if(!matamataPronto() && vivas.length > meta){
+    html += `<button class="btn" id="btn-sortear-proxima-rodada">Sortear rodada ${state.elimRodadas.length+1} 🏐</button>
+      <div class="tiebreak-note" style="text-align:center;">${vivas.length} duplas seguem vivas · meta: ${meta} para o mata-mata.</div>`;
+  } else if(!matamataPronto()){
+    html += `<div class="champion-banner" style="background:linear-gradient(150deg,var(--grass),#2E6E42);">
+        <div class="eyebrow">Fase de eliminação concluída</div>
+        <div class="name" style="font-size:22px;">${vivas.length} dupla${vivas.length>1?'s':''} classificada${vivas.length>1?'s':''}</div>
+      </div>
+      <button class="btn" id="btn-iniciar-matamata-elim">Ir para o mata-mata 🏆</button>`;
+  } else {
+    html += `<div class="tiebreak-note" style="text-align:center;">Fase de eliminação concluída — acompanhe o chaveamento na aba Mata-mata.</div>`;
+  }
+
+  html += `<div class="section-title" style="margin-top:18px;">Situação das duplas</div>`;
+  html += renderSituacaoEliminacaoLista();
+  return html;
+}
+
 function renderJogos(){
   if(!state.drawn){
-    return `<div class="section-title">Jogos</div><div class="card empty"><span class="ball-icon">🏐</span>Sorteie os grupos primeiro na aba Duplas.</div>`;
+    return `<div class="section-title">Jogos</div><div class="card empty"><span class="ball-icon">🏐</span>Sorteie na aba Duplas primeiro.</div>`;
   }
+  if(state.formato==="eliminacao") return renderRodadasEliminacao();
   const filters = [["todos","Todos"],["pendentes","Pendentes"],["realizados","Realizados"]];
   let html = `
     <div class="section-title">Fase de Grupos</div>
@@ -2102,7 +2393,12 @@ function renderJogos(){
 
 function renderClassificacao(){
   if(!state.drawn){
-    return `<div class="section-title">Classificação</div><div class="card empty"><span class="ball-icon">🏐</span>Sorteie os grupos primeiro na aba Duplas.</div>`;
+    return `<div class="section-title">Classificação</div><div class="card empty"><span class="ball-icon">🏐</span>Sorteie na aba Duplas primeiro.</div>`;
+  }
+  if(state.formato==="eliminacao"){
+    return `<div class="section-title">Situação das duplas</div>
+      <div class="section-sub">Cada derrota conta; ao completar 2, a dupla é eliminada da fase de eliminação.</div>
+      ${renderSituacaoEliminacaoLista()}`;
   }
   let html = `
     <div class="section-title">Classificação</div>
@@ -2127,14 +2423,19 @@ function renderClassificacao(){
 }
 
 function renderMataMata(){
-  if(!allGroupsFilled()){
-    return `<div class="section-title">Mata-mata</div><div class="card empty"><span class="ball-icon">🏐</span>O chaveamento aparece aqui quando todos os jogos da fase de grupos forem concluídos.</div>`;
+  if(!matamataPronto()){
+    const dica = state.formato==="eliminacao"
+      ? "O chaveamento aparece aqui quando a fase de eliminação (aba Jogos) terminar."
+      : "O chaveamento aparece aqui quando todos os jogos da fase de grupos forem concluídos.";
+    return `<div class="section-title">Mata-mata</div><div class="card empty"><span class="ball-icon">🏐</span>${dica}</div>`;
   }
   const camp = champion();
   const rounds = totalRoundsBracket();
   let html = `<div class="section-title">Mata-mata</div>
     <div class="section-sub">
-      1º e 2º de cada grupo se cruzam na primeira rodada do mata-mata; a partir daí, os vencedores avançam até a final.${state.terceiroLugar ? `<br><b>3º/4º lugar:</b> perdedores da semifinal` : ``}
+      ${state.formato==="eliminacao"
+        ? "As duplas classificadas na fase de eliminação disputam o mata-mata a partir daqui."
+        : "1º e 2º de cada grupo se cruzam na primeira rodada do mata-mata; a partir daí, os vencedores avançam até a final."}${state.terceiroLugar ? `<br><b>3º/4º lugar:</b> perdedores da semifinal` : ``}
     </div>
     <div class="card" style="padding:10px 14px;margin-bottom:12px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ocean-deep);cursor:pointer;">
@@ -2248,9 +2549,10 @@ function renderApito(){
 }
 
 function bracketMatchHtml(label, faseLabel, round, idx, a, b, pa, pb){
-  const win = (a && b) ? winner(a,b,pa,pb) : null;
+  const win = (a || b) ? winner(a,b,pa,pb) : null;
   const teamBlock = (nome, oponente, side, isWin)=>{
-    if(!nome) return `<div class="bracket-row"><span class="team tbd">Aguardando resultados</span></div>`;
+    if(!nome) return `<div class="bracket-row"><span class="team tbd">${oponente ? "— Folga —" : "Aguardando resultados"}</span></div>`;
+    if(!oponente) return `<div class="bracket-row"><span class="team win">${escapeHtml(nome)}</span><span class="tg-status ok" style="flex-shrink:0;">🎟️ Folga</span></div>`;
     const scoreVal = side==="a" ? (pa??"") : (pb??"");
     const di = duplaIndexByName(nome);
     let contatos = "";
@@ -2366,10 +2668,22 @@ function bindEvents(){
     state.numGrupos = v>0 ? v : 1;
     save(); render();
   });
+  main.querySelectorAll("[data-formato]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      state.formato = el.dataset.formato;
+      save(); render();
+    });
+  });
+  const inputElimTarget = document.getElementById("input-elim-target");
+  if(inputElimTarget) inputElimTarget.addEventListener("change", e=>{
+    const v = Number(e.target.value);
+    state.elimTarget = v>1 ? v : 2;
+    save(); render();
+  });
   const btnSortear = document.getElementById("btn-sortear");
   if(btnSortear) btnSortear.addEventListener("click", async ()=>{
-    if(!configuracaoValida().ok){ showToast("Ajuste a quantidade de duplas/grupos antes de sortear."); return; }
-    sortear(); render(); showToast("Grupos sorteados!");
+    if(!configuracaoValida().ok){ showToast("Ajuste a configuração antes de sortear."); return; }
+    sortear(); render(); showToast(state.formato==="eliminacao" ? "1ª rodada sorteada!" : "Grupos sorteados!");
     await refreshTelegramStatus();
     await enviarTelegramTodos(true);
   });
@@ -2380,6 +2694,21 @@ function bindEvents(){
       await refreshTelegramStatus();
       await enviarTelegramTodos(true);
     }
+  });
+  const btnSortearProximaRodada = document.getElementById("btn-sortear-proxima-rodada");
+  if(btnSortearProximaRodada) btnSortearProximaRodada.addEventListener("click", async ()=>{
+    sortearRodadaEliminacao(); render(); showToast(`Rodada ${state.elimRodadas.length} sorteada!`);
+    await refreshTelegramStatus();
+    await enviarTelegramTodos(true);
+  });
+  const btnIniciarMataMataElim = document.getElementById("btn-iniciar-matamata-elim");
+  if(btnIniciarMataMataElim) btnIniciarMataMataElim.addEventListener("click", async ()=>{
+    iniciarMataMataEliminacao();
+    state.tab = "matamata";
+    save(); render();
+    showToast("Mata-mata definido!");
+    await refreshTelegramStatus();
+    await enviarTelegramTodos(true);
   });
   const btnReset = document.getElementById("btn-reset");
   if(btnReset) btnReset.addEventListener("click", ()=>{
@@ -2406,6 +2735,20 @@ function bindEvents(){
       const gm = Number(e.target.dataset.gm);
       const side = e.target.dataset.side;
       state.groupMatches[gm][side==="a"?"pa":"pb"] = e.target.value===""?"":e.target.value;
+      save();
+      render();
+      checkElimNotifications();
+    });
+    inp.addEventListener("keydown", e=>{
+      if(e.key==="Enter") e.target.blur();
+    });
+  });
+
+  main.querySelectorAll("input[data-erm]").forEach(inp=>{
+    inp.addEventListener("change", e=>{
+      const [ri, mi] = e.target.dataset.erm.split("_").map(Number);
+      const side = e.target.dataset.side;
+      state.elimRodadas[ri].matches[mi][side==="a"?"pa":"pb"] = e.target.value===""?"":e.target.value;
       save();
       render();
       checkElimNotifications();
