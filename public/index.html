@@ -557,6 +557,12 @@ function migrarBracketAntigo(s){
 
 let state = load();
 const AUTH_KEY = "futevolei_auth_v1";
+// Mesmo e-mail fixo do "Acesso de teste" (senha 123456) no worker.ts — quem entra com essa conta
+// vê e edita os torneios de qualquer organizador, tanto na nuvem quanto na reserva local.
+const ADMIN_EMAIL = "admin@local.teste";
+function ehAdmin(){
+  return !!auth && (auth.email||"").trim().toLowerCase() === ADMIN_EMAIL;
+}
 function loadAuth(){
   try{ return JSON.parse(localStorage.getItem(AUTH_KEY)); }catch(e){ return null; }
 }
@@ -726,7 +732,7 @@ async function fetchTorneiosList(){
     const db = getLocalTorneiosDB();
     const meuEmail = (auth.email||"").trim().toLowerCase();
     torneiosList = Object.values(db)
-      .filter(t=> (t.ownerEmail||"").trim().toLowerCase() === meuEmail)
+      .filter(t=> ehAdmin() || (t.ownerEmail||"").trim().toLowerCase() === meuEmail)
       .map(t=>({
         id:t.id, nome:t.nome, status:t.status, ownerEmail:t.ownerEmail, ownerName:t.ownerName, updatedAt:t.updatedAt
       }));
@@ -774,7 +780,7 @@ async function abrirTorneio(id){
     const db = getLocalTorneiosDB();
     const local = db[id];
     const meuEmail = (auth.email||"").trim().toLowerCase();
-    if(local && local.state && (local.ownerEmail||"").trim().toLowerCase()===meuEmail){
+    if(local && local.state && (ehAdmin() || (local.ownerEmail||"").trim().toLowerCase()===meuEmail)){
       abrirTorneioComDados(local);
     } else {
       showToast("Não foi possível carregar esse torneio.");
@@ -833,7 +839,7 @@ async function excluirTorneio(id, nome){
   }
   const db = getLocalTorneiosDB();
   const meuEmail = (auth.email||"").trim().toLowerCase();
-  if(db[id] && (db[id].ownerEmail||"").trim().toLowerCase()===meuEmail){ delete db[id]; setLocalTorneiosDB(db); }
+  if(db[id] && (ehAdmin() || (db[id].ownerEmail||"").trim().toLowerCase()===meuEmail)){ delete db[id]; setLocalTorneiosDB(db); }
 
   if(state.cloudId === id){
     state.cloudId = null;
@@ -2033,7 +2039,7 @@ function renderTorneiosScreen(){
       <button class="btn ghost" id="btn-logout" style="width:auto;padding:7px 14px;">Sair</button>
     </div>
     <div class="section-title">Torneios</div>
-    <div class="section-sub">Criados por você e por qualquer pessoa do seu grupo que já entrou no app.</div>
+    <div class="section-sub">${ehAdmin() ? "👑 Modo admin — exibindo os torneios de todas as contas." : "Torneios criados por você."}</div>
     <button class="btn" id="btn-novo-torneio" style="margin-bottom:18px;">➕ Criar novo torneio</button>`;
 
   const localOrfao = !state.cloudId && state.drawn;
