@@ -1007,10 +1007,21 @@ function elimRodadaCompleta(rodada){
 // melhor descansa, em vez de arriscar à toa.
 function sortearRodadaEliminacao(){
   const vitorias = elimVitoriasPorDupla();
+  const perdas = elimPerdasPorDupla();
   const vivos = shuffle(elimVivas());
   vivos.sort((a,b)=> (vitorias[a]||0) - (vitorias[b]||0));
   let bye = null;
-  if(vivos.length % 2 === 1) bye = vivos.pop(); // fica no fim da lista = quem tem mais vitórias
+  if(vivos.length % 2 === 1){
+    // Folga vai para quem tem mais vitórias entre os vivos; empatando em vitórias, para quem tem menos derrotas.
+    let idxBye = 0;
+    for(let i=1;i<vivos.length;i++){
+      const cand = vivos[i], atual = vivos[idxBye];
+      const vCand = vitorias[cand]||0, vAtual = vitorias[atual]||0;
+      const pCand = perdas[cand]||0, pAtual = perdas[atual]||0;
+      if(vCand > vAtual || (vCand===vAtual && pCand < pAtual)) idxBye = i;
+    }
+    bye = vivos.splice(idxBye,1)[0];
+  }
   const matches = [];
   for(let i=0;i<vivos.length;i+=2){
     matches.push({a:vivos[i], b:vivos[i+1], pa:null, pb:null});
@@ -2183,7 +2194,7 @@ function renderSorteio(){
       </div>
       <div class="hint" style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;">
         ${state.formato==="eliminacao"
-          ? "Todo mundo joga; quem perde 2 jogos é eliminado. Os confrontos priorizam quem tem menos vitórias, e quem tem mais vitórias folga nas rodadas com número ímpar. Os sorteios acontecem rodada a rodada até sobrar a quantidade de duplas escolhida abaixo — que aí disputam o mata-mata."
+          ? "Todo mundo joga; quem perde 2 jogos é eliminado. Os confrontos priorizam quem tem menos vitórias, e quem tem mais vitórias (e menos derrotas, em caso de empate) folga nas rodadas com número ímpar. Os sorteios acontecem rodada a rodada até sobrar a quantidade de duplas escolhida abaixo — que aí disputam o mata-mata."
           : "Duplas divididas em grupos, todos jogam contra todos dentro do grupo; os 2 primeiros de cada grupo avançam para o mata-mata."}
       </div>
     </div>`;
@@ -2337,7 +2348,7 @@ function renderRodadasEliminacao(){
         <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
       </div>`;
     });
-    if(r.bye) html += `<div class="tiebreak-note">🎟️ ${escapeHtml(r.bye)} folgou nesta rodada (mais vitórias entre os vivos — avança direto, sem jogar).</div>`;
+    if(r.bye) html += `<div class="tiebreak-note">🎟️ ${escapeHtml(r.bye)} folgou nesta rodada (mais vitórias e menos derrotas entre os vivos — avança direto, sem jogar).</div>`;
     html += `</div></div>`;
   });
 
