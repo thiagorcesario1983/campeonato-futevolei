@@ -88,22 +88,6 @@
     z-index:1;
     text-shadow: 0 2px 10px rgba(0,0,0,.35);
   }
-  .net-divider{
-    display:flex;
-    align-items:center;
-    gap:6px;
-    margin:14px 0 0;
-  }
-  .net-divider .pole{width:3px;height:16px;background:rgba(255,255,255,.55);border-radius:1px;}
-  .net-divider .dashes{
-    flex:1;
-    height:0;
-    border-top:3px dashed rgba(255,255,255,.55);
-  }
-  .net-divider .ball{
-    width:10px;height:10px;border-radius:50%;background:var(--coral);
-    box-shadow:0 0 0 2px rgba(255,255,255,.7);
-  }
 
   /* ---------- Content ---------- */
   main{
@@ -501,7 +485,6 @@
       <div class="eyebrow" id="header-eyebrow">Beach Sports Club</div>
       <h1 id="header-title">Futevôlei</h1>
       <div id="torneio-bar"></div>
-      <div class="net-divider"><span class="pole"></span><span class="dashes"></span><span class="ball"></span><span class="dashes"></span><span class="pole"></span></div>
     </header>
     <main id="main"></main>
     <div class="toast" id="toast"></div>
@@ -1635,6 +1618,29 @@ function limparPendenciasElim(){
 const main = document.getElementById("main");
 
 /* ---------- Story (imagem para compartilhar) ---------- */
+let __storyHeaderImgCache = { src: null, img: null };
+// Carrega (com cache) a imagem do topo configurada para este torneio, pra usar de fundo no Story.
+// Como carregar uma imagem é assíncrono, na primeira chamada ainda não há nada pra desenhar —
+// quando ela terminar de carregar, o próprio onload manda redesenhar o canvas.
+function getStoryHeaderImage(){
+  if(!state.headerImage) return null;
+  if(__storyHeaderImgCache.src === state.headerImage) return __storyHeaderImgCache.img;
+  const img = new Image();
+  __storyHeaderImgCache = { src: state.headerImage, img: null };
+  img.onload = ()=>{ __storyHeaderImgCache.img = img; drawStoryCanvas(); };
+  img.src = state.headerImage;
+  return null;
+}
+// Desenha "cobrindo" o retângulo de destino (mesmo efeito do CSS background-size:cover),
+// cortando o excesso da imagem em vez de distorcer.
+function drawImageCover(ctx, img, dx, dy, dw, dh){
+  const ir = img.width/img.height, dr = dw/dh;
+  let sx, sy, sw, sh;
+  if(ir > dr){ sh = img.height; sw = sh*dr; sx = (img.width-sw)/2; sy = 0; }
+  else { sw = img.width; sh = sw/dr; sx = 0; sy = (img.height-sh)/2; }
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+}
+
 function drawStoryCanvas(){
   const canvas = document.getElementById("story-canvas");
   if(!canvas) return;
@@ -1648,18 +1654,28 @@ function renderStory(canvas, H){
   canvas.height = H;
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
-  const OCEAN = "#0E7C7B", OCEAN_DEEP = "#0B3C49", SAND = "#EDE3CC", CORAL = "#F2652A", WHITE = "#FFFCF6", MUTED = "#6B7C7A";
+  const OCEAN = "#0E7C7B", OCEAN_DEEP = "#0B3C49", SAND = "#EDE3CC", WHITE = "#FFFCF6", MUTED = "#6B7C7A";
 
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle = SAND;
   ctx.fillRect(0,0,W,H);
 
   const headerH = 300;
-  const grad = ctx.createLinearGradient(0,0,W,headerH);
-  grad.addColorStop(0, OCEAN);
-  grad.addColorStop(1, OCEAN_DEEP);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,W,headerH);
+  const headerImg = getStoryHeaderImage();
+  if(headerImg){
+    drawImageCover(ctx, headerImg, 0, 0, W, headerH);
+    const overlay = ctx.createLinearGradient(0,0,0,headerH);
+    overlay.addColorStop(0, "rgba(11,60,73,.45)");
+    overlay.addColorStop(1, "rgba(11,60,73,.65)");
+    ctx.fillStyle = overlay;
+    ctx.fillRect(0,0,W,headerH);
+  } else {
+    const grad = ctx.createLinearGradient(0,0,W,headerH);
+    grad.addColorStop(0, OCEAN);
+    grad.addColorStop(1, OCEAN_DEEP);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,headerH);
+  }
 
   ctx.textAlign = "center";
   ctx.fillStyle = "rgba(255,255,255,.75)";
@@ -1669,21 +1685,6 @@ function renderStory(canvas, H){
   ctx.fillStyle = WHITE;
   ctx.font = "bold 96px Arial, sans-serif";
   ctx.fillText("FUTEVÔLEI", W/2, 190);
-
-  const netY = 250;
-  ctx.strokeStyle = "rgba(255,255,255,.6)";
-  ctx.lineWidth = 5;
-  ctx.setLineDash([22,16]);
-  ctx.beginPath();
-  ctx.moveTo(140, netY);
-  ctx.lineTo(W-140, netY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = CORAL;
-  ctx.beginPath(); ctx.arc(W/2, netY, 18, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = OCEAN_DEEP;
-  ctx.fillRect(130, netY-36, 10, 72);
-  ctx.fillRect(W-140, netY-36, 10, 72);
 
   let cursorY;
   if(!state.drawn){
