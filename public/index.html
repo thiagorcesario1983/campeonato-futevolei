@@ -978,6 +978,17 @@ function elimPerdasPorDupla(){
 }
 function elimPerdasDe(nome){ return elimPerdasPorDupla()[nome] || 0; }
 function elimEliminada(nome){ return elimPerdasDe(nome) >= 2; }
+// Nº de vitórias de cada dupla, somando todas as rodadas já sorteadas (mesmo princípio de elimPerdasPorDupla).
+function elimVitoriasPorDupla(){
+  const vitorias = {};
+  state.elimRodadas.forEach(r=>{
+    r.matches.forEach(m=>{
+      const w = winner(m.a, m.b, m.pa, m.pb);
+      if(w) vitorias[w] = (vitorias[w]||0) + 1;
+    });
+  });
+  return vitorias;
+}
 // Duplas ainda vivas (0 ou 1 derrota) — são elas que entram no sorteio da próxima rodada
 // e, quando atingirem a meta de qualificados, avançam direto pro mata-mata.
 function elimVivas(){
@@ -990,12 +1001,16 @@ function elimRodadaCompleta(rodada){
   if(!rodada) return true;
   return rodada.matches.every(m => m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="");
 }
-// Sorteia uma nova rodada entre as duplas vivas. Se o nº de vivas for ímpar, uma delas folga
-// nesta rodada (avança sem jogar e sem correr risco de derrota).
+// Sorteia uma nova rodada entre as duplas vivas, priorizando confrontos entre quem tem menos
+// vitórias (ordena por vitórias, com desempate aleatório, e casa vizinhos dessa ordem). Se o nº
+// de vivas for ímpar, a folga vai para quem tem MAIS vitórias entre os vivos — quem está indo
+// melhor descansa, em vez de arriscar à toa.
 function sortearRodadaEliminacao(){
+  const vitorias = elimVitoriasPorDupla();
   const vivos = shuffle(elimVivas());
+  vivos.sort((a,b)=> (vitorias[a]||0) - (vitorias[b]||0));
   let bye = null;
-  if(vivos.length % 2 === 1) bye = vivos.pop();
+  if(vivos.length % 2 === 1) bye = vivos.pop(); // fica no fim da lista = quem tem mais vitórias
   const matches = [];
   for(let i=0;i<vivos.length;i+=2){
     matches.push({a:vivos[i], b:vivos[i+1], pa:null, pb:null});
@@ -2168,7 +2183,7 @@ function renderSorteio(){
       </div>
       <div class="hint" style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;">
         ${state.formato==="eliminacao"
-          ? "Todo mundo joga; quem perde 2 jogos é eliminado. Os sorteios acontecem rodada a rodada até sobrar a quantidade de duplas escolhida abaixo — que aí disputam o mata-mata."
+          ? "Todo mundo joga; quem perde 2 jogos é eliminado. Os confrontos priorizam quem tem menos vitórias, e quem tem mais vitórias folga nas rodadas com número ímpar. Os sorteios acontecem rodada a rodada até sobrar a quantidade de duplas escolhida abaixo — que aí disputam o mata-mata."
           : "Duplas divididas em grupos, todos jogam contra todos dentro do grupo; os 2 primeiros de cada grupo avançam para o mata-mata."}
       </div>
     </div>`;
@@ -2268,13 +2283,15 @@ function renderSorteio(){
 
 function renderSituacaoEliminacaoLista(){
   const perdas = elimPerdasPorDupla();
+  const vitorias = elimVitoriasPorDupla();
   const nomes = duplasNomes();
   let html = `<div class="card">`;
-  nomes.slice().sort((a,b)=> (perdas[a]||0) - (perdas[b]||0)).forEach(nome=>{
+  nomes.slice().sort((a,b)=> (perdas[a]||0)-(perdas[b]||0) || (vitorias[b]||0)-(vitorias[a]||0)).forEach(nome=>{
     const l = perdas[nome] || 0;
+    const v = vitorias[nome] || 0;
     const cor = l>=2 ? "#C0392B" : (l===1 ? "#F2652A" : "#4C9A64");
     const status = l>=2 ? "❌ Eliminada" : (l===1 ? "⚠️ 1 derrota" : "✅ Sem derrotas");
-    html += `<div class="name"><span class="dot" style="background:${cor}"></span>${escapeHtml(nome)} <span style="margin-left:auto;font-size:11.5px;color:var(--muted);">${status}</span></div>`;
+    html += `<div class="name"><span class="dot" style="background:${cor}"></span>${escapeHtml(nome)} <span style="margin-left:auto;font-size:11.5px;color:var(--muted);">${v}V · ${status}</span></div>`;
   });
   html += `</div>`;
   return html;
@@ -2283,7 +2300,7 @@ function renderSituacaoEliminacaoLista(){
 function renderRodadasEliminacao(){
   let html = `
     <div class="section-title">Rodadas · Eliminação</div>
-    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. As duplas que sobrarem avançam para o mata-mata.</div>`;
+    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. Os confrontos priorizam quem tem menos vitórias; em rodada com número ímpar, quem tem mais vitórias folga. As duplas que sobrarem avançam para o mata-mata.</div>`;
 
   const pendentes = pendingElimMessages().filter(p=>String(p.key).startsWith("e"));
   if(pendentes.length){
@@ -2320,7 +2337,7 @@ function renderRodadasEliminacao(){
         <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
       </div>`;
     });
-    if(r.bye) html += `<div class="tiebreak-note">🎟️ ${escapeHtml(r.bye)} folgou nesta rodada (avança direto, sem jogar).</div>`;
+    if(r.bye) html += `<div class="tiebreak-note">🎟️ ${escapeHtml(r.bye)} folgou nesta rodada (mais vitórias entre os vivos — avança direto, sem jogar).</div>`;
     html += `</div></div>`;
   });
 
