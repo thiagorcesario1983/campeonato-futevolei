@@ -274,6 +274,34 @@ async function torneiosDelete(request: Request, env: Env): Promise<Response> {
 }
 
 /* ============================================================
+   CONFIGURAÇÕES GLOBAIS DO APP (só o admin pode alterar)
+============================================================ */
+async function configGet(_request: Request, env: Env): Promise<Response> {
+  const googleClientId = (await env.DB.get("config:google_client_id")) || null;
+  return json({ googleClientId });
+}
+
+async function configSet(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const solicitanteEmail = normEmail(body.email);
+  if (!ehAdmin(solicitanteEmail)) {
+    return json({ error: "Só o admin pode alterar as configurações do app" }, 403);
+  }
+
+  if (typeof body.googleClientId === "string") {
+    await env.DB.put("config:google_client_id", body.googleClientId.trim());
+  }
+
+  return json({ ok: true });
+}
+
+/* ============================================================
    ROTEAMENTO
 ============================================================ */
 export default {
@@ -307,6 +335,12 @@ export default {
       return method === "POST" || method === "DELETE"
         ? torneiosDelete(request, env)
         : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/config-get") {
+      return configGet(request, env);
+    }
+    if (path === "/api/config-set") {
+      return method === "POST" ? configSet(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path.startsWith("/api/")) {
       return new Response("Not found", { status: 404 });
