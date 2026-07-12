@@ -147,6 +147,14 @@ function normEmail(v: unknown): string {
   return String(v || "").trim().toLowerCase();
 }
 
+// E-mail fixo usado pelo login de teste ("Acesso de teste", senha 123456) do próprio app.
+// Quem entra com essa conta pode ver e editar os torneios de qualquer organizador —
+// é o "modo admin" local, pensado pra quem administra o app no seu próprio grupo.
+const ADMIN_EMAIL = "admin@local.teste";
+function ehAdmin(email: string): boolean {
+  return email === ADMIN_EMAIL;
+}
+
 async function torneiosSave(request: Request, env: Env): Promise<Response> {
   let body: any;
   try {
@@ -163,8 +171,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   const index = await getIndex(env);
   const existing = index.find((t: any) => t.id === id);
 
-  // Só o dono original pode atualizar um torneio já existente.
-  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail) {
+  // Só o dono original (ou o admin) pode atualizar um torneio já existente.
+  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail)) {
     return json({ error: "Sem permissão para alterar este torneio" }, 403);
   }
 
@@ -196,7 +204,9 @@ async function torneiosList(request: Request, env: Env): Promise<Response> {
   if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
 
   const index = await getIndex(env);
-  const meus = index.filter((t: any) => normEmail(t.ownerEmail) === solicitanteEmail);
+  const meus = ehAdmin(solicitanteEmail)
+    ? index
+    : index.filter((t: any) => normEmail(t.ownerEmail) === solicitanteEmail);
   return json({ torneios: meus });
 }
 
@@ -211,7 +221,7 @@ async function torneiosGet(request: Request, env: Env): Promise<Response> {
   if (!raw) return json({ error: "não encontrado" }, 404);
 
   const dados = JSON.parse(raw);
-  if (normEmail(dados.ownerEmail) !== solicitanteEmail) {
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail)) {
     return json({ error: "Sem permissão para ver este torneio" }, 403);
   }
 
@@ -248,7 +258,7 @@ async function torneiosDelete(request: Request, env: Env): Promise<Response> {
 
   const index = await getIndex(env);
   const existing = index.find((t: any) => t.id === id);
-  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail) {
+  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail)) {
     return json({ error: "Sem permissão para excluir este torneio" }, 403);
   }
 
