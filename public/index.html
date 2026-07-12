@@ -514,16 +514,13 @@ const STORAGE_KEY = "futevolei_state_v1";
 function defaultState(){
   return {
     tab: "resumo",
-    duplas: Array.from({length:12}, (_,i)=>({nome:`Dupla ${i+1}`, tel1:"", tel2:"", nomeDefault:true})),
+    duplas: Array.from({length:6}, (_,i)=>({nome:`Dupla ${i+1}`, tel1:"", tel2:"", nomeDefault:true})),
+    numGrupos: 4, // quantidade de grupos escolhida antes do sorteio (deve dividir a qtde de duplas igualmente)
     drawn: false,
-    groups: [], // [[nome,nome,nome], ...] x4 (A,B,C,D)
+    groups: [], // [[nomes do grupo 0], [grupo 1], ...] — quantidade e tamanho dinâmicos
     groupMatches: [], // {group,jogo,a,b,pa,pb}
-    elim: {
-      qf: [{pa:null,pb:null},{pa:null,pb:null},{pa:null,pb:null},{pa:null,pb:null}],
-      sf: [{pa:null,pb:null},{pa:null,pb:null}],
-      final: {pa:null,pb:null},
-      terceiro: {pa:null,pb:null}
-    },
+    bracket: [], // [[{pa,pb}, ...], [...], ...] — cada posição é uma rodada do mata-mata (tamanho = log2(qualificados))
+    terceiro: {pa:null,pb:null},
     terceiroLugar: false,
     filter: "todos",
     tournamentId: null,
@@ -534,6 +531,24 @@ function defaultState(){
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
     apitoMatchId: null
   };
+}
+
+/* Compatibilidade: torneios salvos antes desta versão tinham "elim.qf/sf/final" fixos
+   (sempre 4 grupos -> 8 qualificados). Se detectarmos esse formato antigo e ainda
+   não existir um "bracket" novo, convertemos automaticamente, sem perder resultados. */
+function migrarBracketAntigo(s){
+  if(s && s.elim && (!s.bracket || !s.bracket.length) && Array.isArray(s.elim.qf)){
+    s.numGrupos = s.numGrupos || 4;
+    s.bracket = [
+      s.elim.qf.map(m=>({pa:m.pa, pb:m.pb})),
+      s.elim.sf.map(m=>({pa:m.pa, pb:m.pb})),
+      [{pa:s.elim.final.pa, pb:s.elim.final.pb}]
+    ];
+    if(!s.terceiro || (s.terceiro.pa==null && s.terceiro.pb==null)){
+      s.terceiro = { pa: s.elim.terceiro?.pa ?? null, pb: s.elim.terceiro?.pb ?? null };
+    }
+  }
+  return s;
 }
 
 let state = load();
@@ -548,7 +563,7 @@ function load(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return defaultState();
     const parsed = JSON.parse(raw);
-    return Object.assign(defaultState(), parsed);
+    return migrarBracketAntigo(Object.assign(defaultState(), parsed));
   }catch(e){ return defaultState(); }
 }
 function save(){
@@ -759,7 +774,7 @@ async function abrirTorneio(id){
 }
 
 function abrirTorneioComDados(data){
-  state = Object.assign(defaultState(), data.state);
+  state = migrarBracketAntigo(Object.assign(defaultState(), data.state));
   state.cloudId = data.id;
   state.cloudNome = data.nome;
   state.tab = "resumo";
@@ -781,7 +796,7 @@ async function refreshTorneioAtual(){
     const data = await res.json();
     if(data && data.state){
       const tabAtual = state.tab;
-      state = Object.assign(defaultState(), data.state);
+      state = migrarBracketAntigo(Object.assign(defaultState(), data.state));
       state.cloudId = data.id;
       state.cloudNome = data.nome;
       state.tab = tabAtual;
@@ -867,28 +882,56 @@ function shuffle(arr){
   return a;
 }
 
+function groupLetters(n){
+  const L = [];
+  for(let i=0;i<n;i++) L.push(String.fromCharCode(65+i));
+  return L;
+}
+function groupLettersState(){
+  return groupLetters(state.numGrupos || 4);
+}
+// Quantidade de duplas que se qualificam pro mata-mata (1º e 2º de cada grupo)
+function qualificadosCount(){
+  return (state.numGrupos || 4) * 2;
+}
 function sortear(){
   const nomes = state.duplas.map(d => (d.nome||"").trim() || "Dupla sem nome");
+  const numGrupos = state.numGrupos || 4;
+  const tamanhoGrupo = nomes.length / numGrupos;
   const embaralhado = shuffle(nomes);
-  const groups = [
-    embaralhado.slice(0,3),
-    embaralhado.slice(3,6),
-    embaralhado.slice(6,9),
-    embaralhado.slice(9,12)
-  ];
-  const pairs = [[0,1],[0,2],[1,2]];
-  const letters = ["A","B","C","D"];
+  const letters = groupLetters(numGrupos);
+  const groups = [];
+  for(let g=0; g<numGrupos; g++){
+    groups.push(embaralhado.slice(g*tamanhoGrupo, (g+1)*tamanhoGrupo));
+  }
   const groupMatches = [];
   groups.forEach((g, gi)=>{
-    pairs.forEach((p, pi)=>{
-      groupMatches.push({group:letters[gi], jogo:pi+1, a:g[p[0]], b:g[p[1]], pa:null, pb:null});
-    });
+    let jogoNum = 1;
+    for(let x=0; x<g.length; x++){
+      for(let y=x+1; y<g.length; y++){
+        groupMatches.push({group:letters[gi], jogo:jogoNum++, a:g[x], b:g[y], pa:null, pb:null});
+      }
+    }
   });
   state.groups = groups;
   state.groupMatches = groupMatches;
   state.drawn = true;
-  state.elim = defaultState().elim;
+  state.bracket = criarBracketVazio(qualificadosCount());
+  state.terceiro = {pa:null, pb:null};
   save();
+}
+// Configuração de duplas/grupos é válida quando: nº de grupos é potência de 2 (1,2,4,8,16...)
+// — assim 2x essa quantidade de qualificados também é potência de 2, o que permite montar
+// um chaveamento normal (mata-mata) — e a qtde de duplas é múltipla do nº de grupos, com
+// pelo menos 3 duplas por grupo (para a fase de grupos fazer sentido).
+function configuracaoValida(){
+  const n = state.duplas.length;
+  const g = state.numGrupos || 4;
+  if(g<1 || (g & (g-1))!==0) return {ok:false, msg:"A quantidade de grupos precisa ser uma potência de 2 (1, 2, 4, 8...)."};
+  if(n % g !== 0) return {ok:false, msg:`${n} duplas não dividem igualmente em ${g} grupos. Ajuste a quantidade de duplas ou de grupos.`};
+  const tamanho = n/g;
+  if(tamanho < 3) return {ok:false, msg:`Cada grupo ficaria com só ${tamanho} dupla(s). São necessárias pelo menos 3 duplas por grupo.`};
+  return {ok:true, msg:""};
 }
 
 function resetTudo(){
@@ -897,7 +940,7 @@ function resetTudo(){
 }
 
 function standingsFor(letter){
-  const idx = ["A","B","C","D"].indexOf(letter);
+  const idx = groupLettersState().indexOf(letter);
   const nomes = state.groups[idx] || [];
   const rows = nomes.map(nome => ({nome, j:0, v:0, d:0, pp:0, pc:0}));
   state.groupMatches.filter(m=>m.group===letter).forEach(m=>{
@@ -916,66 +959,109 @@ function standingsFor(letter){
 }
 
 function allGroupsFilled(){
-  return state.drawn && state.groupMatches.length===12 &&
+  return state.drawn && state.groupMatches.length>0 &&
     state.groupMatches.every(m=> m.pa!==null && m.pb!==null && m.pa!=="" && m.pb!=="");
 }
 
-function qfTeams(){
-  if(!allGroupsFilled()) return [[null,null],[null,null],[null,null],[null,null]];
-  const A = standingsFor("A"), B = standingsFor("B"), C = standingsFor("C"), D = standingsFor("D");
-  return [
-    [A[0]?.nome, B[1]?.nome],
-    [C[0]?.nome, D[1]?.nome],
-    [B[0]?.nome, A[1]?.nome],
-    [D[0]?.nome, C[1]?.nome]
-  ];
-}
 function winner(a,b,pa,pb){
   if(a==null||b==null) return null;
   if(pa===null||pb===null||pa===""||pb==="") return null;
   const na=Number(pa), nb=Number(pb);
   if(na>nb) return a; if(nb>na) return b; return null;
 }
-function qfWinners(){
-  const teams = qfTeams();
-  return state.elim.qf.map((m,i)=> winner(teams[i][0], teams[i][1], m.pa, m.pb));
+
+/* ---------- Chaveamento (mata-mata) genérico, com N rodadas dinâmicas ---------- */
+function criarBracketVazio(qualificados){
+  const rounds = Math.max(1, Math.round(Math.log2(qualificados)));
+  const bracket = [];
+  for(let r=0; r<rounds; r++){
+    const nMatches = qualificados / Math.pow(2, r+1);
+    bracket.push(Array.from({length:nMatches}, ()=>({pa:null, pb:null})));
+  }
+  return bracket;
 }
-function sfTeams(){
-  const w = qfWinners();
-  return [[w[0],w[1]],[w[2],w[3]]];
+function totalRoundsBracket(){
+  return state.bracket.length;
 }
-function sfWinners(){
-  const teams = sfTeams();
-  return state.elim.sf.map((m,i)=> winner(teams[i][0], teams[i][1], m.pa, m.pb));
+// Times da rodada 0 (primeira rodada do mata-mata), a partir da classificação dos grupos,
+// cruzando grupos dois a dois (1ºA×2ºB, 1ºB×2ºA, 1ºC×2ºD, 1ºD×2ºC, ...).
+function primeiraRodadaTeams(){
+  const letters = groupLettersState();
+  const nMatches = state.bracket[0] ? state.bracket[0].length : 0;
+  if(!allGroupsFilled()) return Array.from({length:nMatches}, ()=>[null,null]);
+  const standings = letters.map(l=>standingsFor(l));
+  if(letters.length===1){
+    // Um único grupo: o 1º e o 2º colocados já disputam a rodada direto (geralmente a final).
+    return [[standings[0][0]?.nome, standings[0][1]?.nome]];
+  }
+  const teams = [];
+  for(let i=0; i<letters.length; i+=2){
+    const A = standings[i], B = standings[i+1];
+    teams.push([A[0]?.nome, B[1]?.nome]);
+    teams.push([B[0]?.nome, A[1]?.nome]);
+  }
+  return teams;
 }
-function finalTeams(){
-  const w = sfWinners();
-  return [w[0], w[1]];
+function bracketTeamsForRound(r){
+  if(r===0) return primeiraRodadaTeams();
+  const prevTeams = bracketTeamsForRound(r-1);
+  const prevRound = state.bracket[r-1] || [];
+  const prevWinners = prevTeams.map((t,i)=> winner(t[0], t[1], prevRound[i]?.pa, prevRound[i]?.pb));
+  const teams = [];
+  for(let i=0; i<prevWinners.length; i+=2) teams.push([prevWinners[i], prevWinners[i+1]]);
+  return teams;
 }
-function sfLosers(){
-  const teams = sfTeams();
-  return state.elim.sf.map((m,i)=>{
-    const [a,b] = teams[i];
-    const w = winner(a,b,m.pa,m.pb);
+function bracketWinnersForRound(r){
+  const teams = bracketTeamsForRound(r);
+  const round = state.bracket[r] || [];
+  return teams.map((t,i)=> winner(t[0], t[1], round[i]?.pa, round[i]?.pb));
+}
+// Perdedores da semifinal (penúltima rodada) — usados na disputa de 3º/4º lugar
+function semifinalLosers(){
+  const rounds = totalRoundsBracket();
+  if(rounds<2) return [null,null];
+  const r = rounds-2;
+  const teams = bracketTeamsForRound(r);
+  const round = state.bracket[r] || [];
+  const losers = teams.map((t,i)=>{
+    const [a,b] = t;
+    const w = winner(a,b,round[i]?.pa, round[i]?.pb);
     if(!w || !a || !b) return null;
     return w===a ? b : a;
   });
+  return [losers[0] ?? null, losers[1] ?? null];
 }
 function terceiroWinner(){
-  const [a,b] = sfLosers();
-  return winner(a,b, state.elim.terceiro.pa, state.elim.terceiro.pb);
+  const [a,b] = semifinalLosers();
+  return winner(a,b, state.terceiro.pa, state.terceiro.pb);
 }
 function champion(){
-  const [a,b] = finalTeams();
-  return winner(a,b, state.elim.final.pa, state.elim.final.pb);
+  const rounds = totalRoundsBracket();
+  if(!rounds) return null;
+  const w = bracketWinnersForRound(rounds-1);
+  return w[0] || null;
+}
+function nomeRodada(r, totalRounds){
+  const restantes = totalRounds - r; // 1 = final, 2 = semifinal, 3 = quartas...
+  if(restantes===1) return "Final";
+  if(restantes===2) return "Semifinal";
+  if(restantes===3) return "Quartas de Final";
+  if(restantes===4) return "Oitavas de Final";
+  return `Rodada ${r+1}`;
 }
 function faseAtual(){
   if(champion()) return "Encerrado";
-  if(finalTeams()[0] && finalTeams()[1]) return "Final";
-  if(sfTeams().every(t=>t[0]&&t[1])) return "Semifinal";
-  if(allGroupsFilled()) return "Quartas de Final";
-  if(state.drawn) return "Fase de Grupos";
-  return "Sorteio pendente";
+  if(!allGroupsFilled()) return state.drawn ? "Fase de Grupos" : "Sorteio pendente";
+  const rounds = totalRoundsBracket();
+  for(let r=0; r<rounds; r++){
+    const teams = bracketTeamsForRound(r);
+    const round = state.bracket[r] || [];
+    const pendente = teams.some((t,i)=> t[0] && t[1] && (round[i]?.pa==null || round[i]?.pa===""));
+    const aguardando = teams.some(t=> !t[0] || !t[1]);
+    if(aguardando) return nomeRodada(r, rounds) + " (aguardando classificados)";
+    if(pendente) return nomeRodada(r, rounds);
+  }
+  return "Encerrado";
 }
 
 /* ---------- WhatsApp ---------- */
@@ -1017,36 +1103,36 @@ function waLink(tel, msg){
    ARBITRAGEM (JUIZ DE PARTIDA)
 ============================================================ */
 function makeMatchId(round, idx){
-  return (round==="final" || round==="terceiro") ? round : round+idx;
+  return round==="terceiro" ? "terceiro" : `b${round}_${idx}`;
 }
 function matchIdIsElim(matchId){
   return !/^g\d+$/.test(matchId);
 }
 function getMatchObj(matchId){
   if(/^g\d+$/.test(matchId)) return state.groupMatches[Number(matchId.slice(1))];
-  if(matchId==="final") return state.elim.final;
-  if(matchId==="terceiro") return state.elim.terceiro;
-  const m = matchId.match(/^(qf|sf)(\d+)$/);
-  if(m) return state.elim[m[1]][Number(m[2])];
+  if(matchId==="terceiro") return state.terceiro;
+  const m = matchId.match(/^b(\d+)_(\d+)$/);
+  if(m) return state.bracket[Number(m[1])][Number(m[2])];
   return null;
 }
 function getMatchTeams(matchId){
   if(/^g\d+$/.test(matchId)){ const mm = state.groupMatches[Number(matchId.slice(1))]; return [mm.a, mm.b]; }
-  if(matchId==="final") return finalTeams();
-  if(matchId==="terceiro") return sfLosers();
-  const m = matchId.match(/^(qf|sf)(\d+)$/);
-  if(m){
-    const idx = Number(m[2]);
-    return m[1]==="qf" ? qfTeams()[idx] : sfTeams()[idx];
-  }
+  if(matchId==="terceiro") return semifinalLosers();
+  const m = matchId.match(/^b(\d+)_(\d+)$/);
+  if(m) return bracketTeamsForRound(Number(m[1]))[Number(m[2])];
   return [null,null];
 }
 function getMatchLabel(matchId){
   if(/^g\d+$/.test(matchId)){ const mm = state.groupMatches[Number(matchId.slice(1))]; return `Grupo ${mm.group} · Jogo ${mm.jogo}`; }
-  if(matchId==="final") return "Final";
   if(matchId==="terceiro") return "Disputa de 3º e 4º Lugar";
-  const m = matchId.match(/^(qf|sf)(\d+)$/);
-  if(m) return (m[1]==="qf" ? "Quartas de Final · QF" : "Semifinal · SF") + (Number(m[2])+1);
+  const m = matchId.match(/^b(\d+)_(\d+)$/);
+  if(m){
+    const r = Number(m[1]), i = Number(m[2]);
+    const rounds = totalRoundsBracket();
+    const label = nomeRodada(r, rounds);
+    const nMatches = state.bracket[r] ? state.bracket[r].length : 1;
+    return nMatches>1 ? `${label} · ${i+1}` : label;
+  }
   return "";
 }
 function getArb(matchId){
@@ -1230,20 +1316,18 @@ async function enviarTelegramTodos(silent){
 
 /* ---------- Notificações automáticas do mata-mata ---------- */
 function elimMatchList(){
-  const qt = qfTeams(), st = sfTeams(), ft = finalTeams();
   const list = [];
-  qt.forEach(([a,b],idx)=>{
-    list.push({round:"qf", idx, side:"a", faseLabel:"Quartas de Final", nome:a, oponente:b});
-    list.push({round:"qf", idx, side:"b", faseLabel:"Quartas de Final", nome:b, oponente:a});
-  });
-  st.forEach(([a,b],idx)=>{
-    list.push({round:"sf", idx, side:"a", faseLabel:"Semifinal", nome:a, oponente:b});
-    list.push({round:"sf", idx, side:"b", faseLabel:"Semifinal", nome:b, oponente:a});
-  });
-  list.push({round:"final", idx:0, side:"a", faseLabel:"Final", nome:ft[0], oponente:ft[1]});
-  list.push({round:"final", idx:0, side:"b", faseLabel:"Final", nome:ft[1], oponente:ft[0]});
+  const rounds = totalRoundsBracket();
+  for(let r=0; r<rounds; r++){
+    const teams = bracketTeamsForRound(r);
+    const label = nomeRodada(r, rounds);
+    teams.forEach(([a,b],idx)=>{
+      list.push({round:r, idx, side:"a", faseLabel:label, nome:a, oponente:b});
+      list.push({round:r, idx, side:"b", faseLabel:label, nome:b, oponente:a});
+    });
+  }
   if(state.terceiroLugar){
-    const [la,lb] = sfLosers();
+    const [la,lb] = semifinalLosers();
     list.push({round:"terceiro", idx:0, side:"a", faseLabel:"Disputa de 3º Lugar", nome:la, oponente:lb});
     list.push({round:"terceiro", idx:0, side:"b", faseLabel:"Disputa de 3º Lugar", nome:lb, oponente:la});
   }
@@ -1389,50 +1473,55 @@ function drawGroupsSection(ctx, W, startY){
   ctx.font = "600 26px Arial, sans-serif";
   ctx.fillText("FASE DE GRUPOS", W/2, startY);
 
+  const letters = groupLettersState();
   const cardW = 480, gap = 40;
   const margin = (W - (cardW*2+gap))/2;
   const rowGap = 30;
   const headerBarH = 42, rowH = 46;
-  const cardH = headerBarH + rowH*3;
-  const row1Y = startY + 36;
-  const row2Y = row1Y + cardH + rowGap;
+  const cols = letters.length>1 ? 2 : 1;
+  const linhas = Math.ceil(letters.length/cols);
 
-  const positions = [
-    {letter:"A", x:margin, y:row1Y},
-    {letter:"B", x:margin+cardW+gap, y:row1Y},
-    {letter:"C", x:margin, y:row2Y},
-    {letter:"D", x:margin+cardW+gap, y:row2Y},
-  ];
+  let maxBottom = startY + 36;
+  for(let linha=0; linha<linhas; linha++){
+    const rowLetters = letters.slice(linha*cols, linha*cols+cols);
+    let alturaLinha = 0;
+    rowLetters.forEach((letter, ci)=>{
+      const tamanhoGrupo = (state.groups[letters.indexOf(letter)]||[]).length || 3;
+      const cardH = headerBarH + rowH*tamanhoGrupo;
+      alturaLinha = Math.max(alturaLinha, cardH);
+      const x = cols===2 ? (margin + ci*(cardW+gap)) : (W-cardW)/2;
+      const py = maxBottom;
 
-  positions.forEach(p=>{
-    ctx.fillStyle = OCEAN_DEEP;
-    roundRect(ctx, p.x, p.y, cardW, headerBarH, 8);
-    ctx.fill();
-    ctx.fillStyle = WHITE;
-    ctx.font = "bold 23px Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("GRUPO " + p.letter, p.x+cardW/2, p.y+headerBarH/2+8);
-
-    const rows = standingsFor(p.letter);
-    rows.forEach((r,i)=>{
-      const ry = p.y + headerBarH + i*rowH;
-      ctx.fillStyle = i<2 ? LIGHTGREEN : WHITE;
-      roundRect(ctx, p.x, ry+3, cardW, rowH-6, 6);
-      ctx.fill();
-
-      ctx.textAlign = "left";
       ctx.fillStyle = OCEAN_DEEP;
-      ctx.font = (i<2 ? "bold " : "600 ") + "23px Arial, sans-serif";
-      ctx.fillText(truncate(ctx, `${i+1}º  ${r.nome}`, cardW-110), p.x+16, ry+rowH/2+5);
+      roundRect(ctx, x, py, cardW, headerBarH, 8);
+      ctx.fill();
+      ctx.fillStyle = WHITE;
+      ctx.font = "bold 23px Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("GRUPO " + letter, x+cardW/2, py+headerBarH/2+8);
 
-      ctx.textAlign = "right";
-      ctx.fillStyle = MUTED;
-      ctx.font = "600 19px Arial, sans-serif";
-      ctx.fillText(r.pts + " pts", p.x+cardW-16, ry+rowH/2+4);
+      const rows = standingsFor(letter);
+      rows.forEach((r,i)=>{
+        const ry = py + headerBarH + i*rowH;
+        ctx.fillStyle = i<2 ? LIGHTGREEN : WHITE;
+        roundRect(ctx, x, ry+3, cardW, rowH-6, 6);
+        ctx.fill();
+
+        ctx.textAlign = "left";
+        ctx.fillStyle = OCEAN_DEEP;
+        ctx.font = (i<2 ? "bold " : "600 ") + "23px Arial, sans-serif";
+        ctx.fillText(truncate(ctx, `${i+1}º  ${r.nome}`, cardW-110), x+16, ry+rowH/2+5);
+
+        ctx.textAlign = "right";
+        ctx.fillStyle = MUTED;
+        ctx.font = "600 19px Arial, sans-serif";
+        ctx.fillText(r.pts + " pts", x+cardW-16, ry+rowH/2+4);
+      });
     });
-  });
+    maxBottom += alturaLinha + rowGap;
+  }
 
-  return row2Y + cardH;
+  return maxBottom - rowGap;
 }
 
 /* ---------- Chaveamento (bracket) ---------- */
@@ -1482,50 +1571,58 @@ function drawBracket(ctx, W, startY){
     ctx.fillText(text.toUpperCase(), cx, y);
   };
 
-  const qt = qfTeams(), st = sfTeams(), ft = finalTeams();
-  const qfWin = state.elim.qf.map((m,i)=> winner(qt[i][0], qt[i][1], m.pa, m.pb));
-  const sfWin = state.elim.sf.map((m,i)=> winner(st[i][0], st[i][1], m.pa, m.pb));
-  const finalWin = winner(ft[0], ft[1], state.elim.final.pa, state.elim.final.pb);
+  const rounds = totalRoundsBracket();
+  const teamsPorRodada = [];
+  const vencedoresPorRodada = [];
+  for(let r=0; r<rounds; r++){
+    const teams = bracketTeamsForRound(r);
+    teamsPorRodada.push(teams);
+    vencedoresPorRodada.push(bracketWinnersForRound(r));
+  }
 
-  // ---- 3 colunas: Quartas | Semifinal | Final (esquerda -> direita) ----
   const margin = 30;
-  const qfW = 280, sfW = 280, finalW = 250;
-  const colGap = 90;
-  const qfX = margin;
-  const sfX = qfX + qfW + colGap;
-  const finalX = sfX + sfW + colGap;
-
+  const colW = 280, colGap = 90;
   const labelY = startY + 30;
-  colLabel("Quartas", qfX + qfW/2, labelY);
-  colLabel("Semifinal", sfX + sfW/2, labelY);
-  colLabel("Final", finalX + finalW/2, labelY);
 
-  // ---- Quartas: 4 caixas empilhadas ----
-  const qfTop0 = labelY + 40;
-  const qfBarH = 46, qfBoxH = qfBarH*2+5, qfRowGap = 46;
-  const qfTops = [0,1,2,3].map(i => qfTop0 + i*(qfBoxH+qfRowGap));
-  const qfBottoms = qfTops.map((t,i) => drawMatchBox(ctx, qfX, t, qfW, qt[i][0], qt[i][1], qfWin[i], qfBarH));
-  const qfCenters = qfTops.map((t,i) => (t + qfBottoms[i])/2);
+  // Posições X de cada coluna (última coluna um pouco mais estreita, "Final")
+  const colX = [];
+  for(let r=0; r<rounds; r++) colX.push(margin + r*(colW+colGap));
 
-  // ---- Semifinal: 2 caixas, centradas entre os pares de quartas ----
-  const sfCenters = [ (qfCenters[0]+qfCenters[1])/2, (qfCenters[2]+qfCenters[3])/2 ];
-  const sfBarH = 52, sfBoxH = sfBarH*2+5;
-  const sfTops = sfCenters.map(c => c - sfBoxH/2);
-  const sfBottoms = sfTops.map((t,i) => drawMatchBox(ctx, sfX, t, sfW, st[i][0], st[i][1], sfWin[i], sfBarH));
+  const nomesColuna = Array.from({length:rounds}, (_,r)=> nomeRodada(r, rounds));
+  nomesColuna.forEach((nome, r)=> colLabel(nome, colX[r]+colW/2, labelY));
 
-  elbowConnectorH(ctx, qfX+qfW, sfX, qfCenters[0], qfCenters[1]);
-  elbowConnectorH(ctx, qfX+qfW, sfX, qfCenters[2], qfCenters[3]);
+  // Primeira coluna: caixas empilhadas de cima a baixo
+  const barH0 = 46, boxH0 = barH0*2+5, rowGap0 = 46;
+  const top0 = labelY + 40;
+  let centros = teamsPorRodada[0].map((t,i)=> top0 + i*(boxH0+rowGap0) + boxH0/2);
+  const bottoms0 = teamsPorRodada[0].map((t,i)=>{
+    const y = top0 + i*(boxH0+rowGap0);
+    return drawMatchBox(ctx, colX[0], y, colW, t[0], t[1], vencedoresPorRodada[0][i], barH0);
+  });
 
-  // ---- Final: 1 caixa, centrada entre as duas semifinais ----
-  const finalCenter = (sfCenters[0]+sfCenters[1])/2;
-  const finalBarH = 58, finalBoxH = finalBarH*2+5;
-  const finalTop = finalCenter - finalBoxH/2;
-  const finalBottom = drawMatchBox(ctx, finalX, finalTop, finalW, ft[0], ft[1], finalWin, finalBarH);
+  let cursorY = Math.max(...bottoms0);
 
-  elbowConnectorH(ctx, sfX+sfW, finalX, sfCenters[0], sfCenters[1]);
+  // Colunas seguintes: cada caixa centrada entre o par de caixas anteriores
+  for(let r=1; r<rounds; r++){
+    const barH = 46 + r*6;
+    const boxH = barH*2+5;
+    const novosCentros = [];
+    const bottoms = [];
+    for(let i=0; i<teamsPorRodada[r].length; i++){
+      const c = (centros[i*2] + centros[i*2+1]) / 2;
+      const top = c - boxH/2;
+      const [a,b] = teamsPorRodada[r][i];
+      const bottom = drawMatchBox(ctx, colX[r], top, colW, a, b, vencedoresPorRodada[r][i], barH);
+      novosCentros.push(c);
+      bottoms.push(bottom);
+      elbowConnectorH(ctx, colX[r-1]+colW, colX[r], centros[i*2], centros[i*2+1]);
+    }
+    centros = novosCentros;
+    cursorY = Math.max(cursorY, ...bottoms);
+  }
 
-  let cursorY = Math.max(qfBottoms[3], finalBottom) + 80;
-
+  cursorY += 80;
+  const finalWin = champion();
   if(finalWin){
     ctx.textAlign = "center";
     ctx.fillStyle = CORAL;
@@ -1538,8 +1635,8 @@ function drawBracket(ctx, W, startY){
   }
 
   if(state.terceiroLugar){
-    const [la, lb] = sfLosers();
-    const tWin = winner(la, lb, state.elim.terceiro.pa, state.elim.terceiro.pb);
+    const [la, lb] = semifinalLosers();
+    const tWin = winner(la, lb, state.terceiro.pa, state.terceiro.pb);
     cursorY += 90;
     colLabel("3º e 4º lugar", W/2, cursorY-20);
     const terceiroW = 420, terceiroX = (W-terceiroW)/2;
@@ -1797,7 +1894,7 @@ function renderTorneiosScreen(){
 
 function renderResumo(){
   const jogosGrupo = state.groupMatches.filter(m=>m.pa!==null && m.pb!==null && m.pa!=="" && m.pb!=="").length;
-  const elimTotal = [...state.elim.qf, ...state.elim.sf, state.elim.final];
+  const elimTotal = state.bracket.reduce((acc,round)=>acc.concat(round), []);
   const elimFeitos = elimTotal.filter(m=>m.pa!==null&&m.pb!==null&&m.pa!==""&&m.pb!=="").length;
   const camp = champion();
 
@@ -1805,8 +1902,8 @@ function renderResumo(){
     <div class="section-title">Resumo do Campeonato</div>
     <div class="section-sub">Visão geral em tempo real, direto da fase de grupos ao título.</div>
     <div class="stat-grid">
-      <div class="stat ocean"><span class="num">${jogosGrupo} / 12</span><span class="lbl">Jogos · Grupos</span></div>
-      <div class="stat coral"><span class="num">${elimFeitos} / 7</span><span class="lbl">Jogos · Mata-mata</span></div>
+      <div class="stat ocean"><span class="num">${jogosGrupo} / ${state.groupMatches.length}</span><span class="lbl">Jogos · Grupos</span></div>
+      <div class="stat coral"><span class="num">${elimFeitos} / ${elimTotal.length}</span><span class="lbl">Jogos · Mata-mata</span></div>
       <div class="stat ink"><span class="num" style="font-size:15px">${faseAtual()}</span><span class="lbl">Fase atual</span></div>
       <div class="stat grass"><span class="num" style="font-size:15px">${camp || "A definir"}</span><span class="lbl">Campeão</span></div>
     </div>`;
@@ -1817,7 +1914,7 @@ function renderResumo(){
   }
 
   html += `<div class="section-title" style="margin-top:6px;">Classificação parcial</div>`;
-  ["A","B","C","D"].forEach(letter=>{
+  groupLettersState().forEach(letter=>{
     const rows = standingsFor(letter);
     html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
     rows.forEach((r,i)=>{
@@ -1883,17 +1980,27 @@ function renderContatoBlock(i, slot, tel, baseMsg, trackKey){
 function renderSorteio(){
   let html = `
     <div class="section-title">Duplas</div>
-    <div class="section-sub">Preencha o nome e, se quiser, até 2 telefones por dupla (para enviar os jogos via WhatsApp e/ou Telegram depois do sorteio).</div>
+    <div class="section-sub">Adicione as duplas conforme a necessidade. Preencha o nome e, se quiser, até 2 telefones por dupla (para enviar os jogos via WhatsApp e/ou Telegram depois do sorteio).</div>
     <div class="card tg-settings">
       <label>Bot do Telegram (usuário, sem @)</label>
       <input type="text" id="input-telegram-bot" placeholder="ex: meucampeonatobot" value="${escapeHtml(state.telegramBot||"")}">
       <div class="hint">Crie um bot gratuito com o @BotFather no Telegram e cole aqui o usuário dele (termina em "bot"). Cada dupla vai precisar apertar "Iniciar" uma única vez para poder receber os jogos automaticamente.</div>
     </div>`;
+
+  if(!state.drawn){
+    html += `<div class="card">
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Quantidade de grupos</label>
+      <input type="number" min="1" step="1" id="input-num-grupos" value="${state.numGrupos}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
+      <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (1, 2, 4, 8...) e dividir a quantidade de duplas em partes iguais, com no mínimo 3 duplas por grupo. Os 2 primeiros de cada grupo avançam para o mata-mata.</div>
+    </div>`;
+  }
+
   state.duplas.forEach((d,i)=>{
     html += `<div class="dupla-card">
       <div class="top-row">
         <span class="num">${String(i+1).padStart(2,"0")}</span>
         <input type="text" data-dupla="${i}" data-field="nome" placeholder="Nome da dupla" value="${escapeHtml(d.nome)}" ${state.drawn?"disabled":""}>
+        ${state.drawn?"":`<button class="ref-mini-btn ghost" data-remover-dupla="${i}" style="flex:0 0 auto;width:auto;padding:8px 10px;">🗑️</button>`}
       </div>
       <div class="tel-row">
         <input type="tel" data-dupla="${i}" data-field="tel1" placeholder="Tel. jogador 1 (WhatsApp)" value="${escapeHtml(d.tel1||"")}">
@@ -1903,11 +2010,16 @@ function renderSorteio(){
   });
 
   if(!state.drawn){
-    html += `<button class="btn" id="btn-sortear">Sortear grupos 🏐</button>`;
+    html += `<button class="btn secondary" id="btn-add-dupla" style="margin-bottom:14px;">➕ Adicionar dupla</button>`;
+    const cfg = configuracaoValida();
+    if(!cfg.ok){
+      html += `<div class="card" style="border-color:var(--coral);color:var(--coral);font-size:12.5px;margin-bottom:14px;">⚠️ ${escapeHtml(cfg.msg)}</div>`;
+    }
+    html += `<button class="btn" id="btn-sortear" ${cfg.ok?"":'disabled style="opacity:.5;"'}>Sortear grupos 🏐</button>`;
   } else {
     html += `<button class="btn secondary" id="btn-resortear">Sortear novamente</button>`;
     html += `<div class="section-title" style="margin-top:18px;">Grupos sorteados</div>`;
-    ["A","B","C","D"].forEach((letter,gi)=>{
+    groupLettersState().forEach((letter,gi)=>{
       html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
       (state.groups[gi]||[]).forEach(n=>{
         html += `<div class="name"><span class="dot"></span>${escapeHtml(n)}</div>`;
@@ -1961,7 +2073,7 @@ function renderJogos(){
   });
   html += `</div>`;
 
-  ["A","B","C","D"].forEach(letter=>{
+  groupLettersState().forEach(letter=>{
     let matches = state.groupMatches.filter(m=>m.group===letter);
     if(state.filter==="pendentes") matches = matches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="");
     if(state.filter==="realizados") matches = matches.filter(m=>m.pa!==null&&m.pb!==null&&m.pa!==""&&m.pb!=="");
@@ -1995,7 +2107,7 @@ function renderClassificacao(){
   let html = `
     <div class="section-title">Classificação</div>
     <div class="section-sub">Critério de desempate: 1º pontos (vitória = 3), 2º saldo de pontos, 3º pontos pró.</div>`;
-  ["A","B","C","D"].forEach(letter=>{
+  groupLettersState().forEach(letter=>{
     const rows = standingsFor(letter);
     html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body" style="padding:6px 10px;">
       <table><thead><tr>
@@ -2019,11 +2131,10 @@ function renderMataMata(){
     return `<div class="section-title">Mata-mata</div><div class="card empty"><span class="ball-icon">🏐</span>O chaveamento aparece aqui quando todos os jogos da fase de grupos forem concluídos.</div>`;
   }
   const camp = champion();
+  const rounds = totalRoundsBracket();
   let html = `<div class="section-title">Mata-mata</div>
     <div class="section-sub">
-      <b>Quartas:</b> 1ºA×2ºB · 1ºC×2ºD · 1ºB×2ºA · 1ºD×2ºC<br>
-      <b>Semifinal:</b> vencedor QF1 × vencedor QF2 · vencedor QF3 × vencedor QF4<br>
-      <b>Final:</b> vencedor SF1 × vencedor SF2${state.terceiroLugar ? `<br><b>3º/4º lugar:</b> perdedor SF1 × perdedor SF2` : ``}
+      1º e 2º de cada grupo se cruzam na primeira rodada do mata-mata; a partir daí, os vencedores avançam até a final.${state.terceiroLugar ? `<br><b>3º/4º lugar:</b> perdedores da semifinal` : ``}
     </div>
     <div class="card" style="padding:10px 14px;margin-bottom:12px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ocean-deep);cursor:pointer;">
@@ -2054,28 +2165,21 @@ function renderMataMata(){
     html += `<div class="champion-banner"><div class="eyebrow">Campeão do torneio</div><div class="name">🏆 ${escapeHtml(camp)}</div></div>`;
   }
 
-  const qt = qfTeams();
-  html += `<div class="round-label">Quartas de final</div>`;
-  state.elim.qf.forEach((m,i)=>{
-    const [a,b] = qt[i];
-    html += bracketMatchHtml(`QF${i+1}`, "Quartas de Final", "qf", i, a, b, m.pa, m.pb);
-  });
-
-  const st = sfTeams();
-  html += `<div class="round-label">Semifinal</div>`;
-  state.elim.sf.forEach((m,i)=>{
-    const [a,b] = st[i];
-    html += bracketMatchHtml(`SF${i+1}`, "Semifinal", "sf", i, a, b, m.pa, m.pb);
-  });
-
-  const [fa,fb] = finalTeams();
-  html += `<div class="round-label">Final</div>`;
-  html += bracketMatchHtml("FINAL", "Final", "final", 0, fa, fb, state.elim.final.pa, state.elim.final.pb);
+  for(let r=0; r<rounds; r++){
+    const teams = bracketTeamsForRound(r);
+    const label = nomeRodada(r, rounds);
+    html += `<div class="round-label">${escapeHtml(label)}</div>`;
+    state.bracket[r].forEach((m,i)=>{
+      const [a,b] = teams[i];
+      const tag = teams.length>1 ? `${label.slice(0,2).toUpperCase()}${i+1}` : label.toUpperCase();
+      html += bracketMatchHtml(tag, label, r, i, a, b, m.pa, m.pb);
+    });
+  }
 
   if(state.terceiroLugar){
-    const [la,lb] = sfLosers();
+    const [la,lb] = semifinalLosers();
     html += `<div class="round-label">Disputa de 3º e 4º lugar</div>`;
-    html += bracketMatchHtml("3º LUGAR", "Disputa de 3º Lugar", "terceiro", 0, la, lb, state.elim.terceiro.pa, state.elim.terceiro.pb);
+    html += bracketMatchHtml("3º LUGAR", "Disputa de 3º Lugar", "terceiro", 0, la, lb, state.terceiro.pa, state.terceiro.pb);
   }
 
   return html;
@@ -2243,8 +2347,28 @@ function bindEvents(){
       });
     }
   });
+  const btnAddDupla = document.getElementById("btn-add-dupla");
+  if(btnAddDupla) btnAddDupla.addEventListener("click", ()=>{
+    state.duplas.push({nome:`Dupla ${state.duplas.length+1}`, tel1:"", tel2:"", nomeDefault:true});
+    save(); render();
+  });
+  main.querySelectorAll("[data-remover-dupla]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const i = Number(btn.dataset.removerDupla);
+      if(state.duplas.length<=2){ showToast("É preciso ter pelo menos 2 duplas."); return; }
+      state.duplas.splice(i,1);
+      save(); render();
+    });
+  });
+  const inputNumGrupos = document.getElementById("input-num-grupos");
+  if(inputNumGrupos) inputNumGrupos.addEventListener("change", e=>{
+    const v = Number(e.target.value);
+    state.numGrupos = v>0 ? v : 1;
+    save(); render();
+  });
   const btnSortear = document.getElementById("btn-sortear");
   if(btnSortear) btnSortear.addEventListener("click", async ()=>{
+    if(!configuracaoValida().ok){ showToast("Ajuste a quantidade de duplas/grupos antes de sortear."); return; }
     sortear(); render(); showToast("Grupos sorteados!");
     await refreshTelegramStatus();
     await enviarTelegramTodos(true);
@@ -2295,8 +2419,8 @@ function bindEvents(){
     inp.addEventListener("change", e=>{
       const round = e.target.dataset.round, idx = Number(e.target.dataset.idx), side = e.target.dataset.side;
       const key = side==="a"?"pa":"pb";
-      if(round==="final" || round==="terceiro") state.elim[round][key] = e.target.value===""?"":e.target.value;
-      else state.elim[round][idx][key] = e.target.value===""?"":e.target.value;
+      if(round==="terceiro") state.terceiro[key] = e.target.value===""?"":e.target.value;
+      else state.bracket[Number(round)][idx][key] = e.target.value===""?"":e.target.value;
       save();
       render();
       checkElimNotifications();
