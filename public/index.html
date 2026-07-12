@@ -59,10 +59,15 @@
   /* ---------- Header ---------- */
   header{
     background: linear-gradient(160deg, var(--ocean) 0%, var(--ocean-deep) 100%);
+    background-size: cover;
+    background-position: center;
     color:var(--white);
     padding:22px 20px 26px;
     position:relative;
     overflow:hidden;
+  }
+  header.has-bg-image{
+    background-blend-mode: multiply;
   }
   header .eyebrow{
     font-family:'DM Mono',monospace;
@@ -70,6 +75,8 @@
     letter-spacing:.14em;
     text-transform:uppercase;
     opacity:.75;
+    position:relative;
+    z-index:1;
   }
   header h1{
     font-family:'Bebas Neue',sans-serif;
@@ -77,6 +84,9 @@
     letter-spacing:.03em;
     margin:2px 0 0;
     line-height:1;
+    position:relative;
+    z-index:1;
+    text-shadow: 0 2px 10px rgba(0,0,0,.35);
   }
   .net-divider{
     display:flex;
@@ -487,9 +497,9 @@
 <body>
 <div class="stage">
   <div class="app">
-    <header>
-      <div class="eyebrow">Beach Sports Club</div>
-      <h1>Futevôlei</h1>
+    <header id="app-header">
+      <div class="eyebrow" id="header-eyebrow">Beach Sports Club</div>
+      <h1 id="header-title">Futevôlei</h1>
       <div id="torneio-bar"></div>
       <div class="net-divider"><span class="pole"></span><span class="dashes"></span><span class="ball"></span><span class="dashes"></span><span class="pole"></span></div>
     </header>
@@ -532,6 +542,7 @@ function defaultState(){
     elimNotified: {},
     cloudId: null,
     cloudNome: "",
+    headerImage: null, // data URL da imagem de topo customizada para este campeonato (opcional)
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
     apitoMatchId: null
   };
@@ -595,7 +606,42 @@ const GCID_KEY = "futevolei_gclientid_v1";
 function saveAuth(a){ localStorage.setItem(AUTH_KEY, JSON.stringify(a)); }
 
 function loadClientId(){ return localStorage.getItem(GCID_KEY) || ""; }
-function saveClientId(v){ localStorage.setItem(GCID_KEY, (v||"").trim()); }
+function cacheClientId(v){ localStorage.setItem(GCID_KEY, (v||"").trim()); }
+
+// O Client ID agora é uma configuração global do app, guardada no servidor e definida só
+// pelo admin (aba Torneios → Configurações do app). Aqui só buscamos o valor atual pra usar
+// no botão de login; se estiver offline, seguimos com o último valor já guardado neste navegador.
+async function fetchAndCacheClientId(){
+  try{
+    const res = await fetch("/api/config-get", { cache:"no-store" });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    const novo = (data.googleClientId||"").trim();
+    const atual = loadClientId();
+    if(novo !== atual){
+      cacheClientId(novo);
+      if(!auth){ render(); }
+      setTimeout(initGoogleSignIn, 50);
+    }
+  }catch(e){ /* sem conexão — segue com o valor já salvo localmente, se houver */ }
+}
+
+// Só o admin pode alterar o Client ID (fica salvo no servidor, vale pra todo mundo que acessar o app).
+async function salvarClientIdAdmin(valor){
+  try{
+    const res = await fetch("/api/config-set", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ email: auth.email, googleClientId: valor })
+    });
+    if(res.status===403){ showToast("Só o admin pode alterar essa configuração."); return false; }
+    if(!res.ok) throw new Error("resposta não-ok");
+    cacheClientId(valor);
+    return true;
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível salvar.");
+    return false;
+  }
+}
 
 function decodeJwt(token){
   try{
@@ -897,6 +943,32 @@ function shuffle(arr){
     [a[i],a[j]]=[a[j],a[i]];
   }
   return a;
+}
+
+// Redimensiona/comprime a imagem escolhida pra não inflar o estado do torneio (que é
+// sincronizado com a nuvem). Devolve um data URL JPEG já pronto pra usar como fundo do cabeçalho.
+function processarImagemTopo(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error("Falha ao ler o arquivo"));
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=>reject(new Error("Arquivo não é uma imagem válida"));
+      img.onload = ()=>{
+        const maxW = 960;
+        const scale = Math.min(1, maxW/img.width);
+        const w = Math.round(img.width*scale);
+        const h = Math.round(img.height*scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.78));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function groupLetters(n){
@@ -1923,10 +1995,34 @@ function pendingElimMessages(){
   return pend;
 }
 
+function atualizarHeader(){
+  const header = document.getElementById("app-header");
+  const eyebrow = document.getElementById("header-eyebrow");
+  const title = document.getElementById("header-title");
+  if(!header || !eyebrow || !title) return;
+  if(state.cloudId){
+    eyebrow.textContent = "Beach Sports Club";
+    title.textContent = state.cloudNome || "Torneio";
+    if(state.headerImage){
+      header.style.backgroundImage = `linear-gradient(160deg, rgba(11,60,73,.55), rgba(11,60,73,.75)), url("${state.headerImage}")`;
+      header.classList.add("has-bg-image");
+    } else {
+      header.style.backgroundImage = "";
+      header.classList.remove("has-bg-image");
+    }
+  } else {
+    eyebrow.textContent = "Beach Sports Club";
+    title.textContent = "Futevôlei";
+    header.style.backgroundImage = "";
+    header.classList.remove("has-bg-image");
+  }
+}
+
 function render(){
   const nav = document.querySelector("nav.tabbar");
   const torneioBar = document.getElementById("torneio-bar");
   stopRefTick();
+  atualizarHeader();
 
   if(!auth){
     nav.style.display = "none";
@@ -2003,14 +2099,11 @@ function renderLoginScreen(){
 
   if(!clientId){
     html += `<div class="gcid-box card">
-      <label>Google Client ID</label>
-      <input type="text" id="input-gcid" placeholder="algo.apps.googleusercontent.com">
-      <button class="btn" id="btn-save-gcid" style="margin-top:10px;">Salvar</button>
-      <div class="hint">Precisa criar um Client ID gratuito no Google Cloud Console (OAuth) autorizado para este domínio. Depois de salvar aqui, o botão de login aparece para todo mundo que acessar o app.</div>
+      <label>⏳ Login com Google ainda não configurado</label>
+      <div class="hint">Peça para o administrador entrar com o "Acesso de teste" abaixo e configurar o Client ID em Configurações do app. Enquanto isso, use o acesso de teste para entrar.</div>
     </div>`;
   } else {
-    html += `<div id="google-signin-btn"></div>
-      <button class="btn ghost ver-config" id="btn-edit-gcid" style="margin-top:18px;width:auto;">⚙️ Configurar Client ID</button>`;
+    html += `<div id="google-signin-btn"></div>`;
   }
 
   html += `<div class="gcid-box card" style="margin-top:18px;border-color:var(--coral);">
@@ -2039,8 +2132,23 @@ function renderTorneiosScreen(){
       <button class="btn ghost" id="btn-logout" style="width:auto;padding:7px 14px;">Sair</button>
     </div>
     <div class="section-title">Torneios</div>
-    <div class="section-sub">${ehAdmin() ? "👑 Modo admin — exibindo os torneios de todas as contas." : "Torneios criados por você."}</div>
-    <button class="btn" id="btn-novo-torneio" style="margin-bottom:18px;">➕ Criar novo torneio</button>`;
+    <div class="section-sub">${ehAdmin() ? "👑 Modo admin — exibindo os torneios de todas as contas." : "Torneios criados por você."}</div>`;
+
+  if(ehAdmin()){
+    const gcidAtual = loadClientId();
+    html += `<div class="card" style="border:1.5px solid var(--ocean);margin-bottom:14px;">
+      <div style="font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:8px;">⚙️ Configurações do app (admin)</div>
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Google Client ID</label>
+      <input type="text" id="input-gcid-admin" placeholder="algo.apps.googleusercontent.com" value="${escapeHtml(gcidAtual)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;">
+      <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Criado gratuitamente no Google Cloud Console (OAuth), autorizado para este domínio. Salvo aqui uma vez, vale para todo mundo que acessar o app — sem precisar configurar em cada navegador.</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" id="btn-salvar-gcid-admin" style="flex:1;">Salvar</button>
+        ${gcidAtual ? `<button class="btn ghost" id="btn-remover-gcid-admin" style="flex:0 0 auto;width:auto;">Remover</button>` : ``}
+      </div>
+    </div>`;
+  }
+
+  html += `<button class="btn" id="btn-novo-torneio" style="margin-bottom:18px;">➕ Criar novo torneio</button>`;
 
   const localOrfao = !state.cloudId && state.drawn;
   if(localOrfao){
@@ -2192,6 +2300,18 @@ function renderSorteio(){
   let html = `
     <div class="section-title">Duplas</div>
     <div class="section-sub">Adicione as duplas conforme a necessidade. Preencha o nome e, se quiser, até 2 telefones por dupla (para enviar os jogos via WhatsApp e/ou Telegram depois do sorteio).</div>
+    <div class="card tg-settings">
+      <label>Imagem do topo (banner deste campeonato)</label>
+      ${state.headerImage ? `<img src="${state.headerImage}" style="width:100%;border-radius:10px;margin-bottom:10px;display:block;max-height:140px;object-fit:cover;">` : ``}
+      <div style="display:flex;gap:8px;">
+        <label class="btn secondary" style="flex:1;text-align:center;margin:0;">
+          📷 ${state.headerImage ? "Trocar imagem" : "Escolher imagem"}
+          <input type="file" accept="image/*" id="input-header-image" style="display:none;">
+        </label>
+        ${state.headerImage ? `<button class="btn ghost" id="btn-remover-header-image" style="flex:0 0 auto;width:auto;">Remover</button>` : ``}
+      </div>
+      <div class="hint">Aparece no cabeçalho do app enquanto este torneio estiver aberto. Fica salva com o torneio (some se você remover ou trocar).</div>
+    </div>
     <div class="card tg-settings">
       <label>Bot do Telegram (usuário, sem @)</label>
       <input type="text" id="input-telegram-bot" placeholder="ex: meucampeonatobot" value="${escapeHtml(state.telegramBot||"")}">
@@ -2632,17 +2752,19 @@ function escapeHtml(s){
    EVENTOS
 ============================================================ */
 function bindEvents(){
-  const btnSaveGcid = document.getElementById("btn-save-gcid");
-  if(btnSaveGcid) btnSaveGcid.addEventListener("click", ()=>{
-    const val = document.getElementById("input-gcid").value.trim();
+  const btnSalvarGcidAdmin = document.getElementById("btn-salvar-gcid-admin");
+  if(btnSalvarGcidAdmin) btnSalvarGcidAdmin.addEventListener("click", async ()=>{
+    const val = document.getElementById("input-gcid-admin").value.trim();
     if(!val){ showToast("Cole o Client ID do Google."); return; }
-    saveClientId(val);
-    render();
+    showToast("Salvando...");
+    const ok = await salvarClientIdAdmin(val);
+    if(ok){ showToast("Client ID salvo! Já vale para todo mundo."); render(); }
   });
-  const btnEditGcid = document.getElementById("btn-edit-gcid");
-  if(btnEditGcid) btnEditGcid.addEventListener("click", ()=>{
-    saveClientId("");
-    render();
+  const btnRemoverGcidAdmin = document.getElementById("btn-remover-gcid-admin");
+  if(btnRemoverGcidAdmin) btnRemoverGcidAdmin.addEventListener("click", async ()=>{
+    if(!confirm("Remover o Client ID do Google? O login com Google para de funcionar até configurar de novo.")) return;
+    const ok = await salvarClientIdAdmin("");
+    if(ok){ showToast("Client ID removido."); render(); }
   });
   const btnLogout = document.getElementById("btn-logout");
   if(btnLogout) btnLogout.addEventListener("click", ()=>{
@@ -2694,6 +2816,25 @@ function bindEvents(){
   if(btnAddDupla) btnAddDupla.addEventListener("click", ()=>{
     state.duplas.push({nome:`Dupla ${state.duplas.length+1}`, tel1:"", tel2:"", nomeDefault:true});
     save(); render();
+  });
+  const inputHeaderImage = document.getElementById("input-header-image");
+  if(inputHeaderImage) inputHeaderImage.addEventListener("change", async e=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    showToast("Processando imagem...");
+    try{
+      state.headerImage = await processarImagemTopo(file);
+      save(); render();
+      showToast("Imagem do topo atualizada!");
+    }catch(err){
+      showToast("Não foi possível usar essa imagem.");
+    }
+  });
+  const btnRemoverHeaderImage = document.getElementById("btn-remover-header-image");
+  if(btnRemoverHeaderImage) btnRemoverHeaderImage.addEventListener("click", ()=>{
+    state.headerImage = null;
+    save(); render();
+    showToast("Imagem do topo removida.");
   });
   main.querySelectorAll("[data-remover-dupla]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
@@ -2971,6 +3112,7 @@ if(__tvMatchId && __tvTorneioId){
   });
 
   render();
+  fetchAndCacheClientId();
   if(auth && state.cloudId){
     refreshTorneioAtual();
     if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
