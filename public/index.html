@@ -69,15 +69,6 @@
   header.has-bg-image{
     background-blend-mode: multiply;
   }
-  header .eyebrow{
-    font-family:'DM Mono',monospace;
-    font-size:11px;
-    letter-spacing:.14em;
-    text-transform:uppercase;
-    opacity:.75;
-    position:relative;
-    z-index:1;
-  }
   header h1{
     font-family:'Bebas Neue',sans-serif;
     font-size:34px;
@@ -482,7 +473,6 @@
 <div class="stage">
   <div class="app">
     <header id="app-header">
-      <div class="eyebrow" id="header-eyebrow">Beach Sports Club</div>
       <h1 id="header-title">Futevôlei</h1>
       <div id="torneio-bar"></div>
     </header>
@@ -1633,12 +1623,15 @@ function getStoryHeaderImage(){
 }
 // Desenha "cobrindo" o retângulo de destino (mesmo efeito do CSS background-size:cover),
 // cortando o excesso da imagem em vez de distorcer.
-function drawImageCover(ctx, img, dx, dy, dw, dh){
+// Desenha a imagem inteira dentro do retângulo, sem cortar nada (equivalente a
+// background-size:contain) — encaixa e centraliza, deixando sobra dos lados ou de
+// cima/baixo quando a proporção da imagem não bate com a do retângulo.
+function drawImageContain(ctx, img, dx, dy, dw, dh){
   const ir = img.width/img.height, dr = dw/dh;
-  let sx, sy, sw, sh;
-  if(ir > dr){ sh = img.height; sw = sh*dr; sx = (img.width-sw)/2; sy = 0; }
-  else { sw = img.width; sh = sw/dr; sx = 0; sy = (img.height-sh)/2; }
-  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  let w, h;
+  if(ir > dr){ w = dw; h = w/ir; } else { h = dh; w = h*ir; }
+  const x = dx + (dw-w)/2, y = dy + (dh-h)/2;
+  ctx.drawImage(img, 0, 0, img.width, img.height, x, y, w, h);
 }
 
 function drawStoryCanvas(){
@@ -1662,29 +1655,22 @@ function renderStory(canvas, H){
 
   const headerH = 300;
   const headerImg = getStoryHeaderImage();
+  const grad = ctx.createLinearGradient(0,0,W,headerH);
+  grad.addColorStop(0, OCEAN);
+  grad.addColorStop(1, OCEAN_DEEP);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,headerH);
+
   if(headerImg){
-    drawImageCover(ctx, headerImg, 0, 0, W, headerH);
-    const overlay = ctx.createLinearGradient(0,0,0,headerH);
-    overlay.addColorStop(0, "rgba(11,60,73,.45)");
-    overlay.addColorStop(1, "rgba(11,60,73,.65)");
-    ctx.fillStyle = overlay;
-    ctx.fillRect(0,0,W,headerH);
-  } else {
-    const grad = ctx.createLinearGradient(0,0,W,headerH);
-    grad.addColorStop(0, OCEAN);
-    grad.addColorStop(1, OCEAN_DEEP);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0,0,W,headerH);
+    drawImageContain(ctx, headerImg, 0, 0, W, headerH);
   }
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "rgba(255,255,255,.75)";
-  ctx.font = "600 24px Arial, sans-serif";
-  ctx.fillText("BEACH SPORTS CLUB", W/2, 90);
-
-  ctx.fillStyle = WHITE;
-  ctx.font = "bold 96px Arial, sans-serif";
-  ctx.fillText("FUTEVÔLEI", W/2, 190);
+  // Sombreamento sempre presente no topo, com ou sem imagem, pra manter contraste e acabamento.
+  const overlay = ctx.createLinearGradient(0,0,0,headerH);
+  overlay.addColorStop(0, "rgba(11,60,73,.35)");
+  overlay.addColorStop(1, "rgba(11,60,73,.6)");
+  ctx.fillStyle = overlay;
+  ctx.fillRect(0,0,W,headerH);
 
   let cursorY;
   if(!state.drawn){
@@ -1710,11 +1696,6 @@ function renderStory(canvas, H){
     const groupsBottom = drawGroupsSection(ctx, W, headerH+80);
     cursorY = drawBracket(ctx, W, groupsBottom+50);
   }
-
-  ctx.textAlign = "center";
-  ctx.fillStyle = MUTED;
-  ctx.font = "32px Arial, sans-serif";
-  ctx.fillText("Campeonato de Futevôlei", W/2, H-70);
 
   return cursorY + 140;
 }
@@ -1998,11 +1979,9 @@ function pendingElimMessages(){
 
 function atualizarHeader(){
   const header = document.getElementById("app-header");
-  const eyebrow = document.getElementById("header-eyebrow");
   const title = document.getElementById("header-title");
-  if(!header || !eyebrow || !title) return;
+  if(!header || !title) return;
   if(state.cloudId){
-    eyebrow.textContent = "Beach Sports Club";
     title.textContent = state.cloudNome || "Torneio";
     if(state.headerImage){
       header.style.backgroundImage = `linear-gradient(160deg, rgba(11,60,73,.55), rgba(11,60,73,.75)), url("${state.headerImage}")`;
@@ -2012,7 +1991,6 @@ function atualizarHeader(){
       header.classList.remove("has-bg-image");
     }
   } else {
-    eyebrow.textContent = "Beach Sports Club";
     title.textContent = "Futevôlei";
     header.style.backgroundImage = "";
     header.classList.remove("has-bg-image");
