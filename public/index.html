@@ -1665,13 +1665,6 @@ function renderStory(canvas, H){
     drawImageContain(ctx, headerImg, 0, 0, W, headerH);
   }
 
-  // Sombreamento sempre presente no topo, com ou sem imagem, pra manter contraste e acabamento.
-  const overlay = ctx.createLinearGradient(0,0,0,headerH);
-  overlay.addColorStop(0, "rgba(11,60,73,.35)");
-  overlay.addColorStop(1, "rgba(11,60,73,.6)");
-  ctx.fillStyle = overlay;
-  ctx.fillRect(0,0,W,headerH);
-
   let cursorY;
   if(!state.drawn){
     ctx.textAlign = "center";
