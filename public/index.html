@@ -516,6 +516,9 @@ function defaultState(){
     elimNotified: {},
     cloudId: null,
     cloudNome: "",
+    aprovacaoStatus: "pendente", // "pendente" | "aprovado" | "recusado" — definido pelo admin
+    dataInicio: null, // validade do campeonato (yyyy-mm-dd), definida na criação
+    dataFim: null,
     headerImage: null, // data URL da imagem de topo customizada para este campeonato (opcional)
     paletteFromImage: false, // se true, o app usa as cores extraídas da imagem do topo como tema
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
@@ -588,11 +591,15 @@ function cacheClientId(v){ localStorage.setItem(GCID_KEY, (v||"").trim()); }
 // no botão de login; se estiver offline, seguimos com o último valor já guardado neste navegador.
 async function fetchAndCacheClientId(){
   try{
-    const res = await fetch("/api/config-get", { cache:"no-store" });
+    const url = auth ? `/api/config-get?email=${encodeURIComponent(auth.email)}` : "/api/config-get";
+    const res = await fetch(url, { cache:"no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     const novo = (data.googleClientId||"").trim();
     const atual = loadClientId();
+    if(typeof data.adminNotificationEmail === "string"){
+      adminNotificationEmailCache = data.adminNotificationEmail;
+    }
     if(novo !== atual){
       cacheClientId(novo);
       if(!auth){ render(); }
@@ -601,16 +608,20 @@ async function fetchAndCacheClientId(){
   }catch(e){ /* sem conexão — segue com o valor já salvo localmente, se houver */ }
 }
 
-// Só o admin pode alterar o Client ID (fica salvo no servidor, vale pra todo mundo que acessar o app).
-async function salvarClientIdAdmin(valor){
+// Só o admin pode alterar essas configurações (ficam salvas no servidor, valem pra todo mundo).
+async function salvarConfigAdmin({googleClientId, adminNotificationEmail}){
   try{
+    const body = { email: auth.email };
+    if(googleClientId !== undefined) body.googleClientId = googleClientId;
+    if(adminNotificationEmail !== undefined) body.adminNotificationEmail = adminNotificationEmail;
     const res = await fetch("/api/config-set", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ email: auth.email, googleClientId: valor })
+      body: JSON.stringify(body)
     });
     if(res.status===403){ showToast("Só o admin pode alterar essa configuração."); return false; }
     if(!res.ok) throw new Error("resposta não-ok");
-    cacheClientId(valor);
+    if(googleClientId !== undefined) cacheClientId(googleClientId);
+    if(adminNotificationEmail !== undefined) adminNotificationEmailCache = adminNotificationEmail;
     return true;
   }catch(e){
     showToast("Sem conexão com o servidor — não foi possível salvar.");
@@ -635,6 +646,7 @@ function handleGoogleCredential(response){
   auth = { email: payload.email, name: payload.name, picture: payload.picture };
   saveAuth(auth);
   render();
+  fetchAndCacheClientId();
 }
 
 function initGoogleSignIn(){
@@ -663,6 +675,9 @@ function statusTorneio(){
 let torneiosList = null;
 let torneiosLoading = false;
 let syncTimer = null;
+let telaAdmin = "lista"; // "lista" | "aprovacoes" — só usada quando ehAdmin()
+let mostrarFormNovoTorneio = false;
+let adminNotificationEmailCache = "";
 
 const LOCAL_TORNEIOS_KEY = "futevolei_local_torneios_v1";
 function getLocalTorneiosDB(){
@@ -678,7 +693,10 @@ function saveTorneioLocalFallback(payload){
   const meta = {
     id, nome: payload.nome, status: payload.status,
     ownerEmail: payload.ownerEmail, ownerName: payload.ownerName,
-    createdAt: existing?.createdAt || now, updatedAt: now
+    createdAt: existing?.createdAt || now, updatedAt: now,
+    aprovacaoStatus: existing ? existing.aprovacaoStatus : "pendente",
+    dataInicio: existing ? existing.dataInicio : (payload.dataInicio || null),
+    dataFim: existing ? existing.dataFim : (payload.dataFim || null)
   };
   db[id] = { ...meta, state: payload.state };
   setLocalTorneiosDB(db);
@@ -755,37 +773,64 @@ async function fetchTorneiosList(){
     torneiosList = Object.values(db)
       .filter(t=> ehAdmin() || (t.ownerEmail||"").trim().toLowerCase() === meuEmail)
       .map(t=>({
-        id:t.id, nome:t.nome, status:t.status, ownerEmail:t.ownerEmail, ownerName:t.ownerName, updatedAt:t.updatedAt
+        id:t.id, nome:t.nome, status:t.status, ownerEmail:t.ownerEmail, ownerName:t.ownerName, updatedAt:t.updatedAt,
+        aprovacaoStatus:t.aprovacaoStatus, dataInicio:t.dataInicio, dataFim:t.dataFim
       }));
   }
   torneiosLoading = false;
   render();
 }
 
-async function criarNovoTorneio(){
-  const nome = (prompt("Nome do torneio:", "Campeonato de Futevôlei") || "").trim();
-  if(!nome) return;
+async function criarNovoTorneio(nome, dataInicio, dataFim){
   state = defaultState();
   state.tournamentId = Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4);
   state.cloudNome = nome;
+  state.aprovacaoStatus = "pendente";
+  state.dataInicio = dataInicio;
+  state.dataFim = dataFim;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  showToast("Criando torneio...");
+  showToast("Enviando solicitação...");
   try{
     const res = await fetch("/api/torneios-save", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, state })
+      body: JSON.stringify({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, dataInicio, dataFim, state })
     });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     if(data.id){ state.cloudId = data.id; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    showToast("Torneio solicitado! Aguardando aprovação do admin.");
   }catch(e){
-    const meta = saveTorneioLocalFallback({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, state });
+    const meta = saveTorneioLocalFallback({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, dataInicio, dataFim, state });
     state.cloudId = meta.id;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     showToast("Sem conexão com a nuvem — torneio salvo só neste navegador.");
   }
+  mostrarFormNovoTorneio = false;
   torneiosList = null;
   render();
+}
+
+async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim){
+  showToast(decisao==="aprovado" ? "Aprovando..." : "Recusando...");
+  try{
+    const res = await fetch("/api/torneios-aprovar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id, adminEmail: auth.email, decisao, dataInicio, dataFim })
+    });
+    if(res.status===403){ showToast("Só o admin pode fazer isso."); return; }
+    if(!res.ok) throw new Error("resposta não-ok");
+    showToast(decisao==="aprovado" ? "Torneio aprovado! E-mail enviado ao organizador." : "Torneio recusado. E-mail enviado ao organizador.");
+    torneiosList = null;
+    if(state.cloudId===id){
+      state.aprovacaoStatus = decisao;
+      state.dataInicio = dataInicio || state.dataInicio;
+      state.dataFim = dataFim || state.dataFim;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+    render();
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível salvar a decisão.");
+  }
 }
 
 async function abrirTorneio(id){
@@ -813,13 +858,27 @@ function abrirTorneioComDados(data){
   state = migrarBracketAntigo(Object.assign(defaultState(), data.state));
   state.cloudId = data.id;
   state.cloudNome = data.nome;
+  state.aprovacaoStatus = data.aprovacaoStatus || "pendente";
+  state.dataInicio = data.dataInicio || null;
+  state.dataFim = data.dataFim || null;
   state.tab = "resumo";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   telegramStatus = {};
   render();
   if(state.drawn) refreshTelegramStatus();
   checkElimNotifications();
-  showToast(`"${data.nome}" carregado!`);
+  if(ehAdmin() || torneioEstaAtivo().ok) showToast(`"${data.nome}" carregado!`);
+}
+
+// Um torneio só fica liberado pra uso (fora do modo admin) depois de aprovado E dentro do
+// período de validade definido — antes ou depois disso, o app mostra uma tela de status
+// em vez das abas normais.
+function torneioEstaAtivo(){
+  if(state.aprovacaoStatus!=="aprovado") return {ok:false, motivo:"aprovacao"};
+  const hoje = new Date().toISOString().slice(0,10);
+  if(state.dataInicio && hoje < state.dataInicio) return {ok:false, motivo:"antes"};
+  if(state.dataFim && hoje > state.dataFim) return {ok:false, motivo:"depois"};
+  return {ok:true, motivo:null};
 }
 
 // Busca a versão mais recente do torneio já aberto (usado ao carregar/recarregar a página,
@@ -835,6 +894,9 @@ async function refreshTorneioAtual(){
       state = migrarBracketAntigo(Object.assign(defaultState(), data.state));
       state.cloudId = data.id;
       state.cloudNome = data.nome;
+      state.aprovacaoStatus = data.aprovacaoStatus || "pendente";
+      state.dataInicio = data.dataInicio || null;
+      state.dataFim = data.dataFim || null;
       state.tab = tabAtual;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       telegramStatus = {};
@@ -2129,6 +2191,17 @@ function render(){
     return;
   }
 
+  if(!ehAdmin() && !torneioEstaAtivo().ok){
+    nav.style.display = "none";
+    torneioBar.innerHTML = `<div class="torneio-bar">
+      <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}</span>
+      <button class="voltar" id="btn-voltar-torneios">Trocar torneio</button>
+    </div>`;
+    main.innerHTML = renderTorneioBloqueado();
+    bindEvents();
+    return;
+  }
+
   if(state.tab==="apito" && state.apitoMatchId){
     nav.style.display = "none";
     torneioBar.innerHTML = "";
@@ -2163,6 +2236,31 @@ function render(){
   bindEvents();
 }
 
+function renderTorneioBloqueado(){
+  const motivo = torneioEstaAtivo().motivo;
+  let titulo, texto;
+  if(state.aprovacaoStatus==="recusado"){
+    titulo = "❌ Solicitação recusada";
+    texto = "Esse campeonato foi recusado pelo admin do sistema. Se isso for um engano, entre em contato com o organizador do app.";
+  } else if(motivo==="aprovacao"){
+    titulo = "⏳ Aguardando aprovação";
+    texto = "Esse campeonato ainda não foi aprovado pelo admin do sistema. Você recebe um e-mail assim que a decisão for tomada.";
+  } else if(motivo==="antes"){
+    titulo = "🗓️ Ainda não começou";
+    texto = `Esse campeonato só fica disponível a partir de ${formatarDataBR(state.dataInicio)}.`;
+  } else {
+    titulo = "🗓️ Período encerrado";
+    texto = `Esse campeonato só ficava disponível até ${formatarDataBR(state.dataFim)}.`;
+  }
+  return `<div class="card empty" style="margin-top:20px;">
+    <span class="ball-icon">🏐</span>
+    <div style="font-weight:700;font-size:16px;color:var(--ocean-deep);margin:10px 0 8px;">${titulo}</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">${texto}</div>
+    ${badgeAprovacao({aprovacaoStatus:state.aprovacaoStatus})}
+    <div class="sub" style="margin-top:10px;">${formatarDataBR(state.dataInicio)} – ${formatarDataBR(state.dataFim)}</div>
+  </div>`;
+}
+
 function isLocalHost(){
   const h = location.hostname;
   return h==="localhost" || h==="127.0.0.1" || h==="" || location.protocol==="file:";
@@ -2174,6 +2272,7 @@ function handleAdminLogin(){
     auth = { email:"admin@local.teste", name:"Admin (teste local)", picture:"" };
     saveAuth(auth);
     render();
+    fetchAndCacheClientId();
   } else {
     showToast("Senha incorreta.");
   }
@@ -2206,6 +2305,18 @@ function renderLoginScreen(){
   return html;
 }
 
+function badgeAprovacao(t){
+  const st = t.aprovacaoStatus || "pendente";
+  if(st==="aprovado") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Aprovado</span>`;
+  if(st==="recusado") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">❌ Recusado</span>`;
+  return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente</span>`;
+}
+function formatarDataBR(iso){
+  if(!iso) return "—";
+  const [y,m,d] = iso.split("-");
+  return (y&&m&&d) ? `${d}/${m}/${y}` : iso;
+}
+
 function renderTorneiosScreen(){
   if(torneiosList===null && !torneiosLoading) fetchTorneiosList();
 
@@ -2219,25 +2330,57 @@ function renderTorneiosScreen(){
         <div class="email">${escapeHtml(auth.email||"")}</div>
       </div>
       <button class="btn ghost" id="btn-logout" style="width:auto;padding:7px 14px;">Sair</button>
-    </div>
-    <div class="section-title">Torneios</div>
-    <div class="section-sub">${ehAdmin() ? "👑 Modo admin — exibindo os torneios de todas as contas." : "Torneios criados por você."}</div>`;
+    </div>`;
 
   if(ehAdmin()){
+    html += `<div style="display:flex;gap:8px;margin-bottom:14px;">
+      <div class="chip ${telaAdmin!=="aprovacoes"?"active":""}" data-tela-admin="lista" style="flex:1;text-align:center;">Torneios</div>
+      <div class="chip ${telaAdmin==="aprovacoes"?"active":""}" data-tela-admin="aprovacoes" style="flex:1;text-align:center;">Aprovações</div>
+    </div>`;
+
     const gcidAtual = loadClientId();
     html += `<div class="card" style="border:1.5px solid var(--ocean);margin-bottom:14px;">
       <div style="font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:8px;">⚙️ Configurações do app (admin)</div>
       <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Google Client ID</label>
       <input type="text" id="input-gcid-admin" placeholder="algo.apps.googleusercontent.com" value="${escapeHtml(gcidAtual)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;">
       <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Criado gratuitamente no Google Cloud Console (OAuth), autorizado para este domínio. Salvo aqui uma vez, vale para todo mundo que acessar o app — sem precisar configurar em cada navegador.</div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
         <button class="btn" id="btn-salvar-gcid-admin" style="flex:1;">Salvar</button>
         ${gcidAtual ? `<button class="btn ghost" id="btn-remover-gcid-admin" style="flex:0 0 auto;width:auto;">Remover</button>` : ``}
       </div>
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">E-mail para notificações</label>
+      <input type="email" id="input-email-admin" placeholder="voce@exemplo.com" value="${escapeHtml(adminNotificationEmailCache)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
+      <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Recebe um aviso sempre que um novo campeonato for solicitado, e outras notificações do sistema.</div>
+      <button class="btn" id="btn-salvar-email-admin">Salvar e-mail</button>
     </div>`;
   }
 
-  html += `<button class="btn" id="btn-novo-torneio" style="margin-bottom:18px;">➕ Criar novo torneio</button>`;
+  if(ehAdmin() && telaAdmin==="aprovacoes"){
+    html += renderAprovacoesScreen();
+    return html;
+  }
+
+  html += `<div class="section-title">Torneios</div>
+    <div class="section-sub">${ehAdmin() ? "👑 Modo admin — exibindo os torneios de todas as contas." : "Torneios criados por você."}</div>`;
+
+  if(mostrarFormNovoTorneio){
+    const hoje = new Date().toISOString().slice(0,10);
+    html += `<div class="card" style="border:1.5px solid var(--ocean);">
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Nome do torneio</label>
+      <input type="text" id="input-novo-nome" placeholder="Campeonato de Futevôlei" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Data de início</label>
+      <input type="date" id="input-novo-inicio" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Data de fim</label>
+      <input type="date" id="input-novo-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:6px;">
+      <div class="hint" style="margin-bottom:14px;">O torneio só fica liberado para uso depois que o admin aprovar — e dentro desse período informado.</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="btn-cancelar-novo-torneio" style="flex:1;">Cancelar</button>
+        <button class="btn" id="btn-confirmar-novo-torneio" style="flex:1;">Criar</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<button class="btn" id="btn-novo-torneio" style="margin-bottom:18px;">➕ Criar novo torneio</button>`;
+  }
 
   const localOrfao = !state.cloudId && state.drawn;
   if(localOrfao){
@@ -2260,6 +2403,10 @@ function renderTorneiosScreen(){
           <span class="nome">${escapeHtml(t.nome||"Torneio sem nome")}</span>
           <span class="status-pill ${statusClass}">${escapeHtml(t.status||"Criado")}</span>
         </div>
+        <div class="row" style="margin-top:4px;">
+          ${badgeAprovacao(t)}
+          <span class="sub" style="margin-left:8px;">${formatarDataBR(t.dataInicio)} – ${formatarDataBR(t.dataFim)}</span>
+        </div>
         <div class="row" style="margin-top:6px;align-items:center;">
           <div class="sub">Organizador: ${escapeHtml(t.ownerName||"—")}</div>
           <button class="btn-excluir" data-del-torneio="${t.id}" data-del-nome="${escapeHtml(t.nome||"Torneio sem nome")}">🗑️ Excluir</button>
@@ -2267,6 +2414,49 @@ function renderTorneiosScreen(){
       </div>`;
     });
   }
+  return html;
+}
+
+function renderAprovacoesScreen(){
+  let html = `<div class="section-title">Aprovações</div>
+    <div class="section-sub">Revise, ajuste as datas e aprove ou recuse os campeonatos solicitados.</div>`;
+
+  const lista = (torneiosList||[]).slice().sort((a,b)=>{
+    const pesoA = a.aprovacaoStatus==="pendente" ? 0 : 1;
+    const pesoB = b.aprovacaoStatus==="pendente" ? 0 : 1;
+    return pesoA-pesoB || (b.updatedAt||"").localeCompare(a.updatedAt||"");
+  });
+
+  if(torneiosList===null){
+    return html + `<div class="card empty">Carregando torneios...</div>`;
+  }
+  if(!lista.length){
+    return html + `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum torneio solicitado ainda.</div>`;
+  }
+
+  lista.forEach(t=>{
+    html += `<div class="card" style="margin-bottom:14px;">
+      <div class="row" style="margin-bottom:6px;">
+        <span class="nome" style="font-weight:700;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
+        ${badgeAprovacao(t)}
+      </div>
+      <div class="sub" style="margin-bottom:10px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <div style="flex:1;">
+          <label style="font-size:11px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:4px;">Início</label>
+          <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:11px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:4px;">Fim</label>
+          <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" data-aprovar="${t.id}" style="flex:1;background:var(--grass);box-shadow:none;">✅ Aprovar</button>
+        <button class="btn ghost" data-recusar="${t.id}" style="flex:1;border-color:var(--coral);color:var(--coral);">❌ Recusar</button>
+      </div>
+    </div>`;
+  });
   return html;
 }
 
@@ -2863,14 +3053,21 @@ function bindEvents(){
     const val = document.getElementById("input-gcid-admin").value.trim();
     if(!val){ showToast("Cole o Client ID do Google."); return; }
     showToast("Salvando...");
-    const ok = await salvarClientIdAdmin(val);
+    const ok = await salvarConfigAdmin({googleClientId: val});
     if(ok){ showToast("Client ID salvo! Já vale para todo mundo."); render(); }
   });
   const btnRemoverGcidAdmin = document.getElementById("btn-remover-gcid-admin");
   if(btnRemoverGcidAdmin) btnRemoverGcidAdmin.addEventListener("click", async ()=>{
     if(!confirm("Remover o Client ID do Google? O login com Google para de funcionar até configurar de novo.")) return;
-    const ok = await salvarClientIdAdmin("");
+    const ok = await salvarConfigAdmin({googleClientId: ""});
     if(ok){ showToast("Client ID removido."); render(); }
+  });
+  const btnSalvarEmailAdmin = document.getElementById("btn-salvar-email-admin");
+  if(btnSalvarEmailAdmin) btnSalvarEmailAdmin.addEventListener("click", async ()=>{
+    const val = document.getElementById("input-email-admin").value.trim();
+    showToast("Salvando...");
+    const ok = await salvarConfigAdmin({adminNotificationEmail: val});
+    if(ok){ showToast(val ? "E-mail de notificações salvo!" : "E-mail de notificações removido."); render(); }
   });
   const btnLogout = document.getElementById("btn-logout");
   if(btnLogout) btnLogout.addEventListener("click", ()=>{
@@ -2883,7 +3080,40 @@ function bindEvents(){
     if(e.key==="Enter") handleAdminLogin();
   });
   const btnNovoTorneio = document.getElementById("btn-novo-torneio");
-  if(btnNovoTorneio) btnNovoTorneio.addEventListener("click", criarNovoTorneio);
+  if(btnNovoTorneio) btnNovoTorneio.addEventListener("click", ()=>{
+    mostrarFormNovoTorneio = true;
+    render();
+  });
+  const btnCancelarNovoTorneio = document.getElementById("btn-cancelar-novo-torneio");
+  if(btnCancelarNovoTorneio) btnCancelarNovoTorneio.addEventListener("click", ()=>{
+    mostrarFormNovoTorneio = false;
+    render();
+  });
+  const btnConfirmarNovoTorneio = document.getElementById("btn-confirmar-novo-torneio");
+  if(btnConfirmarNovoTorneio) btnConfirmarNovoTorneio.addEventListener("click", ()=>{
+    const nome = (document.getElementById("input-novo-nome").value||"").trim();
+    const dataInicio = document.getElementById("input-novo-inicio").value;
+    const dataFim = document.getElementById("input-novo-fim").value;
+    if(!nome){ showToast("Dê um nome para o torneio."); return; }
+    if(!dataInicio || !dataFim){ showToast("Informe as datas de início e fim."); return; }
+    if(dataFim < dataInicio){ showToast("A data de fim não pode ser antes da data de início."); return; }
+    criarNovoTorneio(nome, dataInicio, dataFim);
+  });
+  main.querySelectorAll("[data-tela-admin]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      telaAdmin = el.dataset.telaAdmin;
+      render();
+    });
+  });
+  main.querySelectorAll("[data-aprovar],[data-recusar]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.dataset.aprovar || btn.dataset.recusar;
+      const decisao = btn.dataset.aprovar ? "aprovado" : "recusado";
+      const inputInicio = main.querySelector(`[data-aprov-inicio="${id}"]`);
+      const inputFim = main.querySelector(`[data-aprov-fim="${id}"]`);
+      decidirAprovacaoTorneio(id, decisao, inputInicio?.value, inputFim?.value);
+    });
+  });
   const btnMigrar = document.getElementById("btn-migrar-local");
   if(btnMigrar) btnMigrar.addEventListener("click", migrarTorneioLocal);
   main.querySelectorAll("[data-open-torneio]").forEach(el=>{
