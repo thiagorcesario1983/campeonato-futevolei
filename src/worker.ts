@@ -2,6 +2,8 @@ export interface Env {
   DB: KVNamespace;
   ASSETS: Fetcher;
   TELEGRAM_BOT_TOKEN?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM?: string;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -12,6 +14,32 @@ function json(data: unknown, status = 200): Response {
       "Cache-Control": "no-store, no-cache, must-revalidate"
     }
   });
+}
+
+/* ============================================================
+   E-MAIL (via Resend — precisa da secret RESEND_API_KEY configurada
+   no painel Cloudflare → Settings → Variables and Secrets)
+============================================================ */
+async function enviarEmail(env: Env, to: string, subject: string, html: string): Promise<boolean> {
+  if (!env.RESEND_API_KEY || !to) return false;
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: env.RESEND_FROM || "Campeonato Futevôlei <onboarding@resend.dev>",
+        to: [to],
+        subject,
+        html
+      })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 /* ============================================================
@@ -170,6 +198,7 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   const now = new Date().toISOString();
   const index = await getIndex(env);
   const existing = index.find((t: any) => t.id === id);
+  const ehNovo = !existing;
 
   // Só o dono original (ou o admin) pode atualizar um torneio já existente.
   if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail)) {
@@ -183,7 +212,13 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     ownerEmail: existing?.ownerEmail || body.ownerEmail || null,
     ownerName: existing?.ownerName || body.ownerName || null,
     createdAt: existing?.createdAt || now,
-    updatedAt: now
+    updatedAt: now,
+    // Aprovação: todo torneio novo nasce "pendente" — o cliente nunca decide isso sozinho.
+    // Datas de validade: definidas pelo criador na hora de pedir o torneio; o admin pode
+    // ajustá-las depois, na aprovação (rota /api/torneios-aprovar).
+    aprovacaoStatus: existing ? existing.aprovacaoStatus : "pendente",
+    dataInicio: existing ? existing.dataInicio : (body.dataInicio || null),
+    dataFim: existing ? existing.dataFim : (body.dataFim || null)
   };
 
   try {
@@ -193,6 +228,23 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     await env.DB.put("torneios:index", JSON.stringify(newIndex));
   } catch (e: any) {
     return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  if (ehNovo) {
+    const adminEmail = await env.DB.get("config:admin_notification_email");
+    if (adminEmail) {
+      await enviarEmail(
+        env,
+        adminEmail,
+        `Novo campeonato solicitado: ${meta.nome}`,
+        `<p>Um novo campeonato foi criado e está aguardando aprovação.</p>
+         <p><b>Nome:</b> ${meta.nome}<br>
+         <b>Organizador:</b> ${meta.ownerName || "-"} (${meta.ownerEmail || "-"})<br>
+         <b>Início:</b> ${meta.dataInicio || "não informado"}<br>
+         <b>Fim:</b> ${meta.dataFim || "não informado"}</p>
+         <p>Entre no app com a conta admin, aba Aprovações, pra revisar.</p>`
+      );
+    }
   }
 
   return json(meta);
@@ -226,6 +278,70 @@ async function torneiosGet(request: Request, env: Env): Promise<Response> {
   }
 
   return json(dados);
+}
+
+async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const solicitanteEmail = normEmail(body.adminEmail);
+  if (!ehAdmin(solicitanteEmail)) {
+    return json({ error: "Só o admin pode aprovar ou recusar torneios" }, 403);
+  }
+
+  const id = body.id;
+  const decisao = body.decisao === "aprovado" || body.decisao === "recusado" ? body.decisao : null;
+  if (!id || !decisao) return json({ error: "id e decisao (aprovado|recusado) são obrigatórios" }, 400);
+
+  const raw = await env.DB.get(`torneio:${id}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  dados.aprovacaoStatus = decisao;
+  if (typeof body.dataInicio === "string") dados.dataInicio = body.dataInicio || null;
+  if (typeof body.dataFim === "string") dados.dataFim = body.dataFim || null;
+  dados.updatedAt = new Date().toISOString();
+
+  const meta = {
+    id: dados.id,
+    nome: dados.nome,
+    status: dados.status,
+    ownerEmail: dados.ownerEmail,
+    ownerName: dados.ownerName,
+    createdAt: dados.createdAt,
+    updatedAt: dados.updatedAt,
+    aprovacaoStatus: dados.aprovacaoStatus,
+    dataInicio: dados.dataInicio,
+    dataFim: dados.dataFim
+  };
+
+  try {
+    await env.DB.put(`torneio:${id}`, JSON.stringify(dados));
+    const index = await getIndex(env);
+    const newIndex = index.filter((t: any) => t.id !== id);
+    newIndex.push(meta);
+    await env.DB.put("torneios:index", JSON.stringify(newIndex));
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  if (dados.ownerEmail) {
+    const aprovado = decisao === "aprovado";
+    await enviarEmail(
+      env,
+      dados.ownerEmail,
+      aprovado ? `Seu campeonato "${dados.nome}" foi aprovado ✅` : `Seu campeonato "${dados.nome}" foi recusado ❌`,
+      `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
+       <p>O campeonato <b>${dados.nome}</b> foi <b>${aprovado ? "aprovado" : "recusado"}</b>.</p>
+       ${aprovado ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>Já está liberado para uso dentro desse período.</p>` : `<p>Se tiver dúvidas, entre em contato com o organizador do app.</p>`}`
+    );
+  }
+
+  return json(meta);
 }
 
 // Rota pública para o "Placar para TV": não exige login/e-mail, só o ID do torneio
@@ -276,9 +392,15 @@ async function torneiosDelete(request: Request, env: Env): Promise<Response> {
 /* ============================================================
    CONFIGURAÇÕES GLOBAIS DO APP (só o admin pode alterar)
 ============================================================ */
-async function configGet(_request: Request, env: Env): Promise<Response> {
+async function configGet(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const solicitanteEmail = normEmail(url.searchParams.get("email"));
   const googleClientId = (await env.DB.get("config:google_client_id")) || null;
-  return json({ googleClientId });
+  const resposta: any = { googleClientId };
+  if (ehAdmin(solicitanteEmail)) {
+    resposta.adminNotificationEmail = (await env.DB.get("config:admin_notification_email")) || null;
+  }
+  return json(resposta);
 }
 
 async function configSet(request: Request, env: Env): Promise<Response> {
@@ -296,6 +418,9 @@ async function configSet(request: Request, env: Env): Promise<Response> {
 
   if (typeof body.googleClientId === "string") {
     await env.DB.put("config:google_client_id", body.googleClientId.trim());
+  }
+  if (typeof body.adminNotificationEmail === "string") {
+    await env.DB.put("config:admin_notification_email", body.adminNotificationEmail.trim());
   }
 
   return json({ ok: true });
@@ -335,6 +460,9 @@ export default {
       return method === "POST" || method === "DELETE"
         ? torneiosDelete(request, env)
         : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/torneios-aprovar") {
+      return method === "POST" ? torneiosAprovar(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path === "/api/config-get") {
       return configGet(request, env);
