@@ -56,7 +56,7 @@
     .app{min-height:calc(100vh - 48px); border-radius:28px; overflow:hidden;}
   }
 
-  /* ---------- Header ----------- */
+  /* ---------- Header ---------- */
   header{
     background: linear-gradient(160deg, var(--ocean) 0%, var(--ocean-deep) 100%);
     background-size: cover;
@@ -640,6 +640,17 @@ function decodeJwt(token){
   }catch(e){ return null; }
 }
 
+// Limpa o torneio aberto neste navegador. Precisa ser chamado sempre que a conta logada
+// mudar (login/logout) — sem isso, o app ficava "preso" mostrando o último torneio aberto
+// mesmo depois de trocar de conta, o que gerava confusão (e até duplicidade de torneios,
+// já que qualquer ação ali passava a salvar com o e-mail da conta nova).
+function limparTorneioLocal(){
+  clearTimeout(syncTimer);
+  syncTimer = null;
+  state = defaultState();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
 function handleGoogleCredential(response){
   const payload = decodeJwt(response.credential);
   if(!payload) return;
@@ -662,6 +673,7 @@ function initGoogleSignIn(){
 function logout(){
   auth = null;
   saveAuth(null);
+  limparTorneioLocal(); // sem isso, a próxima conta que logar neste navegador "herdava" este torneio
   try{ if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); }catch(e){}
   render();
 }
@@ -934,8 +946,7 @@ async function excluirTorneio(id, nome){
 }
 
 function voltarParaTorneios(){
-  state.cloudId = null;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  limparTorneioLocal();
   torneiosList = null;
   render();
 }
@@ -2271,6 +2282,7 @@ function handleAdminLogin(){
   if(val === "123456"){
     auth = { email:"admin@local.teste", name:"Admin (teste local)", picture:"" };
     saveAuth(auth);
+    limparTorneioLocal(); // garante que não herda o torneio de uma sessão anterior neste navegador
     render();
     fetchAndCacheClientId();
   } else {
