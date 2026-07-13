@@ -551,7 +551,7 @@ function defaultState(){
     elimRodadas: [], // (formato "eliminacao") [{matches:[{a,b,pa,pb}], bye:nome|null}, ...]
     bracketSeed: null, // (formato "eliminacao") lista fixa de classificados (com folgas=null) que abre a 1ª rodada do mata-mata
     bracket: [], // [[{pa,pb}, ...], [...], ...] — cada posição é uma rodada do mata-mata (tamanho = log2(qualificados))
-    terceiro: {pa:null,pb:null},
+    terceiro: {pa:null,pb:null,finalizado:false},
     terceiroLugar: false,
     filter: "todos",
     tournamentId: null,
@@ -1209,7 +1209,7 @@ function sortear(){
     state.elimRodadas = [];
     state.bracketSeed = null;
     state.bracket = [];
-    state.terceiro = {pa:null, pb:null};
+    state.terceiro = {pa:null, pb:null, finalizado:false};
     state.drawn = true;
     sortearRodadaEliminacao();
     save();
@@ -1229,7 +1229,7 @@ function sortear(){
     let jogoNum = 1;
     for(let x=0; x<g.length; x++){
       for(let y=x+1; y<g.length; y++){
-        groupMatches.push({group:letters[gi], jogo:jogoNum++, a:g[x], b:g[y], pa:null, pb:null});
+        groupMatches.push({group:letters[gi], jogo:jogoNum++, a:g[x], b:g[y], pa:null, pb:null, finalizado:false});
       }
     }
   });
@@ -1237,7 +1237,7 @@ function sortear(){
   state.groupMatches = groupMatches;
   state.drawn = true;
   state.bracket = criarBracketVazio(qualificadosCount());
-  state.terceiro = {pa:null, pb:null};
+  state.terceiro = {pa:null, pb:null, finalizado:false};
   save();
 }
 // Configuração de duplas/grupos (formato "grupos") é válida quando: nº de grupos é potência de 2
@@ -1272,7 +1272,7 @@ function elimPerdasPorDupla(){
   const perdas = {};
   state.elimRodadas.forEach(r=>{
     r.matches.forEach(m=>{
-      const w = winner(m.a, m.b, m.pa, m.pb);
+      const w = winnerFinal(m.a, m.b, m);
       if(!w) return;
       const loser = w===m.a ? m.b : m.a;
       perdas[loser] = (perdas[loser]||0) + 1;
@@ -1287,7 +1287,7 @@ function elimVitoriasPorDupla(){
   const vitorias = {};
   state.elimRodadas.forEach(r=>{
     r.matches.forEach(m=>{
-      const w = winner(m.a, m.b, m.pa, m.pb);
+      const w = winnerFinal(m.a, m.b, m);
       if(w) vitorias[w] = (vitorias[w]||0) + 1;
     });
   });
@@ -1303,7 +1303,7 @@ function elimRodadaAtual(){
 }
 function elimRodadaCompleta(rodada){
   if(!rodada) return true;
-  return rodada.matches.every(m => m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="");
+  return rodada.matches.every(m => partidaFinalizada(m));
 }
 // Sorteia uma nova rodada entre as duplas vivas, priorizando confrontos entre quem tem menos
 // vitórias (ordena por vitórias, com desempate aleatório, e casa vizinhos dessa ordem). Se o nº
@@ -1328,7 +1328,7 @@ function sortearRodadaEliminacao(){
   }
   const matches = [];
   for(let i=0;i<vivos.length;i+=2){
-    matches.push({a:vivos[i], b:vivos[i+1], pa:null, pb:null});
+    matches.push({a:vivos[i], b:vivos[i+1], pa:null, pb:null, finalizado:false});
   }
   state.elimRodadas.push({matches, bye});
   save();
@@ -1355,7 +1355,7 @@ function iniciarMataMataEliminacao(){
   while(comFolgas.length < tamanhoBracket) comFolgas.push(null);
   state.bracketSeed = shuffle(comFolgas);
   state.bracket = criarBracketVazio(tamanhoBracket);
-  state.terceiro = {pa:null, pb:null};
+  state.terceiro = {pa:null, pb:null, finalizado:false};
   save();
 }
 function matamataPronto(){
@@ -1372,7 +1372,7 @@ function standingsFor(letter){
   const nomes = state.groups[idx] || [];
   const rows = nomes.map(nome => ({nome, j:0, v:0, d:0, pp:0, pc:0}));
   state.groupMatches.filter(m=>m.group===letter).forEach(m=>{
-    if(m.pa===null || m.pb===null || m.pa==="" || m.pb==="") return;
+    if(!partidaFinalizada(m)) return;
     const pa = Number(m.pa), pb = Number(m.pb);
     const ra = rows.find(r=>r.nome===m.a);
     const rb = rows.find(r=>r.nome===m.b);
@@ -1388,7 +1388,7 @@ function standingsFor(letter){
 
 function allGroupsFilled(){
   return state.drawn && state.groupMatches.length>0 &&
-    state.groupMatches.every(m=> m.pa!==null && m.pb!==null && m.pa!=="" && m.pb!=="");
+    state.groupMatches.every(m=> partidaFinalizada(m));
 }
 
 function winner(a,b,pa,pb){
@@ -1399,6 +1399,19 @@ function winner(a,b,pa,pb){
   const na=Number(pa), nb=Number(pb);
   if(na>nb) return a; if(nb>na) return b; return null;
 }
+// Uma partida só "vale" pra classificação/chaveamento quando estiver marcada como finalizada —
+// enquanto isso não acontece, o placar pode estar sendo atualizado em tempo real (pelo Apitar
+// jogo), mas nenhuma decisão de sorteio/eliminação/avanço é recalculada com base nele.
+function partidaFinalizada(m){
+  return !!m && m.finalizado===true && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
+}
+// Mesma ideia do winner(), mas só resolve de verdade quando a partida está finalizada
+// (folgas/byes continuam resolvendo na hora, já que não há partida pra finalizar).
+function winnerFinal(a,b,m){
+  if(a==null || b==null) return winner(a,b, m?.pa, m?.pb);
+  if(!partidaFinalizada(m)) return null;
+  return winner(a,b,m.pa,m.pb);
+}
 
 /* ---------- Chaveamento (mata-mata) genérico, com N rodadas dinâmicas ---------- */
 function criarBracketVazio(qualificados){
@@ -1406,7 +1419,7 @@ function criarBracketVazio(qualificados){
   const bracket = [];
   for(let r=0; r<rounds; r++){
     const nMatches = qualificados / Math.pow(2, r+1);
-    bracket.push(Array.from({length:nMatches}, ()=>({pa:null, pb:null})));
+    bracket.push(Array.from({length:nMatches}, ()=>({pa:null, pb:null, finalizado:false})));
   }
   return bracket;
 }
@@ -1442,7 +1455,7 @@ function bracketTeamsForRound(r){
   if(r===0) return primeiraRodadaTeams();
   const prevTeams = bracketTeamsForRound(r-1);
   const prevRound = state.bracket[r-1] || [];
-  const prevWinners = prevTeams.map((t,i)=> winner(t[0], t[1], prevRound[i]?.pa, prevRound[i]?.pb));
+  const prevWinners = prevTeams.map((t,i)=> winnerFinal(t[0], t[1], prevRound[i]));
   const teams = [];
   for(let i=0; i<prevWinners.length; i+=2) teams.push([prevWinners[i], prevWinners[i+1]]);
   return teams;
@@ -1450,7 +1463,7 @@ function bracketTeamsForRound(r){
 function bracketWinnersForRound(r){
   const teams = bracketTeamsForRound(r);
   const round = state.bracket[r] || [];
-  return teams.map((t,i)=> winner(t[0], t[1], round[i]?.pa, round[i]?.pb));
+  return teams.map((t,i)=> winnerFinal(t[0], t[1], round[i]));
 }
 // Perdedores da semifinal (penúltima rodada) — usados na disputa de 3º/4º lugar
 function semifinalLosers(){
@@ -1461,7 +1474,7 @@ function semifinalLosers(){
   const round = state.bracket[r] || [];
   const losers = teams.map((t,i)=>{
     const [a,b] = t;
-    const w = winner(a,b,round[i]?.pa, round[i]?.pb);
+    const w = winnerFinal(a,b,round[i]);
     if(!w || !a || !b) return null;
     return w===a ? b : a;
   });
@@ -1469,7 +1482,7 @@ function semifinalLosers(){
 }
 function terceiroWinner(){
   const [a,b] = semifinalLosers();
-  return winner(a,b, state.terceiro.pa, state.terceiro.pb);
+  return winnerFinal(a,b, state.terceiro);
 }
 function champion(){
   const rounds = totalRoundsBracket();
@@ -1497,7 +1510,7 @@ function faseAtual(){
   for(let r=0; r<rounds; r++){
     const teams = bracketTeamsForRound(r);
     const round = state.bracket[r] || [];
-    const pendente = teams.some((t,i)=> t[0] && t[1] && (round[i]?.pa==null || round[i]?.pa===""));
+    const pendente = teams.some((t,i)=> t[0] && t[1] && !partidaFinalizada(round[i]));
     const aguardando = teams.some(t=> !t[0] || !t[1]);
     if(aguardando) return nomeRodada(r, rounds) + " (aguardando classificados)";
     if(pendente) return nomeRodada(r, rounds);
@@ -1686,7 +1699,7 @@ function arbFinalizar(matchId){
   arb.status = "finalizada";
   arb.duracaoFinalSegundos = Math.floor(arb.acumuladoMs/1000);
   const m = getMatchObj(matchId);
-  if(m){ m.pa = arb.placarA; m.pb = arb.placarB; }
+  if(m){ m.pa = arb.placarA; m.pb = arb.placarB; m.finalizado = true; }
   arbSalvarAgora();
   render();
   checkElimNotifications();
@@ -1696,6 +1709,8 @@ function arbReabrir(matchId){
   const arb = getArb(matchId);
   if(arb.status!=="finalizada") return;
   arb.status = "tecnico";
+  const m = getMatchObj(matchId);
+  if(m) m.finalizado = false; // volta a valer só depois de finalizar de novo
   arbSalvarAgora();
   render();
 }
@@ -1705,9 +1720,42 @@ function arbPonto(matchId, lado, delta){
   const campo = lado==="a" ? "placarA" : "placarB";
   arb[campo] = Math.max(0, arb[campo]+delta);
   const trocar = checkTrocaLado(arb);
+  // placar oficial acompanha em tempo real (pra aparecer na aba Jogos/mata-mata/placar de TV),
+  // mas como a partida ainda não está "finalizada", nada de classificação/chaveamento é recalculado.
+  const m = getMatchObj(matchId);
+  if(m){ m.pa = arb.placarA; m.pb = arb.placarB; }
   arbSalvarAgora();
   render();
   if(trocar) mostrarPopupTroca();
+}
+// Permite finalizar uma partida direto pela lista de jogos (sem precisar abrir o Apitar jogo),
+// pra quem preferir só digitar o placar nos campos e confirmar.
+function finalizarJogoManual(matchId){
+  const m = getMatchObj(matchId);
+  if(!m) return;
+  if(m.pa===null || m.pa==="" || m.pb===null || m.pb===""){
+    showToast("Preencha os dois placares antes de finalizar.");
+    return;
+  }
+  m.finalizado = true;
+  if(state.arbitragem && state.arbitragem[matchId]){
+    const arb = state.arbitragem[matchId];
+    if(arb.status==="andamento" && arb.inicioMs){
+      arb.acumuladoMs += Date.now() - arb.inicioMs;
+      arb.inicioMs = null;
+    }
+    if(arb.status!=="finalizada"){
+      arb.status = "finalizada";
+      arb.placarA = Number(m.pa);
+      arb.placarB = Number(m.pb);
+      arb.duracaoFinalSegundos = Math.floor(arb.acumuladoMs/1000);
+    }
+  }
+  save();
+  flushSyncTorneio();
+  render();
+  checkElimNotifications();
+  showToast("Jogo finalizado!");
 }
 function mostrarPopupTroca(){
   const el = document.getElementById("popup-troca");
@@ -2147,7 +2195,7 @@ function drawBracket(ctx, W, startY){
 
   if(state.terceiroLugar){
     const [la, lb] = semifinalLosers();
-    const tWin = winner(la, lb, state.terceiro.pa, state.terceiro.pb);
+    const tWin = winnerFinal(la, lb, state.terceiro);
     cursorY += 90;
     colLabel("3º e 4º lugar", W/2, cursorY-20);
     const terceiroW = 420, terceiroX = (W-terceiroW)/2;
@@ -2591,7 +2639,7 @@ function renderAprovacoesScreen(){
 
 function renderResumo(){
   const elimTotal = state.bracket.reduce((acc,round)=>acc.concat(round), []);
-  const elimFeitos = elimTotal.filter(m=>m.pa!==null&&m.pb!==null&&m.pa!==""&&m.pb!=="").length;
+  const elimFeitos = elimTotal.filter(m=>partidaFinalizada(m)).length;
   const camp = champion();
 
   let html = `<div class="section-title">Resumo do Campeonato</div>
@@ -2616,7 +2664,7 @@ function renderResumo(){
 
     const rodadaAtual = elimRodadaAtual();
     if(rodadaAtual){
-      const pendentesRodada = rodadaAtual.matches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="").slice(0,3);
+      const pendentesRodada = rodadaAtual.matches.filter(m=>!partidaFinalizada(m)).slice(0,3);
       if(pendentesRodada.length){
         html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
         pendentesRodada.forEach(m=>{
@@ -2626,7 +2674,7 @@ function renderResumo(){
       }
     }
   } else {
-    const jogosGrupo = state.groupMatches.filter(m=>m.pa!==null && m.pb!==null && m.pa!=="" && m.pb!=="").length;
+    const jogosGrupo = state.groupMatches.filter(m=>partidaFinalizada(m)).length;
     html += `<div class="stat-grid">
       <div class="stat ocean"><span class="num">${jogosGrupo} / ${state.groupMatches.length}</span><span class="lbl">Jogos · Grupos</span></div>
       <div class="stat coral"><span class="num">${elimFeitos} / ${elimTotal.length}</span><span class="lbl">Jogos · Mata-mata</span></div>
@@ -2649,7 +2697,7 @@ function renderResumo(){
       html += `</div></div>`;
     });
 
-    const pendentes = state.groupMatches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="").slice(0,3);
+    const pendentes = state.groupMatches.filter(m=>!partidaFinalizada(m)).slice(0,3);
     if(pendentes.length){
       html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
       pendentes.forEach(m=>{
@@ -2862,19 +2910,23 @@ function renderRodadasEliminacao(){
   state.elimRodadas.forEach((r, ri)=>{
     html += `<div class="group-card"><div class="group-head">Rodada ${ri+1}</div><div class="group-body">`;
     r.matches.forEach((m, mi)=>{
-      const win = winner(m.a,m.b,m.pa,m.pb);
+      const win = winnerFinal(m.a,m.b,m);
       const matchId = `e${ri}_${mi}`;
+      const arbAtiva = ["andamento","tecnico"].includes(state.arbitragem?.[matchId]?.status);
+      const podeFinalizar = !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
       html += `<div class="match">
         <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
-        <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="a" value="${m.pa??""}">
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="a" value="${m.pa??""}" ${arbAtiva||m.finalizado?"disabled":""}>
         <span class="x">×</span>
-        <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="b" value="${m.pb??""}">
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="b" value="${m.pb??""}" ${arbAtiva||m.finalizado?"disabled":""}>
         <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
       </div>
       ${liveScoreBadgeHtml(matchId)}
+      ${m.finalizado ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
       <div class="ref-actions-row">
         <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
         <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
+        ${podeFinalizar ? `<button class="ref-mini-btn" data-finalizar="${matchId}" style="background:var(--grass);color:#fff;">✅ Finalizar jogo</button>` : ""}
       </div>`;
     });
     if(r.bye) html += `<div class="tiebreak-note">🎟️ ${escapeHtml(r.bye)} folgou nesta rodada (mais vitórias e menos derrotas entre os vivos — avança direto, sem jogar).</div>`;
@@ -2913,13 +2965,14 @@ function fluxoStep(titulo, detalheHtml, cor){
       <div class="flow-detail">${detalheHtml}</div>
     </div>`;
 }
-function fluxoJogoLinha(a, b, pa, pb){
-  const done = pa!==null && pa!=="" && pb!==null && pb!=="";
-  const w = done ? winner(a,b,pa,pb) : null;
-  const placar = done ? `${pa}×${pb}` : "—";
+function fluxoJogoLinha(a, b, m){
+  const done = partidaFinalizada(m);
+  const emAndamento = !done && m && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
+  const w = done ? winnerFinal(a,b,m) : null;
+  const placar = (done||emAndamento) ? `${m.pa}×${m.pb}` : "—";
   let linha = `${escapeHtml(a)} ${placar} ${escapeHtml(b)}`;
   if(w) linha += ` → <b>${escapeHtml(w)}</b> venceu`;
-  else if(done) linha += ` → empate`;
+  else if(emAndamento) linha += ` → 🔴 em andamento (ainda não finalizado)`;
   else linha += ` → pendente`;
   return linha;
 }
@@ -2940,7 +2993,7 @@ function renderFluxoJogos(){
   if(state.formato==="grupos"){
     groupLettersState().forEach(letter=>{
       const matches = state.groupMatches.filter(m=>m.group===letter);
-      const jogosHtml = matches.map(m=>`Jogo ${m.jogo}: ${fluxoJogoLinha(m.a,m.b,m.pa,m.pb)}`).join("<br>");
+      const jogosHtml = matches.map(m=>`Jogo ${m.jogo}: ${fluxoJogoLinha(m.a,m.b,m)}`).join("<br>");
       html += fluxoStep(`Grupo ${letter} · Jogos`, jogosHtml, "var(--ocean)");
 
       const rows = standingsFor(letter);
@@ -2957,7 +3010,7 @@ function renderFluxoJogos(){
     });
   } else {
     state.elimRodadas.forEach((r,ri)=>{
-      const jogosHtml = r.matches.map(m=>fluxoJogoLinha(m.a,m.b,m.pa,m.pb)).join("<br>");
+      const jogosHtml = r.matches.map(m=>fluxoJogoLinha(m.a,m.b,m)).join("<br>");
       const byeHtml = r.bye ? `<br>🎟️ ${escapeHtml(r.bye)} folgou nessa rodada (critério: mais vitórias e, em empate, menos derrotas entre as duplas ainda vivas).` : ``;
       html += fluxoStep(`Eliminação · Rodada ${ri+1}`, jogosHtml + byeHtml, "var(--ocean)");
     });
@@ -2983,13 +3036,13 @@ function renderFluxoJogos(){
         if(!a && !b) return `Aguardando classificados`;
         if(!a || !b) return `${escapeHtml(a||b)} avança direto (folga no chaveamento)`;
         const m = round[i] || {};
-        return fluxoJogoLinha(a,b,m.pa,m.pb);
+        return fluxoJogoLinha(a,b,m);
       }).join("<br>");
       html += fluxoStep(`Mata-mata · ${label}`, jogosHtml, "var(--coral)");
     }
     if(state.terceiroLugar){
       const [la,lb] = semifinalLosers();
-      html += fluxoStep(`Disputa de 3º lugar`, (la&&lb) ? fluxoJogoLinha(la,lb,state.terceiro.pa,state.terceiro.pb) : `Aguardando os perdedores da semifinal`, "var(--muted)");
+      html += fluxoStep(`Disputa de 3º lugar`, (la&&lb) ? fluxoJogoLinha(la,lb,state.terceiro) : `Aguardando os perdedores da semifinal`, "var(--muted)");
     }
     const camp = champion();
     if(camp){
@@ -3103,7 +3156,7 @@ function renderJogos(){
   const filters = [["todos","Todos"],["pendentes","Pendentes"],["realizados","Realizados"]];
   let html = `
     <div class="section-title">Fase de Grupos</div>
-    <div class="section-sub">Cada confronto tem um único set. Registre os pontos de cada dupla.</div>
+    <div class="section-sub">Cada confronto tem um único set. Registre os pontos e finalize a partida para valer na classificação.</div>
     <div class="chip-row">`;
   filters.forEach(([key,label])=>{
     html += `<div class="chip ${state.filter===key?"active":""}" data-filter="${key}">${label}</div>`;
@@ -3112,25 +3165,29 @@ function renderJogos(){
 
   groupLettersState().forEach(letter=>{
     let matches = state.groupMatches.filter(m=>m.group===letter);
-    if(state.filter==="pendentes") matches = matches.filter(m=>m.pa===null||m.pb===null||m.pa===""||m.pb==="");
-    if(state.filter==="realizados") matches = matches.filter(m=>m.pa!==null&&m.pb!==null&&m.pa!==""&&m.pb!=="");
+    if(state.filter==="pendentes") matches = matches.filter(m=>!partidaFinalizada(m));
+    if(state.filter==="realizados") matches = matches.filter(m=>partidaFinalizada(m));
     if(!matches.length) return;
     html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
     matches.forEach(m=>{
       const idx = state.groupMatches.indexOf(m);
-      const win = winner(m.a,m.b,m.pa,m.pb);
+      const win = winnerFinal(m.a,m.b,m);
       const matchId = "g"+idx;
+      const arbAtiva = ["andamento","tecnico"].includes(state.arbitragem?.[matchId]?.status);
+      const podeFinalizar = !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
       html += `<div class="match">
         <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
-        <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="a" value="${m.pa??""}">
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="a" value="${m.pa??""}" ${arbAtiva||m.finalizado?"disabled":""}>
         <span class="x">×</span>
-        <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="b" value="${m.pb??""}">
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="b" value="${m.pb??""}" ${arbAtiva||m.finalizado?"disabled":""}>
         <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
       </div>
       ${liveScoreBadgeHtml(matchId)}
+      ${m.finalizado ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
       <div class="ref-actions-row">
         <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
         <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
+        ${podeFinalizar ? `<button class="ref-mini-btn" data-finalizar="${matchId}" style="background:var(--grass);color:#fff;">✅ Finalizar jogo</button>` : ""}
       </div>`;
     });
     html += `</div></div>`;
@@ -3220,14 +3277,14 @@ function renderMataMata(){
     state.bracket[r].forEach((m,i)=>{
       const [a,b] = teams[i];
       const tag = teams.length>1 ? `${label.slice(0,2).toUpperCase()}${i+1}` : label.toUpperCase();
-      html += bracketMatchHtml(tag, label, r, i, a, b, m.pa, m.pb);
+      html += bracketMatchHtml(tag, label, r, i, a, b, m);
     });
   }
 
   if(state.terceiroLugar){
     const [la,lb] = semifinalLosers();
     html += `<div class="round-label">Disputa de 3º e 4º lugar</div>`;
-    html += bracketMatchHtml("3º LUGAR", "Disputa de 3º Lugar", "terceiro", 0, la, lb, state.terceiro.pa, state.terceiro.pb);
+    html += bracketMatchHtml("3º LUGAR", "Disputa de 3º Lugar", "terceiro", 0, la, lb, state.terceiro);
   }
 
   return html;
@@ -3295,8 +3352,11 @@ function renderApito(){
   </div>`;
 }
 
-function bracketMatchHtml(label, faseLabel, round, idx, a, b, pa, pb){
-  const win = (a || b) ? winner(a,b,pa,pb) : null;
+function bracketMatchHtml(label, faseLabel, round, idx, a, b, m){
+  const pa = m?.pa, pb = m?.pb;
+  const win = winnerFinal(a,b,m);
+  const matchId = makeMatchId(round, idx);
+  const arbAtiva = ["andamento","tecnico"].includes(state.arbitragem?.[matchId]?.status);
   const teamBlock = (nome, oponente, side, isWin)=>{
     if(!nome) return `<div class="bracket-row"><span class="team tbd">${oponente ? "— Folga —" : "Aguardando resultados"}</span></div>`;
     if(!oponente) return `<div class="bracket-row"><span class="team win">${escapeHtml(nome)}</span><span class="tg-status ok" style="flex-shrink:0;">🎟️ Folga</span></div>`;
@@ -3314,19 +3374,21 @@ function bracketMatchHtml(label, faseLabel, round, idx, a, b, pa, pb){
     }
     return `<div class="bracket-row">
       <span class="team ${isWin?'win':''}">${escapeHtml(nome)}</span>
-      <input class="score-input" type="number" min="0" inputmode="numeric" data-round="${round}" data-idx="${idx}" data-side="${side}" value="${scoreVal}">
+      <input class="score-input" type="number" min="0" inputmode="numeric" data-round="${round}" data-idx="${idx}" data-side="${side}" value="${scoreVal}" ${arbAtiva||m?.finalizado?"disabled":""}>
     </div>${contatos}`;
   };
-  const matchId = makeMatchId(round, idx);
+  const podeFinalizar = m && !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
   const acoes = (a && b) ? `<div class="ref-actions-row">
       <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
       <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
+      ${podeFinalizar ? `<button class="ref-mini-btn" data-finalizar="${matchId}" style="background:var(--grass);color:#fff;">✅ Finalizar jogo</button>` : ""}
     </div>` : "";
   return `<div class="bracket-match">
     <div class="lbl">${label}</div>
     ${teamBlock(a, b, "a", win===a)}
     ${teamBlock(b, a, "b", win===b)}
     ${(a && b) ? liveScoreBadgeHtml(matchId) : ""}
+    ${m?.finalizado ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
     ${acoes}
   </div>`;
 }
@@ -3569,6 +3631,7 @@ function bindEvents(){
       const side = e.target.dataset.side;
       state.groupMatches[gm][side==="a"?"pa":"pb"] = e.target.value===""?"":e.target.value;
       save();
+      flushSyncTorneio();
       render();
       checkElimNotifications();
     });
@@ -3583,6 +3646,7 @@ function bindEvents(){
       const side = e.target.dataset.side;
       state.elimRodadas[ri].matches[mi][side==="a"?"pa":"pb"] = e.target.value===""?"":e.target.value;
       save();
+      flushSyncTorneio();
       render();
       checkElimNotifications();
     });
@@ -3598,6 +3662,7 @@ function bindEvents(){
       if(round==="terceiro") state.terceiro[key] = e.target.value===""?"":e.target.value;
       else state.bracket[Number(round)][idx][key] = e.target.value===""?"":e.target.value;
       save();
+      flushSyncTorneio();
       render();
       checkElimNotifications();
     });
@@ -3640,6 +3705,9 @@ function bindEvents(){
 
   main.querySelectorAll("[data-apitar]").forEach(btn=>{
     btn.addEventListener("click", ()=> abrirApito(btn.dataset.apitar));
+  });
+  main.querySelectorAll("[data-finalizar]").forEach(btn=>{
+    btn.addEventListener("click", ()=> finalizarJogoManual(btn.dataset.finalizar));
   });
   main.querySelectorAll("[data-placartv]").forEach(btn=>{
     btn.addEventListener("click", ()=> abrirPlacarTV(btn.dataset.placartv));
