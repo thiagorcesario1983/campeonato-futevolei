@@ -1,9 +1,15 @@
+import { connect } from "cloudflare:sockets";
+
 export interface Env {
   DB: KVNamespace;
   ASSETS: Fetcher;
   TELEGRAM_BOT_TOKEN?: string;
-  RESEND_API_KEY?: string;
-  RESEND_FROM?: string;
+  // Credenciais SMTP (Gmail) — configuradas como secrets via `wrangler secret put`,
+  // nunca pela tela do app (são credenciais reais, diferente do Google Client ID).
+  SMTP_HOST?: string; // ex: smtp.gmail.com
+  SMTP_PORT?: string; // ex: "587"
+  SMTP_USER?: string; // seu e-mail Gmail completo
+  SMTP_PASS?: string; // a "senha de app" de 16 caracteres gerada no Google, não a senha normal
 }
 
 function json(data: unknown, status = 200): Response {
@@ -17,27 +23,88 @@ function json(data: unknown, status = 200): Response {
 }
 
 /* ============================================================
-   E-MAIL (via Resend — precisa da secret RESEND_API_KEY configurada
-   no painel Cloudflare → Settings → Variables and Secrets)
+   E-MAIL — cliente SMTP direto via socket TCP (sem serviço terceiro).
+   Pensado para Gmail: smtp.gmail.com, porta 587, usuário = e-mail completo,
+   senha = "Senha de app" de 16 caracteres (não a senha normal da conta —
+   o Gmail exige Verificação em 2 Etapas + Senha de app pra permitir isso).
+   Credenciais vêm de secrets do Worker (SMTP_HOST/PORT/USER/PASS), nunca da tela do app.
 ============================================================ */
+async function lerRespostaSmtp(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const linhas = buf.split("\r\n").filter(Boolean);
+    const ultima = linhas[linhas.length - 1] || "";
+    // uma resposta SMTP termina na linha "NNN texto" (espaço logo após o código);
+    // linhas intermediárias de uma resposta de várias linhas usam "NNN-texto" (hífen)
+    if (/^\d{3} /.test(ultima)) break;
+  }
+  return buf;
+}
+
 async function enviarEmail(env: Env, to: string, subject: string, html: string): Promise<boolean> {
-  if (!env.RESEND_API_KEY || !to) return false;
+  const host = env.SMTP_HOST, user = env.SMTP_USER, pass = env.SMTP_PASS;
+  const port = Number(env.SMTP_PORT || "587");
+  if (!host || !user || !pass || !to) return false;
+
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from: env.RESEND_FROM || "Campeonato Futevôlei <onboarding@resend.dev>",
-        to: [to],
-        subject,
-        html
-      })
-    });
-    return res.ok;
-  } catch {
+    let socket = connect({ hostname: host, port }, { secureTransport: port === 465 ? "on" : "starttls" });
+    let writer = socket.writable.getWriter();
+    let reader = socket.readable.getReader();
+    const enc = new TextEncoder();
+
+    const enviar = async (texto: string) => {
+      await writer.write(enc.encode(texto + "\r\n"));
+      return lerRespostaSmtp(reader);
+    };
+    const checar = (resp: string, codigos: string[]) => {
+      if (!codigos.some((c) => resp.includes(c))) {
+        throw new Error(`Resposta SMTP inesperada: ${resp.trim()}`);
+      }
+    };
+
+    checar(await lerRespostaSmtp(reader), ["220"]); // banner de conexão
+    checar(await enviar(`EHLO ${host}`), ["250"]);
+
+    if (port !== 465) {
+      checar(await enviar("STARTTLS"), ["220"]);
+      // eleva a conexão de texto puro para TLS — os streams antigos deixam de valer
+      writer.releaseLock();
+      reader.releaseLock();
+      socket = socket.startTls();
+      writer = socket.writable.getWriter();
+      reader = socket.readable.getReader();
+      checar(await enviar(`EHLO ${host}`), ["250"]);
+    }
+
+    checar(await enviar("AUTH LOGIN"), ["334"]);
+    checar(await enviar(btoa(user)), ["334"]);
+    checar(await enviar(btoa(pass)), ["235"]);
+
+    checar(await enviar(`MAIL FROM:<${user}>`), ["250"]);
+    checar(await enviar(`RCPT TO:<${to}>`), ["250", "251"]);
+    checar(await enviar("DATA"), ["354"]);
+
+    const dataAtual = new Date().toUTCString();
+    const corpo =
+      `From: Campeonato Futevôlei <${user}>\r\n` +
+      `To: <${to}>\r\n` +
+      `Subject: ${subject}\r\n` +
+      `Date: ${dataAtual}\r\n` +
+      `MIME-Version: 1.0\r\n` +
+      `Content-Type: text/html; charset=UTF-8\r\n` +
+      `\r\n${html}\r\n.`;
+    checar(await enviar(corpo), ["250"]);
+
+    await enviar("QUIT").catch(() => {}); // não é crítico se o QUIT falhar
+    writer.releaseLock();
+    reader.releaseLock();
+    return true;
+  } catch (e) {
+    console.error("Falha ao enviar e-mail via SMTP:", e);
     return false;
   }
 }
