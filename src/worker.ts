@@ -374,8 +374,8 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
   }
 
   const id = body.id;
-  const decisao = body.decisao === "aprovado" || body.decisao === "recusado" ? body.decisao : null;
-  if (!id || !decisao) return json({ error: "id e decisao (aprovado|recusado) são obrigatórios" }, 400);
+  const decisao = ["aprovado", "recusado", "bloqueado"].includes(body.decisao) ? body.decisao : null;
+  if (!id || !decisao) return json({ error: "id e decisao (aprovado|recusado|bloqueado) são obrigatórios" }, 400);
 
   const raw = await env.DB.get(`torneio:${id}`);
   if (!raw) return json({ error: "não encontrado" }, 404);
@@ -411,14 +411,23 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
   }
 
   if (dados.ownerEmail) {
-    const aprovado = decisao === "aprovado";
+    const rotulos: Record<string, string> = {
+      aprovado: "aprovado ✅",
+      recusado: "recusado ❌",
+      bloqueado: "bloqueado 🔒"
+    };
+    const corpos: Record<string, string> = {
+      aprovado: `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>Já está liberado para uso dentro desse período.</p>`,
+      recusado: `<p>Se tiver dúvidas, entre em contato com o organizador do app.</p>`,
+      bloqueado: `<p>Ele fica indisponível até ser liberado novamente pelo admin — as datas de validade (${dados.dataInicio || "não informado"} a ${dados.dataFim || "não informado"}) continuam guardadas e nada do que já foi feito se perde.</p>`
+    };
     await enviarEmail(
       env,
       dados.ownerEmail,
-      aprovado ? `Seu campeonato [${dados.codigo}] "${dados.nome}" foi aprovado ✅` : `Seu campeonato [${dados.codigo}] "${dados.nome}" foi recusado ❌`,
+      `Seu campeonato [${dados.codigo}] "${dados.nome}" foi ${rotulos[decisao]}`,
       `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
-       <p>O campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) foi <b>${aprovado ? "aprovado" : "recusado"}</b>.</p>
-       ${aprovado ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>Já está liberado para uso dentro desse período.</p>` : `<p>Se tiver dúvidas, entre em contato com o organizador do app.</p>`}`
+       <p>O campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) foi <b>${rotulos[decisao]}</b>.</p>
+       ${corpos[decisao]}`
     );
   }
 
