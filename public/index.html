@@ -838,7 +838,8 @@ async function criarNovoTorneio(nome, dataInicio, dataFim){
 }
 
 async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim){
-  showToast(decisao==="aprovado" ? "Aprovando..." : "Recusando...");
+  const rotulo = decisao==="aprovado" ? "Aprovando" : (decisao==="recusado" ? "Recusando" : "Bloqueando");
+  showToast(rotulo + "...");
   try{
     const res = await fetch("/api/torneios-aprovar", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -846,7 +847,10 @@ async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim){
     });
     if(res.status===403){ showToast("Só o admin pode fazer isso."); return; }
     if(!res.ok) throw new Error("resposta não-ok");
-    showToast(decisao==="aprovado" ? "Torneio aprovado! E-mail enviado ao organizador." : "Torneio recusado. E-mail enviado ao organizador.");
+    const msgFinal = decisao==="aprovado" ? "Torneio aprovado! E-mail enviado ao organizador."
+      : decisao==="recusado" ? "Torneio recusado. E-mail enviado ao organizador."
+      : "Torneio bloqueado. E-mail enviado ao organizador.";
+    showToast(msgFinal);
     torneiosList = null;
     if(state.cloudId===id){
       state.aprovacaoStatus = decisao;
@@ -2270,6 +2274,9 @@ function renderTorneioBloqueado(){
   if(state.aprovacaoStatus==="recusado"){
     titulo = "❌ Solicitação recusada";
     texto = "Esse campeonato foi recusado pelo admin do sistema. Se isso for um engano, entre em contato com o organizador do app.";
+  } else if(state.aprovacaoStatus==="bloqueado"){
+    titulo = "🔒 Campeonato bloqueado";
+    texto = "Esse campeonato foi temporariamente bloqueado pelo admin do sistema. Ele volta a funcionar normalmente quando for liberado de novo, sem perder nada do que já foi feito.";
   } else if(motivo==="aprovacao"){
     titulo = "⏳ Aguardando aprovação";
     texto = "Esse campeonato ainda não foi aprovado pelo admin do sistema. Você recebe um e-mail assim que a decisão for tomada.";
@@ -2339,6 +2346,7 @@ function badgeAprovacao(t){
   const st = t.aprovacaoStatus || "pendente";
   if(st==="aprovado") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Aprovado</span>`;
   if(st==="recusado") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">❌ Recusado</span>`;
+  if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
   return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente</span>`;
 }
 function formatarDataBR(iso){
@@ -2364,27 +2372,16 @@ function renderTorneiosScreen(){
 
   if(ehAdmin()){
     html += `<div style="display:flex;gap:8px;margin-bottom:14px;">
-      <div class="chip ${telaAdmin!=="aprovacoes"?"active":""}" data-tela-admin="lista" style="flex:1;text-align:center;">Torneios</div>
+      <div class="chip ${telaAdmin==="config"?"active":""}" data-tela-admin="config" style="flex:1;text-align:center;">Configurações</div>
+      <div class="chip ${telaAdmin==="lista"?"active":""}" data-tela-admin="lista" style="flex:1;text-align:center;">Torneios</div>
       <div class="chip ${telaAdmin==="aprovacoes"?"active":""}" data-tela-admin="aprovacoes" style="flex:1;text-align:center;">Aprovações</div>
-    </div>`;
-
-    const gcidAtual = loadClientId();
-    html += `<div class="card" style="border:1.5px solid var(--ocean);margin-bottom:14px;">
-      <div style="font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:8px;">⚙️ Configurações do app (admin)</div>
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Google Client ID</label>
-      <input type="text" id="input-gcid-admin" placeholder="algo.apps.googleusercontent.com" value="${escapeHtml(gcidAtual)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;">
-      <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Criado gratuitamente no Google Cloud Console (OAuth), autorizado para este domínio. Salvo aqui uma vez, vale para todo mundo que acessar o app — sem precisar configurar em cada navegador.</div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;">
-        <button class="btn" id="btn-salvar-gcid-admin" style="flex:1;">Salvar</button>
-        ${gcidAtual ? `<button class="btn ghost" id="btn-remover-gcid-admin" style="flex:0 0 auto;width:auto;">Remover</button>` : ``}
-      </div>
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">E-mail para notificações</label>
-      <input type="email" id="input-email-admin" placeholder="voce@exemplo.com" value="${escapeHtml(adminNotificationEmailCache)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
-      <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Recebe um aviso sempre que um novo campeonato for solicitado, e outras notificações do sistema.</div>
-      <button class="btn" id="btn-salvar-email-admin">Salvar e-mail</button>
     </div>`;
   }
 
+  if(ehAdmin() && telaAdmin==="config"){
+    html += renderConfigAdminScreen();
+    return html;
+  }
   if(ehAdmin() && telaAdmin==="aprovacoes"){
     html += renderAprovacoesScreen();
     return html;
@@ -2448,6 +2445,29 @@ function renderTorneiosScreen(){
   return html;
 }
 
+function renderConfigAdminScreen(){
+  const gcidAtual = loadClientId();
+  return `<div class="section-title">Configurações</div>
+    <div class="section-sub">Configurações globais do app — valem para todo mundo que acessar.</div>
+    <div class="card" style="border:1.5px solid var(--ocean);margin-bottom:14px;">
+      <div style="font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:8px;">🔑 Google Client ID</div>
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Client ID</label>
+      <input type="text" id="input-gcid-admin" placeholder="algo.apps.googleusercontent.com" value="${escapeHtml(gcidAtual)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;">
+      <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Criado gratuitamente no Google Cloud Console (OAuth), autorizado para este domínio. Salvo aqui uma vez, vale para todo mundo que acessar o app — sem precisar configurar em cada navegador.</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" id="btn-salvar-gcid-admin" style="flex:1;">Salvar</button>
+        ${gcidAtual ? `<button class="btn ghost" id="btn-remover-gcid-admin" style="flex:0 0 auto;width:auto;">Remover</button>` : ``}
+      </div>
+    </div>
+    <div class="card" style="border:1.5px solid var(--ocean);">
+      <div style="font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:8px;">📧 E-mail para notificações</div>
+      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">E-mail</label>
+      <input type="email" id="input-email-admin" placeholder="voce@exemplo.com" value="${escapeHtml(adminNotificationEmailCache)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
+      <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Recebe um aviso sempre que um novo campeonato for solicitado, e outras notificações do sistema.</div>
+      <button class="btn" id="btn-salvar-email-admin">Salvar e-mail</button>
+    </div>`;
+}
+
 function renderAprovacoesScreen(){
   let html = `<div class="section-title">Aprovações</div>
     <div class="section-sub">Revise, ajuste as datas e aprove ou recuse os campeonatos solicitados.</div>`;
@@ -2486,6 +2506,7 @@ function renderAprovacoesScreen(){
       <div style="display:flex;gap:8px;">
         <button class="btn" data-aprovar="${t.id}" style="flex:1;background:var(--grass);box-shadow:none;">✅ Aprovar</button>
         <button class="btn ghost" data-recusar="${t.id}" style="flex:1;border-color:var(--coral);color:var(--coral);">❌ Recusar</button>
+        <button class="btn ghost" data-bloquear="${t.id}" style="flex:1;border-color:var(--muted);color:var(--muted);">🔒 Bloquear</button>
       </div>
     </div>`;
   });
@@ -3137,10 +3158,10 @@ function bindEvents(){
       render();
     });
   });
-  main.querySelectorAll("[data-aprovar],[data-recusar]").forEach(btn=>{
+  main.querySelectorAll("[data-aprovar],[data-recusar],[data-bloquear]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
-      const id = btn.dataset.aprovar || btn.dataset.recusar;
-      const decisao = btn.dataset.aprovar ? "aprovado" : "recusado";
+      const id = btn.dataset.aprovar || btn.dataset.recusar || btn.dataset.bloquear;
+      const decisao = btn.dataset.aprovar ? "aprovado" : (btn.dataset.recusar ? "recusado" : "bloqueado");
       const inputInicio = main.querySelector(`[data-aprov-inicio="${id}"]`);
       const inputFim = main.querySelector(`[data-aprov-fim="${id}"]`);
       decidirAprovacaoTorneio(id, decisao, inputInicio?.value, inputFim?.value);
