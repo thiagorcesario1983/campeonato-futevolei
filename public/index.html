@@ -1377,6 +1377,27 @@ function mensagemMataMata(faseLabel, nome, oponente){
 function duplaIndexByName(nome){
   return state.duplas.findIndex(d => ((d.nome||"").trim() || "Dupla sem nome") === nome);
 }
+// Propaga a troca de nome de uma dupla para todos os jogos já sorteados (grupos, rodadas de
+// eliminação e o chaveamento do mata-mata) — assim uma dupla pode ser renomeada (ex: substituição
+// por desistência) sem precisar refazer o sorteio.
+function propagarRenomeDupla(indice, nomeAntigoBruto){
+  const antigo = (nomeAntigoBruto||"").trim() || "Dupla sem nome";
+  const novo = (state.duplas[indice].nome||"").trim() || "Dupla sem nome";
+  if(antigo === novo) return;
+  const trocar = v => v===antigo ? novo : v;
+
+  state.groups = (state.groups||[]).map(g => g.map(trocar));
+  state.groupMatches.forEach(m=>{ m.a = trocar(m.a); m.b = trocar(m.b); });
+  state.elimRodadas.forEach(r=>{
+    r.matches.forEach(m=>{ m.a = trocar(m.a); m.b = trocar(m.b); });
+    if(r.bye) r.bye = trocar(r.bye);
+  });
+  if(state.bracketSeed) state.bracketSeed = state.bracketSeed.map(n => n==null ? n : trocar(n));
+
+  save();
+  render();
+  showToast(`"${antigo}" foi renomeada para "${novo}" em todos os jogos já sorteados.`);
+}
 function telefoneParaWa(tel){
   const digits = (tel||"").replace(/\D/g,"");
   if(!digits) return null;
@@ -2398,11 +2419,15 @@ function renderSorteio(){
     }
   }
 
+  if(state.drawn){
+    html += `<div class="hint" style="margin-bottom:10px;">✏️ Você pode corrigir o nome de uma dupla mesmo depois do sorteio (ex: em caso de desistência) — o novo nome substitui o antigo em todos os jogos já sorteados, sem precisar sortear de novo.</div>`;
+  }
+
   state.duplas.forEach((d,i)=>{
     html += `<div class="dupla-card">
       <div class="top-row">
         <span class="num">${String(i+1).padStart(2,"0")}</span>
-        <input type="text" data-dupla="${i}" data-field="nome" placeholder="Nome da dupla" value="${escapeHtml(d.nome)}" ${state.drawn?"disabled":""}>
+        <input type="text" data-dupla="${i}" data-field="nome" placeholder="Nome da dupla" value="${escapeHtml(d.nome)}">
         ${state.drawn?"":`<button class="ref-mini-btn ghost" data-remover-dupla="${i}" style="flex:0 0 auto;width:auto;padding:8px 10px;">🗑️</button>`}
       </div>
       <div class="tel-row">
@@ -2884,11 +2909,19 @@ function bindEvents(){
     if(inp.dataset.field==="nome"){
       inp.addEventListener("focus", e=>{
         const i = Number(e.target.dataset.dupla);
+        e.target.dataset.nomeAntes = state.duplas[i].nome; // guarda o valor antes da edição
         if(state.duplas[i].nomeDefault){
           e.target.value = "";
           state.duplas[i].nome = "";
           state.duplas[i].nomeDefault = false;
           save();
+        }
+      });
+      inp.addEventListener("blur", e=>{
+        const i = Number(e.target.dataset.dupla);
+        const antes = e.target.dataset.nomeAntes;
+        if(state.drawn && antes!==undefined && antes !== state.duplas[i].nome){
+          propagarRenomeDupla(i, antes);
         }
       });
     }
