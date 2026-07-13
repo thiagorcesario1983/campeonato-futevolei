@@ -487,6 +487,23 @@
   .tv-footer{margin-top:6vh;}
   .tv-timer{font-family:'DM Mono',monospace;font-size:clamp(30px,5vw,60px);font-weight:600;}
   .tv-status{font-size:clamp(14px,2vw,20px);letter-spacing:.08em;text-transform:uppercase;opacity:.75;margin-top:6px;}
+
+  /* ---------- Placar para TV — múltiplos jogos numa grade ---------- */
+  .tv-multi-grid{position:absolute;inset:16px;display:grid;gap:12px;}
+  .tv-multi-cell{
+    background:rgba(255,255,255,.06);border-radius:14px;min-width:0;min-height:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:6px;overflow:hidden;
+  }
+  .tv-multi-label{font-family:'Bebas Neue',sans-serif;opacity:.85;letter-spacing:.02em;text-align:center;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .tv-multi-board{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-width:0;}
+  .tv-multi-team{flex:1;text-align:center;min-width:0;}
+  .tv-multi-nome{font-family:'Bebas Neue',sans-serif;letter-spacing:.02em;word-break:break-word;margin-bottom:2px;}
+  .tv-multi-score{font-family:'DM Mono',monospace;font-weight:700;line-height:1;}
+  .tv-multi-x{opacity:.5;font-family:'Bebas Neue',sans-serif;flex-shrink:0;}
+  .tv-multi-footer{margin-top:4px;text-align:center;}
+  .tv-multi-timer{font-family:'DM Mono',monospace;font-weight:600;display:block;}
+  .tv-multi-status{text-transform:uppercase;letter-spacing:.06em;opacity:.75;display:block;margin-top:2px;}
 </style>
 </head>
 <body>
@@ -716,7 +733,6 @@ let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" — só usada quan
 let mostrarFormNovoTorneio = false;
 let adminNotificationEmailCache = "";
 let placarSelecionados = new Set(); // matchIds escolhidos na aba Placar
-let placarModoGrade = false; // false = tela de seleção · true = grade com os jogos abertos
 
 const LOCAL_TORNEIOS_KEY = "futevolei_local_torneios_v1";
 function getLocalTorneiosDB(){
@@ -1687,6 +1703,13 @@ function fecharApito(){
 function abrirPlacarTV(matchId){
   if(!state.cloudId){ showToast("Salve o torneio na nuvem antes de abrir o placar para TV."); return; }
   const url = `${location.origin}${location.pathname}?placarTV=${encodeURIComponent(matchId)}&torneio=${encodeURIComponent(state.cloudId)}`;
+  window.open(url, "_blank");
+}
+function abrirPlacarMultiploTV(){
+  if(!state.cloudId){ showToast("Salve o torneio na nuvem antes de abrir o placar para TV."); return; }
+  const ids = Array.from(placarSelecionados);
+  if(!ids.length){ showToast("Selecione pelo menos um jogo."); return; }
+  const url = `${location.origin}${location.pathname}?placarMultiTV=${encodeURIComponent(ids.join(","))}&torneio=${encodeURIComponent(state.cloudId)}`;
   window.open(url, "_blank");
 }
 let refTickInterval = null;
@@ -2997,46 +3020,20 @@ function renderPlacarMultiplo(){
   const idsValidos = new Set(jogos.map(j=>j.matchId));
   Array.from(placarSelecionados).forEach(id=>{ if(!idsValidos.has(id)) placarSelecionados.delete(id); });
 
-  if(!placarModoGrade){
-    let html = `<div class="section-title">Placar</div>
-      <div class="section-sub">Selecione os jogos que estão acontecendo agora para acompanhar (e atualizar) todos numa tela só, divididos em partes iguais.</div>`;
-    jogos.forEach(j=>{
-      const checked = placarSelecionados.has(j.matchId);
-      html += `<label class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;">
-        <input type="checkbox" data-placar-check="${j.matchId}" ${checked?"checked":""} style="width:18px;height:18px;flex-shrink:0;">
-        <div>
-          <div style="font-weight:600;font-size:13px;color:var(--ocean-deep);">${escapeHtml(j.a)} × ${escapeHtml(j.b)}</div>
-          <div class="sub">${escapeHtml(j.label)}</div>
-        </div>
-      </label>`;
-    });
-    const n = placarSelecionados.size;
-    html += `<button class="btn" id="btn-abrir-placar" ${n?"":'disabled style="opacity:.5;"'} style="margin-top:10px;">📺 Abrir placar (${n} selecionado${n===1?"":"s"})</button>`;
-    return html;
-  }
-
-  const selecionados = jogos.filter(j=>placarSelecionados.has(j.matchId));
-  if(!selecionados.length){ placarModoGrade = false; return renderPlacarMultiplo(); }
-  const cols = Math.max(1, Math.ceil(Math.sqrt(selecionados.length)));
   let html = `<div class="section-title">Placar</div>
-    <button class="btn ghost" id="btn-voltar-selecao-placar" style="margin-bottom:12px;">← Escolher outros jogos</button>
-    <div style="display:grid;grid-template-columns:repeat(${cols}, 1fr);gap:10px;">`;
-  selecionados.forEach(j=>{
-    const obj = getMatchObj(j.matchId) || {};
-    const [a,b] = getMatchTeams(j.matchId);
-    const win = (a||b) ? winner(a,b,obj.pa,obj.pb) : null;
-    html += `<div class="card" style="padding:10px 8px;">
-      <div class="sub" style="margin-bottom:6px;text-align:center;font-size:10.5px;">${escapeHtml(getMatchLabel(j.matchId))}</div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:4px;">
-        <span class="team ${win===a?'win':''}" style="font-size:11px;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a||"—")}</span>
-        <input class="score-input" type="number" min="0" inputmode="numeric" data-placar-grade="${j.matchId}" data-side="a" value="${obj.pa??""}" style="width:34px;padding:6px 2px;text-align:center;">
-        <span class="x" style="font-size:10px;">×</span>
-        <input class="score-input" type="number" min="0" inputmode="numeric" data-placar-grade="${j.matchId}" data-side="b" value="${obj.pb??""}" style="width:34px;padding:6px 2px;text-align:center;">
-        <span class="team ${win===b?'win':''}" style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(b||"—")}</span>
+    <div class="section-sub">Selecione os jogos que estão acontecendo agora e abra todos numa tela só, pensada para um monitor ou TV — igual ao "Placar do jogo", mas com vários de uma vez, divididos em partes iguais.</div>`;
+  jogos.forEach(j=>{
+    const checked = placarSelecionados.has(j.matchId);
+    html += `<label class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;">
+      <input type="checkbox" data-placar-check="${j.matchId}" ${checked?"checked":""} style="width:18px;height:18px;flex-shrink:0;">
+      <div>
+        <div style="font-weight:600;font-size:13px;color:var(--ocean-deep);">${escapeHtml(j.a)} × ${escapeHtml(j.b)}</div>
+        <div class="sub">${escapeHtml(j.label)}</div>
       </div>
-    </div>`;
+    </label>`;
   });
-  html += `</div>`;
+  const n = placarSelecionados.size;
+  html += `<button class="btn" id="btn-abrir-placar" ${n?"":'disabled style="opacity:.5;"'} style="margin-top:10px;">📺 Abrir placar (${n} selecionado${n===1?"":"s"})</button>`;
   return html;
 }
 
@@ -3459,30 +3456,7 @@ function bindEvents(){
     });
   });
   const btnAbrirPlacar = document.getElementById("btn-abrir-placar");
-  if(btnAbrirPlacar) btnAbrirPlacar.addEventListener("click", ()=>{
-    placarModoGrade = true;
-    render();
-  });
-  const btnVoltarSelecaoPlacar = document.getElementById("btn-voltar-selecao-placar");
-  if(btnVoltarSelecaoPlacar) btnVoltarSelecaoPlacar.addEventListener("click", ()=>{
-    placarModoGrade = false;
-    render();
-  });
-  main.querySelectorAll("[data-placar-grade]").forEach(inp=>{
-    inp.addEventListener("change", e=>{
-      const matchId = e.target.dataset.placarGrade;
-      const side = e.target.dataset.side;
-      const obj = getMatchObj(matchId);
-      if(!obj) return;
-      obj[side==="a"?"pa":"pb"] = e.target.value===""?"":e.target.value;
-      save();
-      render();
-      checkElimNotifications();
-    });
-    inp.addEventListener("keydown", e=>{
-      if(e.key==="Enter") e.target.blur();
-    });
-  });
+  if(btnAbrirPlacar) btnAbrirPlacar.addEventListener("click", abrirPlacarMultiploTV);
   main.querySelectorAll("[data-remover-dupla]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const i = Number(btn.dataset.removerDupla);
@@ -3706,6 +3680,81 @@ function iniciarPlacarTV(torneioId, matchId){
   setInterval(atualizar, 2500);
 }
 
+function iniciarPlacarMultiploTV(torneioId, matchIds){
+  document.body.innerHTML = `<div class="tv-screen" id="tv-screen"><div class="tv-loading">🏐 Carregando placares...</div></div>`;
+
+  async function atualizar(){
+    try{
+      const res = await fetch(`/api/torneios-tv?id=${encodeURIComponent(torneioId)}`, { cache:"no-store" });
+      if(!res.ok) throw new Error("resposta não-ok");
+      const data = await res.json();
+      if(data && data.state){
+        state = Object.assign(defaultState(), data.state);
+        renderTVMulti(matchIds);
+      }
+    }catch(e){
+      const el = document.getElementById("tv-screen");
+      if(el && !el.dataset.loaded) el.innerHTML = `<div class="tv-loading">⚠️ Sem conexão com o servidor. Tentando novamente...</div>`;
+    }
+  }
+
+  setInterval(()=>{
+    document.querySelectorAll("[data-tv-timer]").forEach(el=>{
+      const arb = getArb(el.dataset.tvTimer);
+      if(arb.status==="andamento") el.textContent = formatTempo(tempoDecorridoMs(arb));
+    });
+  }, 1000);
+
+  atualizar();
+  setInterval(atualizar, 2500);
+}
+
+function renderTVMulti(matchIds){
+  const screen = document.getElementById("tv-screen");
+  if(!screen) return;
+  const n = matchIds.length;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+  const rows = Math.ceil(n/cols);
+  const escala = 1/cols;
+  screen.dataset.loaded = "1";
+
+  const statusLabelMap = {
+    nao_iniciada: "Aguardando início",
+    andamento: "🔴 Em andamento",
+    tecnico: "⏸️ Tempo técnico",
+    finalizada: "✅ Finalizada"
+  };
+
+  let html = `<div class="tv-multi-grid" style="grid-template-columns:repeat(${cols}, 1fr);grid-template-rows:repeat(${rows}, 1fr);">`;
+  matchIds.forEach(matchId=>{
+    const [a,b] = getMatchTeams(matchId);
+    const label = getMatchLabel(matchId);
+    const arb = getArb(matchId);
+    const tempoMs = tempoDecorridoMs(arb);
+    const statusLabel = statusLabelMap[arb.status] || "";
+    html += `<div class="tv-multi-cell">
+      <div class="tv-multi-label" style="font-size:${Math.max(11, 26*escala)}px;">${escapeHtml(label)}</div>
+      <div class="tv-multi-board">
+        <div class="tv-multi-team">
+          <div class="tv-multi-nome" style="font-size:${Math.max(10, 28*escala)}px;">${escapeHtml(a||"—")}</div>
+          <div class="tv-multi-score" style="font-size:${Math.max(28, 100*escala)}px;">${arb.placarA}</div>
+        </div>
+        <div class="tv-multi-x" style="font-size:${Math.max(14, 32*escala)}px;">×</div>
+        <div class="tv-multi-team">
+          <div class="tv-multi-nome" style="font-size:${Math.max(10, 28*escala)}px;">${escapeHtml(b||"—")}</div>
+          <div class="tv-multi-score" style="font-size:${Math.max(28, 100*escala)}px;">${arb.placarB}</div>
+        </div>
+      </div>
+      <div class="tv-multi-footer">
+        <span class="tv-multi-timer" data-tv-timer="${matchId}" style="font-size:${Math.max(12, 24*escala)}px;">${formatTempo(tempoMs)}</span>
+        <span class="tv-multi-status" style="font-size:${Math.max(9, 14*escala)}px;">${statusLabel}</span>
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+  screen.innerHTML = html;
+}
+
 function renderTV(matchId){
   const screen = document.getElementById("tv-screen");
   if(!screen) return;
@@ -3743,10 +3792,13 @@ function renderTV(matchId){
 
 const __urlParams = new URLSearchParams(location.search);
 const __tvMatchId = __urlParams.get("placarTV");
+const __tvMultiIds = __urlParams.get("placarMultiTV");
 const __tvTorneioId = __urlParams.get("torneio");
 
 if(__tvMatchId && __tvTorneioId){
   iniciarPlacarTV(__tvTorneioId, __tvMatchId);
+} else if(__tvMultiIds && __tvTorneioId){
+  iniciarPlacarMultiploTV(__tvTorneioId, __tvMultiIds.split(","));
 } else {
   document.querySelectorAll("nav.tabbar button").forEach(btn=>{
     btn.addEventListener("click", ()=>{
