@@ -516,6 +516,7 @@ function defaultState(){
     elimNotified: {},
     cloudId: null,
     cloudNome: "",
+    codigo: null, // identificador sequencial de 10 posições (ex: 0000012026), definido pelo servidor na criação
     aprovacaoStatus: "pendente", // "pendente" | "aprovado" | "recusado" — definido pelo admin
     dataInicio: null, // validade do campeonato (yyyy-mm-dd), definida na criação
     dataFim: null,
@@ -572,7 +573,9 @@ function save(){
 
 if(!state.tournamentId){
   state.tournamentId = Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4);
-  save();
+  // Só grava localmente — isso é só um identificador de dispositivo pros códigos do Telegram
+  // funcionarem mesmo sem login; nunca deve, por si só, criar/sincronizar um torneio na nuvem.
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 let telegramStatus = {};
 
@@ -697,13 +700,24 @@ function getLocalTorneiosDB(){
 }
 function setLocalTorneiosDB(db){ localStorage.setItem(LOCAL_TORNEIOS_KEY, JSON.stringify(db)); }
 
+// Mesmo esquema do servidor (6 dígitos sequenciais + ano), só que com um contador local —
+// usado apenas quando não há conexão com a nuvem no momento da criação.
+function gerarCodigoTorneioLocal(){
+  const atual = Number(localStorage.getItem("futevolei_contador_local_v1") || "0");
+  const proximo = atual + 1;
+  localStorage.setItem("futevolei_contador_local_v1", String(proximo));
+  const ano = new Date().getFullYear();
+  return String(proximo).padStart(6,"0") + String(ano);
+}
+
 function saveTorneioLocalFallback(payload){
   const db = getLocalTorneiosDB();
   const id = payload.id || ("local-" + Math.random().toString(36).slice(2,10));
   const now = new Date().toISOString();
   const existing = db[id];
   const meta = {
-    id, nome: payload.nome, status: payload.status,
+    id, codigo: existing ? existing.codigo : (payload.codigo || gerarCodigoTorneioLocal()),
+    nome: payload.nome, status: payload.status,
     ownerEmail: payload.ownerEmail, ownerName: payload.ownerName,
     createdAt: existing?.createdAt || now, updatedAt: now,
     aprovacaoStatus: existing ? existing.aprovacaoStatus : "pendente",
@@ -752,7 +766,7 @@ async function enviarTorneioAgora(payload, keepalive){
 function syncTorneio(){
   clearTimeout(syncTimer);
   syncTimer = setTimeout(()=>{
-    if(!auth) return;
+    if(!auth || !state.cloudId) return; // nunca cria torneio novo por aqui — só sincroniza um que já está aberto
     enviarTorneioAgora(montarPayloadTorneio(), false);
   }, 800);
 }
@@ -786,7 +800,7 @@ async function fetchTorneiosList(){
       .filter(t=> ehAdmin() || (t.ownerEmail||"").trim().toLowerCase() === meuEmail)
       .map(t=>({
         id:t.id, nome:t.nome, status:t.status, ownerEmail:t.ownerEmail, ownerName:t.ownerName, updatedAt:t.updatedAt,
-        aprovacaoStatus:t.aprovacaoStatus, dataInicio:t.dataInicio, dataFim:t.dataFim
+        aprovacaoStatus:t.aprovacaoStatus, dataInicio:t.dataInicio, dataFim:t.dataFim, codigo:t.codigo
       }));
   }
   torneiosLoading = false;
@@ -809,11 +823,12 @@ async function criarNovoTorneio(nome, dataInicio, dataFim){
     });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
-    if(data.id){ state.cloudId = data.id; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    if(data.id){ state.cloudId = data.id; state.codigo = data.codigo || null; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
     showToast("Torneio solicitado! Aguardando aprovação do admin.");
   }catch(e){
     const meta = saveTorneioLocalFallback({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, dataInicio, dataFim, state });
     state.cloudId = meta.id;
+    state.codigo = meta.codigo || null;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     showToast("Sem conexão com a nuvem — torneio salvo só neste navegador.");
   }
@@ -870,6 +885,7 @@ function abrirTorneioComDados(data){
   state = migrarBracketAntigo(Object.assign(defaultState(), data.state));
   state.cloudId = data.id;
   state.cloudNome = data.nome;
+  state.codigo = data.codigo || null;
   state.aprovacaoStatus = data.aprovacaoStatus || "pendente";
   state.dataInicio = data.dataInicio || null;
   state.dataFim = data.dataFim || null;
@@ -906,6 +922,7 @@ async function refreshTorneioAtual(){
       state = migrarBracketAntigo(Object.assign(defaultState(), data.state));
       state.cloudId = data.id;
       state.cloudNome = data.nome;
+      state.codigo = data.codigo || null;
       state.aprovacaoStatus = data.aprovacaoStatus || "pendente";
       state.dataInicio = data.dataInicio || null;
       state.dataFim = data.dataFim || null;
@@ -2205,7 +2222,7 @@ function render(){
   if(!ehAdmin() && !torneioEstaAtivo().ok){
     nav.style.display = "none";
     torneioBar.innerHTML = `<div class="torneio-bar">
-      <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}</span>
+      <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}${state.codigo ? ` <span style="opacity:.6;font-family:'DM Mono',monospace;font-size:11px;">#${escapeHtml(state.codigo)}</span>` : ""}</span>
       <button class="voltar" id="btn-voltar-torneios">Trocar torneio</button>
     </div>`;
     main.innerHTML = renderTorneioBloqueado();
@@ -2224,7 +2241,7 @@ function render(){
 
   nav.style.display = "flex";
   torneioBar.innerHTML = `<div class="torneio-bar">
-    <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}</span>
+    <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}${state.codigo ? ` <span style="opacity:.6;font-family:'DM Mono',monospace;font-size:11px;">#${escapeHtml(state.codigo)}</span>` : ""}</span>
     <button class="voltar" id="btn-voltar-torneios">Trocar torneio</button>
   </div>`;
 
@@ -2266,6 +2283,7 @@ function renderTorneioBloqueado(){
   return `<div class="card empty" style="margin-top:20px;">
     <span class="ball-icon">🏐</span>
     <div style="font-weight:700;font-size:16px;color:var(--ocean-deep);margin:10px 0 8px;">${titulo}</div>
+    <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
     <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">${texto}</div>
     ${badgeAprovacao({aprovacaoStatus:state.aprovacaoStatus})}
     <div class="sub" style="margin-top:10px;">${formatarDataBR(state.dataInicio)} – ${formatarDataBR(state.dataFim)}</div>
@@ -2415,6 +2433,7 @@ function renderTorneiosScreen(){
           <span class="nome">${escapeHtml(t.nome||"Torneio sem nome")}</span>
           <span class="status-pill ${statusClass}">${escapeHtml(t.status||"Criado")}</span>
         </div>
+        <div class="sub" style="font-family:'DM Mono',monospace;margin-top:2px;">#${escapeHtml(t.codigo||"—")}</div>
         <div class="row" style="margin-top:4px;">
           ${badgeAprovacao(t)}
           <span class="sub" style="margin-left:8px;">${formatarDataBR(t.dataInicio)} – ${formatarDataBR(t.dataFim)}</span>
@@ -2448,10 +2467,11 @@ function renderAprovacoesScreen(){
 
   lista.forEach(t=>{
     html += `<div class="card" style="margin-bottom:14px;">
-      <div class="row" style="margin-bottom:6px;">
+      <div class="row" style="margin-bottom:2px;">
         <span class="nome" style="font-weight:700;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
         ${badgeAprovacao(t)}
       </div>
+      <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:6px;">#${escapeHtml(t.codigo||"—")}</div>
       <div class="sub" style="margin-bottom:10px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
       <div style="display:flex;gap:8px;margin-bottom:10px;">
         <div style="flex:1;">
