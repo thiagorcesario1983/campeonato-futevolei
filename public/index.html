@@ -298,17 +298,20 @@
   nav.tabbar{
     position:sticky;bottom:0;left:0;right:0;
     background:var(--white);border-top:1px solid #EDE7D8;
-    display:flex;justify-content:space-around;
+    display:flex;justify-content:flex-start;
+    overflow-x:auto;-webkit-overflow-scrolling:touch;
     padding:8px 4px calc(8px + env(safe-area-inset-bottom));
     z-index:10;
+    scrollbar-width:none;
   }
+  nav.tabbar::-webkit-scrollbar{display:none;}
   nav.tabbar button{
-    flex:1;background:none;border:none;display:flex;flex-direction:column;
-    align-items:center;gap:3px;padding:6px 2px;cursor:pointer;color:var(--muted);
+    flex:0 0 auto;min-width:64px;background:none;border:none;display:flex;flex-direction:column;
+    align-items:center;gap:3px;padding:6px 6px;cursor:pointer;color:var(--muted);
     font-family:'Work Sans',sans-serif;
   }
   nav.tabbar button svg{width:20px;height:20px;}
-  nav.tabbar button .lbl{font-size:10px;font-weight:600;}
+  nav.tabbar button .lbl{font-size:10px;font-weight:600;white-space:nowrap;}
   nav.tabbar button.active{color:var(--coral);}
   nav.tabbar button{position:relative;}
   .nav-badge{
@@ -329,6 +332,23 @@
 
   .tiebreak-note{
     font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;
+  }
+
+  /* ---------- Fluxo de Jogos (auditoria) ---------- */
+  .flow-connector{width:2px;height:16px;background:var(--sand-dark);margin:0 auto;position:relative;}
+  .flow-connector::after{
+    content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);
+    border:5px solid transparent;border-top-color:var(--sand-dark);
+  }
+  .flow-card{
+    background:var(--white);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);
+    border-left:4px solid var(--ocean);
+  }
+  .flow-card .flow-title{font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:5px;}
+  .flow-card .flow-detail{font-size:12px;color:var(--muted);line-height:1.6;}
+  .flow-badge{
+    display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;
+    border-radius:20px;margin-left:4px;letter-spacing:.02em;
   }
 
   /* ---------- Login / Torneios ---------- */
@@ -485,6 +505,8 @@
       <button data-tab="classificacao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V10M12 19V4M20 19v-6"/></svg><span class="lbl">Tabela</span></button>
       <button data-tab="matamata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h4v4H4zM4 15h4v4H4zM16 10h4v4h-4zM8 7h4v0M8 17h4v0M12 7v6M12 13v4M12 12h4"/></svg><span class="lbl">Mata-mata</span><span class="nav-badge" id="nav-badge-matamata"></span></button>
       <button data-tab="configuracoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
+      <button data-tab="fluxo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="9" y="15" width="6" height="6" rx="1"/><path d="M6 9v3a3 3 0 0 0 3 3M18 9v3a3 3 0 0 1-3 3"/></svg><span class="lbl">Fluxo Jogos</span></button>
+      <button data-tab="placar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="lbl">Placar</span></button>
     </nav>
   </div>
 </div>
@@ -690,9 +712,11 @@ function statusTorneio(){
 let torneiosList = null;
 let torneiosLoading = false;
 let syncTimer = null;
-let telaAdmin = "lista"; // "lista" | "aprovacoes" — só usada quando ehAdmin()
+let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" — só usada quando ehAdmin()
 let mostrarFormNovoTorneio = false;
 let adminNotificationEmailCache = "";
+let placarSelecionados = new Set(); // matchIds escolhidos na aba Placar
+let placarModoGrade = false; // false = tela de seleção · true = grade com os jogos abertos
 
 const LOCAL_TORNEIOS_KEY = "futevolei_local_torneios_v1";
 function getLocalTorneiosDB(){
@@ -2264,6 +2288,8 @@ function render(){
   else if(state.tab==="classificacao") main.innerHTML = renderClassificacao();
   else if(state.tab==="matamata") main.innerHTML = renderMataMata();
   else if(state.tab==="configuracoes") main.innerHTML = renderConfiguracoes();
+  else if(state.tab==="fluxo") main.innerHTML = renderFluxoJogos();
+  else if(state.tab==="placar") main.innerHTML = renderPlacarMultiplo();
   else main.innerHTML = renderJogos();
   bindEvents();
 }
@@ -2829,6 +2855,191 @@ function renderRodadasEliminacao(){
   return html;
 }
 
+function fluxoStep(titulo, detalheHtml, cor){
+  return `<div class="flow-connector"></div>
+    <div class="flow-card" style="border-left-color:${cor||'var(--ocean)'};">
+      <div class="flow-title">${titulo}</div>
+      <div class="flow-detail">${detalheHtml}</div>
+    </div>`;
+}
+function fluxoJogoLinha(a, b, pa, pb){
+  const done = pa!==null && pa!=="" && pb!==null && pb!=="";
+  const w = done ? winner(a,b,pa,pb) : null;
+  const placar = done ? `${pa}×${pb}` : "—";
+  let linha = `${escapeHtml(a)} ${placar} ${escapeHtml(b)}`;
+  if(w) linha += ` → <b>${escapeHtml(w)}</b> venceu`;
+  else if(done) linha += ` → empate`;
+  else linha += ` → pendente`;
+  return linha;
+}
+
+function renderFluxoJogos(){
+  if(!state.drawn){
+    return `<div class="section-title">Fluxo de Jogos</div><div class="card empty"><span class="ball-icon">🏐</span>Sorteie as duplas primeiro para gerar o fluxo de auditoria.</div>`;
+  }
+
+  let html = `<div class="section-title">Fluxo de Jogos</div>
+    <div class="section-sub">Sequência de decisões do campeonato — do sorteio ao campeão, com os critérios usados em cada etapa.</div>`;
+
+  html += fluxoStep(
+    "🏐 Sorteio",
+    `Formato: <b>${state.formato==="eliminacao"?"Eliminação":"Por grupos"}</b>${state.formato==="eliminacao" ? ` · Meta de qualificados: ${state.elimTarget}` : ` · ${state.numGrupos} grupo(s)`} · ${state.duplas.length} duplas sorteadas.`
+  );
+
+  if(state.formato==="grupos"){
+    groupLettersState().forEach(letter=>{
+      const matches = state.groupMatches.filter(m=>m.group===letter);
+      const jogosHtml = matches.map(m=>`Jogo ${m.jogo}: ${fluxoJogoLinha(m.a,m.b,m.pa,m.pb)}`).join("<br>");
+      html += fluxoStep(`Grupo ${letter} · Jogos`, jogosHtml, "var(--ocean)");
+
+      const rows = standingsFor(letter);
+      let criterioHtml = "";
+      if(rows.length>=2 && rows[0].pts===rows[1].pts){
+        criterioHtml = rows[0].saldo!==rows[1].saldo
+          ? `⚖️ Empate em pontos entre 1º e 2º colocado → decidido por <b>saldo de pontos</b>.`
+          : (rows[0].pp!==rows[1].pp ? `⚖️ Empate em pontos e saldo → decidido por <b>pontos pró</b>.` : `⚖️ Empate total entre 1º e 2º colocado (nenhum critério separou).`);
+      }
+      const classifHtml = rows.map((r,i)=>
+        `${i+1}º ${escapeHtml(r.nome)} — ${r.pts}pts, saldo ${r.saldo>0?"+":""}${r.saldo}, ${r.pp} pontos pró${i<2?` <span class="flow-badge" style="background:#DCEEE1;color:#2E6E42;">QUALIFICADO</span>`:``}`
+      ).join("<br>");
+      html += fluxoStep(`Grupo ${letter} · Classificação`, classifHtml + (criterioHtml?`<br><br>${criterioHtml}`:``), "var(--grass)");
+    });
+  } else {
+    state.elimRodadas.forEach((r,ri)=>{
+      const jogosHtml = r.matches.map(m=>fluxoJogoLinha(m.a,m.b,m.pa,m.pb)).join("<br>");
+      const byeHtml = r.bye ? `<br>🎟️ ${escapeHtml(r.bye)} folgou nessa rodada (critério: mais vitórias e, em empate, menos derrotas entre as duplas ainda vivas).` : ``;
+      html += fluxoStep(`Eliminação · Rodada ${ri+1}`, jogosHtml + byeHtml, "var(--ocean)");
+    });
+    if(state.bracketSeed){
+      const eliminadas = duplasNomes().filter(n=>elimEliminada(n));
+      const vivas = state.bracketSeed.filter(Boolean);
+      let elimHtml = eliminadas.length
+        ? `❌ Eliminadas (2 derrotas): ${eliminadas.map(n=>escapeHtml(n)).join(", ")}.`
+        : `Nenhuma dupla eliminada.`;
+      elimHtml += `<br>✅ Classificadas para o mata-mata: ${vivas.map(n=>escapeHtml(n)).join(", ")}${state.bracketSeed.some(x=>x===null)?` (com folga por número ímpar de classificados)`:``}.`;
+      html += fluxoStep(`Eliminação · Fechamento`, elimHtml, "var(--grass)");
+    }
+  }
+
+  if(matamataPronto()){
+    const rounds = totalRoundsBracket();
+    for(let r=0;r<rounds;r++){
+      const teams = bracketTeamsForRound(r);
+      const round = state.bracket[r] || [];
+      const label = nomeRodada(r, rounds);
+      const jogosHtml = teams.map((t,i)=>{
+        const [a,b] = t;
+        if(!a && !b) return `Aguardando classificados`;
+        if(!a || !b) return `${escapeHtml(a||b)} avança direto (folga no chaveamento)`;
+        const m = round[i] || {};
+        return fluxoJogoLinha(a,b,m.pa,m.pb);
+      }).join("<br>");
+      html += fluxoStep(`Mata-mata · ${label}`, jogosHtml, "var(--coral)");
+    }
+    if(state.terceiroLugar){
+      const [la,lb] = semifinalLosers();
+      html += fluxoStep(`Disputa de 3º lugar`, (la&&lb) ? fluxoJogoLinha(la,lb,state.terceiro.pa,state.terceiro.pb) : `Aguardando os perdedores da semifinal`, "var(--muted)");
+    }
+    const camp = champion();
+    if(camp){
+      html += fluxoStep(`🏆 Campeão`, `<b>${escapeHtml(camp)}</b> venceu a Final e é o campeão do torneio.`, "#C9A227");
+    }
+  } else {
+    html += fluxoStep(`Mata-mata`, `Ainda não começou — depende da conclusão da fase anterior.`, "var(--muted)");
+  }
+
+  return html;
+}
+
+// Lista unificada de todos os jogos do torneio (fase de grupos/eliminação + mata-mata),
+// usando o mesmo esquema de matchId já usado pela arbitragem e pelo placar de TV.
+function listarTodosOsJogos(){
+  const lista = [];
+  if(!state.drawn) return lista;
+  if(state.formato==="grupos"){
+    state.groupMatches.forEach((m,idx)=>{
+      lista.push({matchId:`g${idx}`, label:`Grupo ${m.group} · Jogo ${m.jogo}`, a:m.a, b:m.b});
+    });
+  } else {
+    state.elimRodadas.forEach((r,ri)=>{
+      r.matches.forEach((m,mi)=>{
+        lista.push({matchId:`e${ri}_${mi}`, label:`Eliminação · Rodada ${ri+1}`, a:m.a, b:m.b});
+      });
+    });
+  }
+  if(matamataPronto()){
+    const rounds = totalRoundsBracket();
+    for(let r=0;r<rounds;r++){
+      const teams = bracketTeamsForRound(r);
+      const label = nomeRodada(r, rounds);
+      teams.forEach((t,i)=>{
+        if(t[0] && t[1]) lista.push({matchId:`b${r}_${i}`, label, a:t[0], b:t[1]});
+      });
+    }
+    if(state.terceiroLugar){
+      const [la,lb] = semifinalLosers();
+      if(la && lb) lista.push({matchId:"terceiro", label:"Disputa de 3º Lugar", a:la, b:lb});
+    }
+  }
+  return lista;
+}
+
+function renderPlacarMultiplo(){
+  if(!state.drawn){
+    return `<div class="section-title">Placar</div><div class="card empty"><span class="ball-icon">🏐</span>Sorteie as duplas primeiro.</div>`;
+  }
+  const jogos = listarTodosOsJogos();
+  if(!jogos.length){
+    return `<div class="section-title">Placar</div><div class="card empty"><span class="ball-icon">🏐</span>Nenhum jogo disponível ainda.</div>`;
+  }
+
+  // remove da seleção jogos que não existem mais (ex: apagados por um novo sorteio)
+  const idsValidos = new Set(jogos.map(j=>j.matchId));
+  Array.from(placarSelecionados).forEach(id=>{ if(!idsValidos.has(id)) placarSelecionados.delete(id); });
+
+  if(!placarModoGrade){
+    let html = `<div class="section-title">Placar</div>
+      <div class="section-sub">Selecione os jogos que estão acontecendo agora para acompanhar (e atualizar) todos numa tela só, divididos em partes iguais.</div>`;
+    jogos.forEach(j=>{
+      const checked = placarSelecionados.has(j.matchId);
+      html += `<label class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;">
+        <input type="checkbox" data-placar-check="${j.matchId}" ${checked?"checked":""} style="width:18px;height:18px;flex-shrink:0;">
+        <div>
+          <div style="font-weight:600;font-size:13px;color:var(--ocean-deep);">${escapeHtml(j.a)} × ${escapeHtml(j.b)}</div>
+          <div class="sub">${escapeHtml(j.label)}</div>
+        </div>
+      </label>`;
+    });
+    const n = placarSelecionados.size;
+    html += `<button class="btn" id="btn-abrir-placar" ${n?"":'disabled style="opacity:.5;"'} style="margin-top:10px;">📺 Abrir placar (${n} selecionado${n===1?"":"s"})</button>`;
+    return html;
+  }
+
+  const selecionados = jogos.filter(j=>placarSelecionados.has(j.matchId));
+  if(!selecionados.length){ placarModoGrade = false; return renderPlacarMultiplo(); }
+  const cols = Math.max(1, Math.ceil(Math.sqrt(selecionados.length)));
+  let html = `<div class="section-title">Placar</div>
+    <button class="btn ghost" id="btn-voltar-selecao-placar" style="margin-bottom:12px;">← Escolher outros jogos</button>
+    <div style="display:grid;grid-template-columns:repeat(${cols}, 1fr);gap:10px;">`;
+  selecionados.forEach(j=>{
+    const obj = getMatchObj(j.matchId) || {};
+    const [a,b] = getMatchTeams(j.matchId);
+    const win = (a||b) ? winner(a,b,obj.pa,obj.pb) : null;
+    html += `<div class="card" style="padding:10px 8px;">
+      <div class="sub" style="margin-bottom:6px;text-align:center;font-size:10.5px;">${escapeHtml(getMatchLabel(j.matchId))}</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:4px;">
+        <span class="team ${win===a?'win':''}" style="font-size:11px;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a||"—")}</span>
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-placar-grade="${j.matchId}" data-side="a" value="${obj.pa??""}" style="width:34px;padding:6px 2px;text-align:center;">
+        <span class="x" style="font-size:10px;">×</span>
+        <input class="score-input" type="number" min="0" inputmode="numeric" data-placar-grade="${j.matchId}" data-side="b" value="${obj.pb??""}" style="width:34px;padding:6px 2px;text-align:center;">
+        <span class="team ${win===b?'win':''}" style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(b||"—")}</span>
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
 function renderConfiguracoes(){
   let html = `
     <div class="section-title">Configurações</div>
@@ -3239,6 +3450,38 @@ function bindEvents(){
     state.paletteFromImage = e.target.checked;
     save(); render();
     showToast(state.paletteFromImage ? "Usando as cores da imagem." : "Voltando às cores padrão.");
+  });
+  main.querySelectorAll("[data-placar-check]").forEach(chk=>{
+    chk.addEventListener("change", e=>{
+      const id = e.target.dataset.placarCheck;
+      if(e.target.checked) placarSelecionados.add(id); else placarSelecionados.delete(id);
+      render();
+    });
+  });
+  const btnAbrirPlacar = document.getElementById("btn-abrir-placar");
+  if(btnAbrirPlacar) btnAbrirPlacar.addEventListener("click", ()=>{
+    placarModoGrade = true;
+    render();
+  });
+  const btnVoltarSelecaoPlacar = document.getElementById("btn-voltar-selecao-placar");
+  if(btnVoltarSelecaoPlacar) btnVoltarSelecaoPlacar.addEventListener("click", ()=>{
+    placarModoGrade = false;
+    render();
+  });
+  main.querySelectorAll("[data-placar-grade]").forEach(inp=>{
+    inp.addEventListener("change", e=>{
+      const matchId = e.target.dataset.placarGrade;
+      const side = e.target.dataset.side;
+      const obj = getMatchObj(matchId);
+      if(!obj) return;
+      obj[side==="a"?"pa":"pb"] = e.target.value===""?"":e.target.value;
+      save();
+      render();
+      checkElimNotifications();
+    });
+    inp.addEventListener("keydown", e=>{
+      if(e.key==="Enter") e.target.blur();
+    });
   });
   main.querySelectorAll("[data-remover-dupla]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
