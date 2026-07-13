@@ -333,6 +333,10 @@
   .tiebreak-note{
     font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;
   }
+  .live-score-badge{
+    display:inline-block;font-size:11px;font-weight:700;color:var(--coral);
+    background:#FDF1E7;padding:3px 10px;border-radius:20px;margin:6px 0 2px;
+  }
 
   /* ---------- Fluxo de Jogos (auditoria) ---------- */
   .flow-connector{width:2px;height:16px;background:var(--sand-dark);margin:0 auto;position:relative;}
@@ -955,6 +959,20 @@ function torneioEstaAtivo(){
 
 // Busca a versão mais recente do torneio já aberto (usado ao carregar/recarregar a página,
 // já que um F5 sozinho não ia até a nuvem — só reaproveitava o que já estava salvo neste navegador).
+let liveRefreshInterval = null;
+// Mantém qualquer dispositivo com o app aberto (não só quem está apitando) atualizado com
+// o que foi salvo por outros — sem interromper quem estiver digitando/apitando neste aparelho.
+function iniciarLiveRefresh(){
+  if(liveRefreshInterval) return;
+  liveRefreshInterval = setInterval(()=>{
+    if(!auth || !state.cloudId) return;
+    if(state.tab==="apito") return; // quem está apitando neste aparelho é a fonte da verdade local
+    const ativo = document.activeElement;
+    if(ativo && (ativo.tagName==="INPUT" || ativo.tagName==="TEXTAREA")) return; // não interrompe edição em andamento
+    refreshTorneioAtual();
+  }, 5000);
+}
+
 async function refreshTorneioAtual(){
   if(!auth || !state.cloudId) return;
   try{
@@ -1604,6 +1622,15 @@ function getArb(matchId){
 }
 function tempoDecorridoMs(arb){
   return arb.acumuladoMs + (arb.inicioMs ? (Date.now() - arb.inicioMs) : 0);
+}
+// Mostra o placar em tempo real (vindo do Apitar jogo) nas telas gerais, sem tocar no placar
+// oficial (m.pa/m.pb) — esse só é gravado quando a partida é finalizada, pra não afetar
+// classificação/chaveamento no meio do jogo.
+function liveScoreBadgeHtml(matchId){
+  const arb = state.arbitragem && state.arbitragem[matchId];
+  if(!arb || (arb.status!=="andamento" && arb.status!=="tecnico")) return "";
+  const rotulo = arb.status==="andamento" ? "🔴 Em andamento" : "⏸️ Tempo técnico";
+  return `<div class="live-score-badge">${rotulo} · ${arb.placarA}×${arb.placarB}</div>`;
 }
 function formatTempo(ms){
   const totalSec = Math.max(0, Math.floor(ms/1000));
@@ -2844,6 +2871,7 @@ function renderRodadasEliminacao(){
         <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="b" value="${m.pb??""}">
         <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
       </div>
+      ${liveScoreBadgeHtml(matchId)}
       <div class="ref-actions-row">
         <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
         <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
@@ -3099,6 +3127,7 @@ function renderJogos(){
         <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="b" value="${m.pb??""}">
         <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
       </div>
+      ${liveScoreBadgeHtml(matchId)}
       <div class="ref-actions-row">
         <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
         <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
@@ -3297,6 +3326,7 @@ function bracketMatchHtml(label, faseLabel, round, idx, a, b, pa, pb){
     <div class="lbl">${label}</div>
     ${teamBlock(a, b, "a", win===a)}
     ${teamBlock(b, a, "b", win===b)}
+    ${(a && b) ? liveScoreBadgeHtml(matchId) : ""}
     ${acoes}
   </div>`;
 }
@@ -3677,7 +3707,7 @@ function iniciarPlacarTV(torneioId, matchId){
   }, 1000);
 
   atualizar();
-  setInterval(atualizar, 2500);
+  setInterval(atualizar, 1200);
 }
 
 function iniciarPlacarMultiploTV(torneioId, matchIds){
@@ -3706,7 +3736,7 @@ function iniciarPlacarMultiploTV(torneioId, matchIds){
   }, 1000);
 
   atualizar();
-  setInterval(atualizar, 2500);
+  setInterval(atualizar, 1200);
 }
 
 function renderTVMulti(matchIds){
@@ -3816,6 +3846,7 @@ if(__tvMatchId && __tvTorneioId){
     refreshTorneioAtual();
     if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
     if(state.drawn) checkElimNotifications();
+    iniciarLiveRefresh();
   }
 
   if("serviceWorker" in navigator){
