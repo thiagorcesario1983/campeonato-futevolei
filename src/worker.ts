@@ -325,6 +325,20 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
          <p>Entre no app com a conta admin, aba Aprovações, pra revisar.</p>`
       );
     }
+    if (meta.ownerEmail) {
+      await enviarEmail(
+        env,
+        meta.ownerEmail,
+        `Seu campeonato [${meta.codigo}] "${meta.nome}" foi solicitado`,
+        `<p>Olá${meta.ownerName ? ", " + meta.ownerName : ""}!</p>
+         <p>Recebemos a solicitação do seu campeonato. Guarde o código abaixo — ele identifica esse campeonato em todas as telas e comunicações.</p>
+         <p><b>Código:</b> ${meta.codigo}<br>
+         <b>Nome:</b> ${meta.nome}<br>
+         <b>Início:</b> ${meta.dataInicio || "não informado"}<br>
+         <b>Fim:</b> ${meta.dataFim || "não informado"}</p>
+         <p>⏳ Ele está <b>aguardando aprovação</b> do admin do sistema. Você recebe um novo e-mail assim que a decisão for tomada.</p>`
+      );
+    }
   }
 
   return json(meta);
