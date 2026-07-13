@@ -250,6 +250,17 @@ function ehAdmin(email: string): boolean {
   return email === ADMIN_EMAIL;
 }
 
+// Código sequencial de 10 posições: 6 dígitos de sequência (controlada pelo app, nunca reseta)
+// + 4 dígitos do ano de criação. Ex.: 0000012026, 0000022026... Serve como identificador
+// legível pra exibir em telas e nas comunicações — o "id" (UUID) continua sendo a chave interna.
+async function gerarCodigoTorneio(env: Env): Promise<string> {
+  const atual = Number((await env.DB.get("torneios:contador")) || "0");
+  const proximo = atual + 1;
+  await env.DB.put("torneios:contador", String(proximo));
+  const ano = new Date().getFullYear();
+  return String(proximo).padStart(6, "0") + String(ano);
+}
+
 async function torneiosSave(request: Request, env: Env): Promise<Response> {
   let body: any;
   try {
@@ -274,6 +285,7 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
 
   const meta = {
     id,
+    codigo: existing ? existing.codigo : await gerarCodigoTorneio(env),
     nome: body.nome || "Torneio sem nome",
     status: body.status || "Criado",
     ownerEmail: existing?.ownerEmail || body.ownerEmail || null,
@@ -303,9 +315,10 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
       await enviarEmail(
         env,
         adminEmail,
-        `Novo campeonato solicitado: ${meta.nome}`,
+        `Novo campeonato solicitado [${meta.codigo}]: ${meta.nome}`,
         `<p>Um novo campeonato foi criado e está aguardando aprovação.</p>
-         <p><b>Nome:</b> ${meta.nome}<br>
+         <p><b>Código:</b> ${meta.codigo}<br>
+         <b>Nome:</b> ${meta.nome}<br>
          <b>Organizador:</b> ${meta.ownerName || "-"} (${meta.ownerEmail || "-"})<br>
          <b>Início:</b> ${meta.dataInicio || "não informado"}<br>
          <b>Fim:</b> ${meta.dataFim || "não informado"}</p>
@@ -375,6 +388,7 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
 
   const meta = {
     id: dados.id,
+    codigo: dados.codigo,
     nome: dados.nome,
     status: dados.status,
     ownerEmail: dados.ownerEmail,
@@ -401,9 +415,9 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     await enviarEmail(
       env,
       dados.ownerEmail,
-      aprovado ? `Seu campeonato "${dados.nome}" foi aprovado ✅` : `Seu campeonato "${dados.nome}" foi recusado ❌`,
+      aprovado ? `Seu campeonato [${dados.codigo}] "${dados.nome}" foi aprovado ✅` : `Seu campeonato [${dados.codigo}] "${dados.nome}" foi recusado ❌`,
       `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
-       <p>O campeonato <b>${dados.nome}</b> foi <b>${aprovado ? "aprovado" : "recusado"}</b>.</p>
+       <p>O campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) foi <b>${aprovado ? "aprovado" : "recusado"}</b>.</p>
        ${aprovado ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>Já está liberado para uso dentro desse período.</p>` : `<p>Se tiver dúvidas, entre em contato com o organizador do app.</p>`}`
     );
   }
