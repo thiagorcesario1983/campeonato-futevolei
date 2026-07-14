@@ -567,6 +567,7 @@ function defaultState(){
     dataInicio: null, // validade do campeonato (yyyy-mm-dd), definida na criação
     dataFim: null,
     pagamento: null, // {status:"pendente"|"pago", valor, dias, paymentId, copiaCola, qrCodeBase64, criadoEm, pagoEm} — null até o Pix ser gerado
+    valorOverride: null, // valor do Pix definido manualmente pelo admin na aprovação (sobrescreve o cálculo automático de dias × R$ 70)
     headerImage: null, // data URL da imagem de topo customizada para este campeonato (opcional)
     paletteFromImage: false, // se true, o app usa as cores extraídas da imagem do topo como tema
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
@@ -1050,6 +1051,7 @@ function abrirTorneioComDados(data){
   state.dataInicio = data.dataInicio || null;
   state.dataFim = data.dataFim || null;
   state.pagamento = data.pagamento || null;
+  state.valorOverride = (typeof data.valorOverride === "number") ? data.valorOverride : null;
   state.tab = "resumo";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   telegramStatus = {};
@@ -1118,6 +1120,7 @@ async function refreshTorneioAtual(chamadaInicial){
       state.dataInicio = data.dataInicio || null;
       state.dataFim = data.dataFim || null;
       state.pagamento = data.pagamento || null;
+      state.valorOverride = (typeof data.valorOverride === "number") ? data.valorOverride : null;
       state.tab = tabAtual;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       telegramStatus = {};
@@ -2683,7 +2686,8 @@ function renderTorneioBloqueado(){
 function renderTelaPix(){
   const pg = state.pagamento;
   const dias = pg?.dias || calcularDiasLocal(state.dataInicio, state.dataFim);
-  const valorEstimado = dias * 70;
+  const temOverride = typeof state.valorOverride === "number";
+  const valorEstimado = temOverride ? state.valorOverride : dias * 70;
 
   if(!pg || pg.status!=="pendente"){
     return `<div class="card empty" style="margin-top:20px;">
@@ -2692,7 +2696,7 @@ function renderTelaPix(){
       <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
       <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">
         Período de ${formatarDataBR(state.dataInicio)} a ${formatarDataBR(state.dataFim)}
-        ${dias ? ` (${dias} diária${dias>1?"s":""} × R$ 70,00 = <b>R$ ${valorEstimado.toFixed(2).replace(".", ",")}</b>)` : ""}.
+        ${dias ? ` (${dias} diária${dias>1?"s":""}${temOverride ? "" : " × R$ 70,00"} = <b>R$ ${valorEstimado.toFixed(2).replace(".", ",")}</b>)` : ""}.
         Gere o Pix abaixo para liberar o uso.
       </div>
       <button class="btn primary" id="btn-gerar-pix" style="max-width:260px;margin:0 auto;">Gerar Pix</button>
@@ -2704,7 +2708,7 @@ function renderTelaPix(){
     <div style="font-weight:700;font-size:16px;color:var(--ocean-deep);margin:10px 0 8px;">💳 Pagamento das diárias</div>
     <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
     <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">
-      ${pg.dias} diária${pg.dias>1?"s":""} (${formatarDataBR(state.dataInicio)} – ${formatarDataBR(state.dataFim)}) × R$ 70,00 = <b>R$ ${pg.valor.toFixed(2).replace(".", ",")}</b>
+      ${pg.dias} diária${pg.dias>1?"s":""} (${formatarDataBR(state.dataInicio)} – ${formatarDataBR(state.dataFim)}) = <b>R$ ${pg.valor.toFixed(2).replace(".", ",")}</b>
     </div>
     ${pg.qrCodeBase64 ? `<img src="data:image/png;base64,${pg.qrCodeBase64}" alt="QR Code Pix" style="width:220px;height:220px;margin:0 auto 14px;display:block;border-radius:10px;border:1px solid var(--border);">` : ""}
     <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Pix copia e cola</label>
