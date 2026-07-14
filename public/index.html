@@ -609,8 +609,11 @@ function load(){
     return migrarBracketAntigo(Object.assign(defaultState(), parsed));
   }catch(e){ return defaultState(); }
 }
+let ultimoSaveLocalEm = 0;
+let enviosPendentes = 0;
 function save(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  ultimoSaveLocalEm = Date.now();
   if(auth) syncTorneio();
 }
 
@@ -785,6 +788,7 @@ function montarPayloadTorneio(){
 }
 
 async function enviarTorneioAgora(payload, keepalive){
+  enviosPendentes++;
   try{
     const res = await fetch("/api/torneios-save", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -797,6 +801,7 @@ async function enviarTorneioAgora(payload, keepalive){
       state.cloudId = data.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
+    return true;
   }catch(e){
     // Sem servidor de functions disponível (ex: hospedagem local simples) — usa reserva local
     const meta = saveTorneioLocalFallback(payload);
@@ -804,6 +809,9 @@ async function enviarTorneioAgora(payload, keepalive){
       state.cloudId = meta.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
+    return false;
+  }finally{
+    enviosPendentes = Math.max(0, enviosPendentes-1);
   }
 }
 
@@ -818,11 +826,10 @@ function syncTorneio(){
 // Envio de emergência: garante que a última alteração não fique só no aparelho
 // se a página for fechada/minimizada antes do envio programado (800ms) terminar.
 function flushSyncTorneio(){
-  if(!syncTimer) return; // nada pendente
   clearTimeout(syncTimer);
   syncTimer = null;
-  if(!auth || !state.cloudId) return;
-  enviarTorneioAgora(montarPayloadTorneio(), true);
+  if(!auth || !state.cloudId) return Promise.resolve(true);
+  return enviarTorneioAgora(montarPayloadTorneio(), true);
 }
 document.addEventListener("visibilitychange", ()=>{
   if(document.visibilityState === "hidden") flushSyncTorneio();
@@ -969,6 +976,8 @@ function iniciarLiveRefresh(){
     if(state.tab==="apito") return; // quem está apitando neste aparelho é a fonte da verdade local
     const ativo = document.activeElement;
     if(ativo && (ativo.tagName==="INPUT" || ativo.tagName==="TEXTAREA")) return; // não interrompe edição em andamento
+    if(enviosPendentes>0) return; // ainda tem salvamento nosso em voo — não busca por cima
+    if(Date.now()-ultimoSaveLocalEm < 4000) return; // acabamos de salvar algo aqui — dá tempo de propagar antes de confiar no que vier de volta
     refreshTorneioAtual();
   }, 5000);
 }
@@ -1689,7 +1698,7 @@ function arbTempoTecnico(matchId){
   arbSalvarAgora();
   render();
 }
-function arbFinalizar(matchId){
+async function arbFinalizar(matchId){
   const arb = getArb(matchId);
   if(arb.status!=="andamento" && arb.status!=="tecnico") return;
   if(arb.status==="andamento" && arb.inicioMs){
@@ -1700,10 +1709,12 @@ function arbFinalizar(matchId){
   arb.duracaoFinalSegundos = Math.floor(arb.acumuladoMs/1000);
   const m = getMatchObj(matchId);
   if(m){ m.pa = arb.placarA; m.pb = arb.placarB; m.finalizado = true; }
-  arbSalvarAgora();
+  save();
   render();
   checkElimNotifications();
-  showToast("Partida finalizada e placar salvo!");
+  showToast("Salvando...");
+  const ok = await flushSyncTorneio();
+  showToast(ok ? "Partida finalizada e placar salvo!" : "⚠️ Finalizada aqui, mas sem conexão com o servidor — sincroniza sozinho quando a internet voltar.");
 }
 function arbReabrir(matchId){
   const arb = getArb(matchId);
@@ -1730,7 +1741,7 @@ function arbPonto(matchId, lado, delta){
 }
 // Permite finalizar uma partida direto pela lista de jogos (sem precisar abrir o Apitar jogo),
 // pra quem preferir só digitar o placar nos campos e confirmar.
-function finalizarJogoManual(matchId){
+async function finalizarJogoManual(matchId){
   const m = getMatchObj(matchId);
   if(!m) return;
   if(m.pa===null || m.pa==="" || m.pb===null || m.pb===""){
@@ -1752,10 +1763,11 @@ function finalizarJogoManual(matchId){
     }
   }
   save();
-  flushSyncTorneio();
   render();
   checkElimNotifications();
-  showToast("Jogo finalizado!");
+  showToast("Salvando...");
+  const ok = await flushSyncTorneio();
+  showToast(ok ? "Jogo finalizado e salvo!" : "⚠️ Jogo finalizado aqui, mas sem conexão com o servidor — sincroniza sozinho quando a internet voltar.");
 }
 function mostrarPopupTroca(){
   const el = document.getElementById("popup-troca");
