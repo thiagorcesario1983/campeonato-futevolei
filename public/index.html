@@ -952,29 +952,41 @@ async function copiarCodigoPix(){
   }
 }
 
-async function verificarPagamentoPix(){
+async function verificarPagamentoPix(silencioso){
   if(!state.cloudId) return;
-  showToast("Verificando pagamento direto com o Mercado Pago...");
+  if(!silencioso) showToast("Verificando pagamento direto com o Mercado Pago...");
   try{
     const res = await fetch("/api/pix-verificar", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id: state.cloudId, email: auth.email })
     });
     const data = await res.json();
-    if(!res.ok){ showToast(data.error || "Não foi possível verificar o pagamento."); return; }
+    if(!res.ok){ if(!silencioso) showToast(data.error || "Não foi possível verificar o pagamento."); return; }
+    const jaEstavaPago = state.pagamento?.status==="pago";
     state.pagamento = data.pagamento;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     if(state.pagamento?.status==="pago"){
-      showToast("Pagamento confirmado! 🎉");
-    } else {
+      if(!jaEstavaPago) showToast("Pagamento confirmado! 🎉");
+    } else if(!silencioso){
       const statusMP = data.statusMercadoPago;
       const rotulos = { pending:"ainda pendente no Mercado Pago", in_process:"em análise pelo Mercado Pago", rejected:"recusado pelo Mercado Pago", cancelled:"cancelado" };
       showToast(statusMP && rotulos[statusMP] ? `Pagamento ${rotulos[statusMP]}.` : "Ainda não identificamos o pagamento.");
     }
     render();
   }catch(e){
-    showToast("Sem conexão com o servidor — não foi possível verificar o pagamento.");
+    if(!silencioso) showToast("Sem conexão com o servidor — não foi possível verificar o pagamento.");
   }
+}
+
+// Verifica automaticamente (sem toasts de "ainda pendente") assim que a tela de Pix pendente
+// é aberta — cobre pagamentos que já caíram mas cujo webhook não tinha chegado até então,
+// sem precisar que ninguém lembre de clicar em "Já paguei, verificar".
+let ultimoCloudIdAutoVerificado = null;
+function autoVerificarPixSeNecessario(){
+  if(!state.cloudId || state.pagamento?.status!=="pendente") return;
+  if(ultimoCloudIdAutoVerificado===state.cloudId) return;
+  ultimoCloudIdAutoVerificado = state.cloudId;
+  verificarPagamentoPix(true);
 }
 
 async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim, valor){
@@ -2591,6 +2603,7 @@ function render(){
     </div>`;
     main.innerHTML = renderTorneioBloqueado();
     bindEvents();
+    autoVerificarPixSeNecessario();
     return;
   }
 
