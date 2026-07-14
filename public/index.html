@@ -1776,7 +1776,9 @@ function getArb(matchId){
       acumuladoMs: 0,
       inicioMs: null,
       ultimoMultiploTroca: 0,
-      duracaoFinalSegundos: null
+      duracaoFinalSegundos: null,
+      arbitroNome: null, // nome de quem apitou (preenchido pelo link de árbitro convidado)
+      tokenApito: null // token do link de árbitro convidado dessa partida, se já foi gerado
     };
   }
   return state.arbitragem[matchId];
@@ -1789,9 +1791,16 @@ function tempoDecorridoMs(arb){
 // classificação/chaveamento no meio do jogo.
 function liveScoreBadgeHtml(matchId){
   const arb = state.arbitragem && state.arbitragem[matchId];
-  if(!arb || (arb.status!=="andamento" && arb.status!=="tecnico")) return "";
-  const rotulo = arb.status==="andamento" ? "🔴 Em andamento" : "⏸️ Tempo técnico";
-  return `<div class="live-score-badge">${rotulo} · ${arb.placarA}×${arb.placarB}</div>`;
+  if(!arb) return "";
+  let html = "";
+  if(arb.status==="andamento" || arb.status==="tecnico"){
+    const rotulo = arb.status==="andamento" ? "🔴 Em andamento" : "⏸️ Tempo técnico";
+    html += `<div class="live-score-badge">${rotulo} · ${arb.placarA}×${arb.placarB}</div>`;
+  }
+  if(arb.arbitroNome){
+    html += `<div class="live-score-badge" style="background:var(--sand);color:var(--ocean-deep);">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>`;
+  }
+  return html;
 }
 function woNoteHtml(m, a, b){
   if(!m || !m.wo) return "";
@@ -2040,7 +2049,38 @@ function abrirPlacarMultiploTV(){
   const url = `${location.origin}${location.pathname}?placarMultiTV=${encodeURIComponent(ids.join(","))}&torneio=${encodeURIComponent(state.cloudId)}`;
   window.open(url, "_blank");
 }
-let refTickInterval = null;
+// Gera (ou reaproveita) um link isolado, só para essa partida, que outra pessoa pode abrir sem
+// login pra apitar. Protegido por um token aleatório — quem não tem o link não acessa nada.
+async function compartilharLinkApito(matchId){
+  if(!state.cloudId){ showToast("Salve o torneio na nuvem antes de compartilhar o link."); return; }
+  showToast("Gerando link...");
+  try{
+    const res = await fetch("/api/apito-link", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, match: matchId, email: auth.email })
+    });
+    const data = await res.json();
+    if(!res.ok){ showToast(data.error || "Não foi possível gerar o link."); return; }
+
+    const [a,b] = getMatchTeams(matchId);
+    const label = getMatchLabel(matchId);
+    const url = `${location.origin}${location.pathname}?apitar=1&torneio=${encodeURIComponent(state.cloudId)}&match=${encodeURIComponent(matchId)}&token=${encodeURIComponent(data.token)}&a=${encodeURIComponent(a||"")}&b=${encodeURIComponent(b||"")}&label=${encodeURIComponent(label||"")}`;
+
+    if(navigator.share){
+      try{ await navigator.share({ title:"Apitar jogo", text:`Apite o jogo ${label}: ${a} × ${b}`, url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
+    }
+    try{
+      await navigator.clipboard.writeText(url);
+      showToast("Link copiado! Envie para quem vai apitar.");
+    }catch(e){
+      prompt("Copie o link abaixo:", url);
+    }
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível gerar o link.");
+  }
+}
+
+
 function stopRefTick(){
   if(refTickInterval){ clearInterval(refTickInterval); refTickInterval = null; }
 }
@@ -3640,6 +3680,7 @@ function renderApito(){
     </div>
     <div class="ref-actions">${acoes}</div>
     <button class="ref-tv-link" id="btn-ref-abrir-tv">📺 Abrir placar para TV</button>
+    <button class="ref-tv-link" id="btn-ref-compartilhar">🔗 Compartilhar link para outra pessoa apitar</button>
   </div>
   <div class="popup-troca" id="popup-troca">
     <div class="popup-troca-inner">
@@ -4046,6 +4087,8 @@ function bindEvents(){
   if(btnRefReabrir) btnRefReabrir.addEventListener("click", ()=> arbReabrir(state.apitoMatchId));
   const btnAbrirTv = document.getElementById("btn-ref-abrir-tv");
   if(btnAbrirTv) btnAbrirTv.addEventListener("click", ()=> abrirPlacarTV(state.apitoMatchId));
+  const btnCompartilharApito = document.getElementById("btn-ref-compartilhar");
+  if(btnCompartilharApito) btnCompartilharApito.addEventListener("click", ()=> compartilharLinkApito(state.apitoMatchId));
   main.querySelectorAll("[data-ponto]").forEach(btn=>{
     btn.addEventListener("click", ()=> arbPonto(state.apitoMatchId, btn.dataset.ponto, Number(btn.dataset.delta)));
   });
@@ -4232,15 +4275,165 @@ function renderTV(matchId){
     <div class="tv-footer">
       <div class="tv-timer">${formatTempo(tempoMs)}</div>
       <div class="tv-status">${statusLabel}</div>
-    </div>`;
+    </div>
+    ${arb.arbitroNome ? `<div class="tv-status" style="margin-top:6px;opacity:.85;">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>` : ""}`;
 }
 
-const __urlParams = new URLSearchParams(location.search);
+/* ============================================================
+   APITAR JOGO (link público de árbitro convidado)
+   Página isolada: quem abre esse link só vê e mexe no placar/cronômetro dessa UMA partida.
+   Nunca carrega o resto do torneio, nem exige login — só o link com o token é suficiente.
+============================================================ */
+let __apitoPublicoCtx = null;
+let __apitoPublicoArb = null;
+let __apitoPublicoTick = null;
+
+function iniciarApitoPublico(ctx){
+  __apitoPublicoCtx = ctx;
+  const nomeSalvo = localStorage.getItem("futevolei_apito_ultimo_nome_v1") || "";
+  document.body.innerHTML = `<div class="ref-screen">
+    <div class="ref-top"><div class="ref-label">${escapeHtml(ctx.label || "Apitar jogo")}</div></div>
+    <div class="ref-board" style="margin-top:10px;">
+      <div style="width:100%;text-align:center;font-size:14px;color:var(--muted, #666);margin-bottom:14px;">${escapeHtml(ctx.a||"—")} × ${escapeHtml(ctx.b||"—")}</div>
+    </div>
+    <div style="padding:0 20px;">
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Seu nome (aparece como árbitro da partida)</label>
+      <input type="text" id="input-apito-nome" value="${escapeHtml(nomeSalvo)}" placeholder="Seu nome" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:12px;">
+      <button class="btn primary" id="btn-apito-comecar" style="width:100%;">Começar a apitar</button>
+    </div>
+  </div>`;
+  const iniciar = ()=>{
+    const nome = (document.getElementById("input-apito-nome").value||"").trim();
+    if(!nome){ alert("Digite seu nome pra continuar."); return; }
+    localStorage.setItem("futevolei_apito_ultimo_nome_v1", nome);
+    __apitoPublicoCtx.nome = nome;
+    carregarApitoPublico();
+  };
+  document.getElementById("btn-apito-comecar").addEventListener("click", iniciar);
+  document.getElementById("input-apito-nome").addEventListener("keydown", e=>{ if(e.key==="Enter") iniciar(); });
+}
+
+async function carregarApitoPublico(){
+  document.body.innerHTML = `<div class="ref-screen"><div class="ref-top"><div class="ref-label">Carregando...</div></div></div>`;
+  try{
+    const c = __apitoPublicoCtx;
+    const res = await fetch(`/api/apito?torneio=${encodeURIComponent(c.torneio)}&match=${encodeURIComponent(c.match)}&token=${encodeURIComponent(c.token)}`, { cache:"no-store" });
+    const data = await res.json();
+    if(!res.ok){
+      document.body.innerHTML = `<div class="ref-screen"><div class="ref-top"><div class="ref-label">⚠️ ${escapeHtml(data.error||"Link inválido ou expirado.")}</div></div></div>`;
+      return;
+    }
+    __apitoPublicoArb = data.arb;
+    renderApitoPublicoTela();
+  }catch(e){
+    document.body.innerHTML = `<div class="ref-screen"><div class="ref-top"><div class="ref-label">⚠️ Sem conexão. Recarregue a página pra tentar de novo.</div></div></div>`;
+  }
+}
+
+function renderApitoPublicoTela(){
+  const c = __apitoPublicoCtx;
+  const arb = __apitoPublicoArb;
+  const statusLabel = {
+    nao_iniciada: "Não iniciada",
+    andamento: "Em andamento",
+    tecnico: "⏸️ Tempo técnico",
+    finalizada: "✅ Finalizada"
+  }[arb.status] || "";
+
+  let acoes = "";
+  if(arb.status==="nao_iniciada"){
+    acoes += `<button class="btn" id="btn-ap-iniciar">▶️ Iniciar partida</button>`;
+  }
+  if(arb.status==="andamento" || arb.status==="tecnico"){
+    acoes += `<button class="btn secondary" id="btn-ap-tecnico">${arb.status==="tecnico" ? "▶️ Retomar" : "⏸️ Tempo técnico"}</button>`;
+    acoes += `<button class="btn ghost ref-btn-fim" id="btn-ap-finalizar">🏁 Fim de partida</button>`;
+  }
+  if(arb.status==="finalizada"){
+    acoes += `<div class="ref-final-msg">✅ Partida finalizada · duração ${formatTempo(arb.acumuladoMs)}</div>`;
+  }
+
+  document.body.innerHTML = `<div class="ref-screen">
+    <div class="ref-top"><div class="ref-label">${escapeHtml(c.label || "Apitar jogo")}</div></div>
+    <div class="ref-timer-box status-${arb.status}">
+      <div class="ref-timer" id="ref-timer-txt">${formatTempo(tempoDecorridoMs(arb))}</div>
+      <div class="ref-timer-status">${statusLabel}</div>
+    </div>
+    <div class="ref-board">
+      <div class="ref-team-col">
+        <button class="ref-score-btn plus" data-ap-ponto="a" data-delta="1" ${arb.status==="finalizada"?"disabled":""}>+</button>
+        <div class="ref-score-num">${arb.placarA}</div>
+        <button class="ref-score-btn minus" data-ap-ponto="a" data-delta="-1" ${arb.status==="finalizada"?"disabled":""}>−</button>
+        <div class="ref-team-nome">${escapeHtml(c.a||"—")}</div>
+      </div>
+      <div class="ref-vs">×</div>
+      <div class="ref-team-col">
+        <button class="ref-score-btn plus" data-ap-ponto="b" data-delta="1" ${arb.status==="finalizada"?"disabled":""}>+</button>
+        <div class="ref-score-num">${arb.placarB}</div>
+        <button class="ref-score-btn minus" data-ap-ponto="b" data-delta="-1" ${arb.status==="finalizada"?"disabled":""}>−</button>
+        <div class="ref-team-nome">${escapeHtml(c.b||"—")}</div>
+      </div>
+    </div>
+    <div class="ref-actions">${acoes}</div>
+    <div style="text-align:center;font-size:12px;color:var(--muted,#888);margin-top:14px;">Apitando como <b>${escapeHtml(c.nome||"")}</b></div>
+  </div>`;
+
+  const btnIniciar = document.getElementById("btn-ap-iniciar");
+  if(btnIniciar) btnIniciar.addEventListener("click", ()=> apitoPublicoAcao("iniciar"));
+  const btnTecnico = document.getElementById("btn-ap-tecnico");
+  if(btnTecnico) btnTecnico.addEventListener("click", ()=> apitoPublicoAcao("tempoTecnico"));
+  const btnFinalizar = document.getElementById("btn-ap-finalizar");
+  if(btnFinalizar) btnFinalizar.addEventListener("click", ()=>{
+    if(confirm("Finalizar a partida? O placar e o tempo de jogo serão salvos.")) apitoPublicoAcao("finalizar");
+  });
+  document.querySelectorAll("[data-ap-ponto]").forEach(btn=>{
+    btn.addEventListener("click", ()=> apitoPublicoAcao("ponto", { lado: btn.dataset.apPonto, delta: Number(btn.dataset.delta) }));
+  });
+
+  clearInterval(__apitoPublicoTick);
+  if(arb.status==="andamento"){
+    __apitoPublicoTick = setInterval(()=>{
+      const el = document.getElementById("ref-timer-txt");
+      if(el) el.textContent = formatTempo(tempoDecorridoMs(__apitoPublicoArb));
+    }, 1000);
+  }
+}
+
+async function apitoPublicoAcao(action, payload){
+  const c = __apitoPublicoCtx;
+  try{
+    const res = await fetch("/api/apito", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ torneio:c.torneio, match:c.match, token:c.token, arbitroNome:c.nome, action, ...(payload||{}) })
+    });
+    const data = await res.json();
+    if(!res.ok){ if(action) alert(data.error||"Não foi possível salvar."); return; }
+    if(action){
+      __apitoPublicoArb = data.arb;
+      renderApitoPublicoTela();
+    }
+  }catch(e){
+    if(action) alert("Sem conexão — tente de novo.");
+  }
+}
+
+
 const __tvMatchId = __urlParams.get("placarTV");
 const __tvMultiIds = __urlParams.get("placarMultiTV");
 const __tvTorneioId = __urlParams.get("torneio");
+const __apitarFlag = __urlParams.get("apitar");
+const __apitarMatch = __urlParams.get("match");
+const __apitarToken = __urlParams.get("token");
 
-if(__tvMatchId && __tvTorneioId){
+if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
+  iniciarApitoPublico({
+    torneio: __tvTorneioId,
+    match: __apitarMatch,
+    token: __apitarToken,
+    a: __urlParams.get("a") || "",
+    b: __urlParams.get("b") || "",
+    label: __urlParams.get("label") || ""
+  });
+} else if(__tvMatchId && __tvTorneioId){
   iniciarPlacarTV(__tvTorneioId, __tvMatchId);
 } else if(__tvMultiIds && __tvTorneioId){
   iniciarPlacarMultiploTV(__tvTorneioId, __tvMultiIds.split(","));
