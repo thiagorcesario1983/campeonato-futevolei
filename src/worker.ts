@@ -520,6 +520,197 @@ async function torneiosGetPublico(request: Request, env: Env): Promise<Response>
   return json(JSON.parse(raw));
 }
 
+/* ============================================================
+   APITAR JOGO — link de árbitro convidado (público, mas restrito)
+   Permite compartilhar um link que dá acesso SÓ ao placar/cronômetro de UMA partida
+   específica — nada mais do torneio (sem outras partidas, sem telefones de duplas, sem
+   configurações). Protegido por um token aleatório específico daquela partida: quem não tem
+   o link não consegue nem ler nem alterar nada, diferente do "Placar para TV" (que só usa o
+   ID do torneio) — aqui exigimos também esse token porque essa rota permite ESCREVER dados.
+============================================================ */
+function getMatchRef(state: any, matchId: string): any | null {
+  if (!state) return null;
+  if (/^g\d+$/.test(matchId)) {
+    const idx = Number(matchId.slice(1));
+    return state.groupMatches?.[idx] || null;
+  }
+  if (matchId === "terceiro") {
+    return state.terceiro || null;
+  }
+  let m = matchId.match(/^e(\d+)_(\d+)$/);
+  if (m) {
+    return state.elimRodadas?.[Number(m[1])]?.matches?.[Number(m[2])] || null;
+  }
+  m = matchId.match(/^b(\d+)_(\d+)$/);
+  if (m) {
+    return state.bracket?.[Number(m[1])]?.[Number(m[2])] || null;
+  }
+  return null;
+}
+
+function defaultArb(): any {
+  return {
+    status: "nao_iniciada",
+    placarA: 0,
+    placarB: 0,
+    acumuladoMs: 0,
+    inicioMs: null,
+    ultimoMultiploTroca: 0,
+    duracaoFinalSegundos: null,
+    arbitroNome: null,
+    tokenApito: null
+  };
+}
+
+// Autenticado (dono do torneio ou admin): gera (ou reaproveita) o token do link de árbitro
+// convidado pra uma partida específica.
+async function apitoCriarLink(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const torneioId = body.id;
+  const matchId = body.match;
+  const solicitanteEmail = normEmail(body.email);
+  if (!torneioId || !matchId) return json({ error: "id e match são obrigatórios" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para gerar link deste torneio" }, 403);
+  }
+
+  if (!getMatchRef(dados.state, matchId)) return json({ error: "jogo não encontrado" }, 404);
+
+  if (!dados.state.arbitragem) dados.state.arbitragem = {};
+  const arb = dados.state.arbitragem[matchId] || defaultArb();
+  if (!arb.tokenApito) arb.tokenApito = crypto.randomUUID();
+  dados.state.arbitragem[matchId] = arb;
+
+  try {
+    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  return json({ ok: true, token: arb.tokenApito });
+}
+
+// Público (com token): devolve só o placar/status/nome do árbitro daquela partida — nada mais
+// do torneio.
+async function apitoGet(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const torneioId = url.searchParams.get("torneio");
+  const matchId = url.searchParams.get("match");
+  const token = url.searchParams.get("token");
+  if (!torneioId || !matchId || !token) return json({ error: "torneio, match e token são obrigatórios" }, 400);
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  if (!getMatchRef(dados.state, matchId)) return json({ error: "jogo não encontrado" }, 404);
+  const arb = dados.state?.arbitragem?.[matchId];
+  if (!arb || !arb.tokenApito || arb.tokenApito !== token) return json({ error: "Link inválido ou expirado" }, 403);
+
+  return json({ ok: true, arb });
+}
+
+// Público (com token): executa uma ação de arbitragem (iniciar, ponto, tempo técnico,
+// finalizar, reabrir) — só nessa partida, via leitura+escrita direcionada no registro
+// completo (nunca sobrescreve o torneio inteiro).
+async function apitoPost(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const torneioId = body.torneio;
+  const matchId = body.match;
+  const token = body.token;
+  const action = body.action;
+  if (!torneioId || !matchId || !token || !action) {
+    return json({ error: "torneio, match, token e action são obrigatórios" }, 400);
+  }
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  const m = getMatchRef(dados.state, matchId);
+  if (!m) return json({ error: "jogo não encontrado" }, 404);
+  if (!dados.state.arbitragem) dados.state.arbitragem = {};
+  const arb: any = dados.state.arbitragem[matchId] || defaultArb();
+  if (!arb.tokenApito || arb.tokenApito !== token) return json({ error: "Link inválido ou expirado" }, 403);
+
+  if (typeof body.arbitroNome === "string" && body.arbitroNome.trim()) {
+    arb.arbitroNome = body.arbitroNome.trim().slice(0, 60);
+  }
+
+  if (action === "iniciar") {
+    if (arb.status === "nao_iniciada") {
+      arb.inicioMs = Date.now();
+      arb.status = "andamento";
+    }
+  } else if (action === "tempoTecnico") {
+    if (arb.status === "andamento") {
+      arb.acumuladoMs += Date.now() - (arb.inicioMs || Date.now());
+      arb.inicioMs = null;
+      arb.status = "tecnico";
+    } else if (arb.status === "tecnico") {
+      arb.inicioMs = Date.now();
+      arb.status = "andamento";
+    }
+  } else if (action === "ponto") {
+    if (arb.status !== "finalizada") {
+      const lado = body.lado === "b" ? "b" : "a";
+      const delta = body.delta === -1 ? -1 : 1;
+      const campo = lado === "a" ? "placarA" : "placarB";
+      arb[campo] = Math.max(0, (arb[campo] || 0) + delta);
+      m.pa = arb.placarA;
+      m.pb = arb.placarB;
+    }
+  } else if (action === "finalizar") {
+    if (arb.status === "andamento" || arb.status === "tecnico") {
+      if (arb.status === "andamento" && arb.inicioMs) {
+        arb.acumuladoMs += Date.now() - arb.inicioMs;
+        arb.inicioMs = null;
+      }
+      arb.status = "finalizada";
+      arb.duracaoFinalSegundos = Math.floor(arb.acumuladoMs / 1000);
+      m.pa = arb.placarA;
+      m.pb = arb.placarB;
+      m.finalizado = true;
+    }
+  } else if (action === "reabrir") {
+    if (arb.status === "finalizada") {
+      arb.status = "tecnico";
+      m.finalizado = false;
+    }
+  } else {
+    return json({ error: "ação inválida" }, 400);
+  }
+
+  dados.state.arbitragem[matchId] = arb;
+  dados.updatedAt = new Date().toISOString();
+
+  try {
+    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  return json({ ok: true, arb, finalizado: !!m.finalizado });
+}
+
 async function torneiosDelete(request: Request, env: Env): Promise<Response> {
   let id: string | null = null;
   let solicitanteEmail = "";
@@ -948,6 +1139,14 @@ export default {
     }
     if (path === "/api/torneios-tv") {
       return torneiosGetPublico(request, env);
+    }
+    if (path === "/api/apito-link") {
+      return method === "POST" ? apitoCriarLink(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/apito") {
+      if (method === "GET") return apitoGet(request, env);
+      if (method === "POST") return apitoPost(request, env);
+      return new Response("Method not allowed", { status: 405 });
     }
     if (path === "/api/torneios-delete") {
       return method === "POST" || method === "DELETE"
