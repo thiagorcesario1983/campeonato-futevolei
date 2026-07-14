@@ -337,6 +337,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   if (ehNovo) {
     const adminEmail = await env.DB.get("config:admin_notification_email");
     if (adminEmail) {
+      const diasEstim = calcularDias(meta.dataInicio, meta.dataFim);
+      const valorEstim = diasEstim * VALOR_DIARIA;
       await enviarEmail(
         env,
         adminEmail,
@@ -346,8 +348,9 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
          <b>Nome:</b> ${meta.nome}<br>
          <b>Organizador:</b> ${meta.ownerName || "-"} (${meta.ownerEmail || "-"})<br>
          <b>Início:</b> ${meta.dataInicio || "não informado"}<br>
-         <b>Fim:</b> ${meta.dataFim || "não informado"}</p>
-         <p>Entre no app com a conta admin, aba Aprovações, pra revisar.</p>`
+         <b>Fim:</b> ${meta.dataFim || "não informado"}<br>
+         <b>Valor estimado:</b> ${diasEstim ? `R$ ${valorEstim.toFixed(2).replace(".", ",")} (${diasEstim} diária${diasEstim > 1 ? "s" : ""} × R$ 70,00)` : "não foi possível calcular"}</p>
+         <p>Entre no app com a conta admin, aba Aprovações, pra revisar (o valor pode ser ajustado por lá).</p>`
       );
     }
     if (meta.ownerEmail) {
@@ -474,13 +477,19 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
   }
 
   if (dados.ownerEmail) {
+    const diasCalc = calcularDias(dados.dataInicio, dados.dataFim);
+    const valorEfetivo = typeof dados.valorOverride === "number" ? dados.valorOverride : diasCalc * VALOR_DIARIA;
     const rotulos: Record<string, string> = {
       aprovado: "aprovado ✅",
       recusado: "recusado ❌",
       bloqueado: "bloqueado 🔒"
     };
     const corpos: Record<string, string> = {
-      aprovado: `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>Já está liberado para uso dentro desse período.</p>`,
+      aprovado: valorEfetivo === 0
+        ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>Este campeonato foi liberado sem custo. Já está disponível para uso dentro desse período.</p>`
+        : `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p>
+           <p><b>Valor das diárias:</b> R$ ${valorEfetivo.toFixed(2).replace(".", ",")}${diasCalc ? ` (${diasCalc} diária${diasCalc > 1 ? "s" : ""})` : ""}</p>
+           <p>Falta só o pagamento via Pix para liberar o uso — entre no app para gerar o código.</p>`,
       recusado: `<p>Se tiver dúvidas, entre em contato com o organizador do app.</p>`,
       bloqueado: `<p>Ele fica indisponível até ser liberado novamente pelo admin — as datas de validade (${dados.dataInicio || "não informado"} a ${dados.dataFim || "não informado"}) continuam guardadas e nada do que já foi feito se perde.</p>`
     };
@@ -728,21 +737,23 @@ async function confirmarPagamentoAprovado(env: Env, torneioId: string, pagamento
   } catch {}
 
   if (dados.ownerEmail) {
+    const valorTexto = typeof dados.pagamento?.valor === "number" ? `R$ ${dados.pagamento.valor.toFixed(2).replace(".", ",")}` : null;
     await enviarEmail(
       env,
       dados.ownerEmail,
       `Pagamento confirmado — campeonato [${dados.codigo}] "${dados.nome}"`,
       `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
-       <p>Recebemos o pagamento das diárias do campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>). Ele já está liberado para uso.</p>`
+       <p>Recebemos o pagamento das diárias do campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>)${valorTexto ? ` no valor de <b>${valorTexto}</b>` : ""}. Ele já está liberado para uso.</p>`
     );
   }
   const adminEmail = await env.DB.get("config:admin_notification_email");
   if (adminEmail) {
+    const valorTexto = typeof dados.pagamento?.valor === "number" ? `R$ ${dados.pagamento.valor.toFixed(2).replace(".", ",")}` : "valor não identificado";
     await enviarEmail(
       env,
       adminEmail,
       `💰 Pagamento recebido [${dados.codigo}]`,
-      `<p>O campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) teve o pagamento confirmado via Pix.</p>`
+      `<p>O campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) teve o pagamento confirmado via Pix, no valor de <b>${valorTexto}</b>.</p>`
     );
   }
 
