@@ -552,7 +552,7 @@ function defaultState(){
     groups: [], // [[nomes do grupo 0], [grupo 1], ...] — quantidade e tamanho dinâmicos
     groupMatches: [], // {group,jogo,a,b,pa,pb}
     elimRodadas: [], // (formato "eliminacao") [{matches:[{a,b,pa,pb}], bye:nome|null}, ...]
-    bracketSeed: null, // (formato "eliminacao") lista fixa de classificados (com folgas=null) que abre a 1ª rodada do mata-mata
+    bracketSeed: null, // (formato "eliminacao") lista fixa de classificados que abre a 1ª rodada do mata-mata (sempre uma potência de 2, sem folgas)
     bracket: [], // [[{pa,pb}, ...], [...], ...] — cada posição é uma rodada do mata-mata (tamanho = log2(qualificados))
     terceiro: {pa:null,pb:null,finalizado:false,wo:null},
     terceiroLugar: false,
@@ -1257,15 +1257,25 @@ function sortear(){
   for(let g=0; g<numGrupos; g++){
     groups.push(embaralhado.slice(g*tamanhoGrupo, (g+1)*tamanhoGrupo));
   }
-  const groupMatches = [];
-  groups.forEach((g, gi)=>{
+  const groupMatchesPorGrupo = groups.map((g, gi)=>{
+    const jogos = [];
     let jogoNum = 1;
     for(let x=0; x<g.length; x++){
       for(let y=x+1; y<g.length; y++){
-        groupMatches.push({group:letters[gi], jogo:jogoNum++, a:g[x], b:g[y], pa:null, pb:null, finalizado:false, wo:null});
+        jogos.push({group:letters[gi], jogo:jogoNum++, a:g[x], b:g[y], pa:null, pb:null, finalizado:false, wo:null});
       }
     }
+    return jogos;
   });
+  // Intercala: 1º jogo de cada grupo, depois o 2º de cada grupo, e assim por diante — em vez
+  // de jogar todos os confrontos de um grupo pra só depois passar pro próximo.
+  const maxJogosPorGrupo = Math.max(0, ...groupMatchesPorGrupo.map(j=>j.length));
+  const groupMatches = [];
+  for(let rodada=0; rodada<maxJogosPorGrupo; rodada++){
+    groupMatchesPorGrupo.forEach(jogos=>{
+      if(jogos[rodada]) groupMatches.push(jogos[rodada]);
+    });
+  }
   state.groups = groups;
   state.groupMatches = groupMatches;
   state.drawn = true;
@@ -1366,28 +1376,30 @@ function sortearRodadaEliminacao(){
   state.elimRodadas.push({matches, bye});
   save();
 }
-// true quando a rodada mais recente já foi totalmente registrada E o nº de vivas já
-// bateu (ou ficou abaixo d)a meta de qualificados — ou seja, dá para ir pro mata-mata.
+function ehPotenciaDeDois(n){
+  return n>0 && (n & (n-1))===0;
+}
+// Só libera o mata-mata quando o nº de vivas já for uma potência de 2 exata (2, 4, 8...) —
+// assim ninguém entra no chaveamento de folga: todo mundo que chega lá, chegou vencendo.
+// Se uma rodada "passar direto" da meta (ex: de 5 vivas cair pra 3), continua sorteando mais
+// rodadas até estabilizar numa potência de 2, em vez de completar com folga.
 function elimProntoParaMataMata(){
   const r = elimRodadaAtual();
   if(!r || !elimRodadaCompleta(r)) return false;
-  return elimVivas().length <= (state.elimTarget||4);
+  return ehPotenciaDeDois(elimVivas().length);
 }
 function proximaPotenciaDeDois(n){
   let p = 1;
   while(p < n) p *= 2;
   return Math.max(1,p);
 }
-// Fecha a fase de eliminação e monta a 1ª rodada do mata-mata com quem sobrou vivo.
-// Se a quantidade não for uma potência de 2 exata, completa com folgas (byes) distribuídas
-// aleatoriamente, usando o motor de chaveamento genérico já existente.
+// Fecha a fase de eliminação e monta a 1ª rodada do mata-mata com quem sobrou vivo. Como
+// elimProntoParaMataMata só libera esse botão quando a quantidade já é uma potência de 2 exata,
+// o chaveamento sai sempre "cheio" — sem folga nenhuma, todo mundo precisa vencer pra avançar.
 function iniciarMataMataEliminacao(){
   const vivas = shuffle(elimVivas());
-  const tamanhoBracket = proximaPotenciaDeDois(Math.max(2, vivas.length));
-  const comFolgas = vivas.slice();
-  while(comFolgas.length < tamanhoBracket) comFolgas.push(null);
-  state.bracketSeed = shuffle(comFolgas);
-  state.bracket = criarBracketVazio(tamanhoBracket);
+  state.bracketSeed = vivas;
+  state.bracket = criarBracketVazio(Math.max(2, vivas.length));
   state.terceiro = {pa:null, pb:null, finalizado:false, wo:null};
   save();
 }
@@ -2913,7 +2925,7 @@ function renderSorteio(){
       html += `<div class="card">
         <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Duplas que avançam para o mata-mata</label>
         <input type="number" min="2" step="1" id="input-elim-target" value="${state.elimTarget}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
-        <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (2, 4, 8...) e menor que a quantidade total de duplas.</div>
+        <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (2, 4, 8...) e menor que a quantidade total de duplas. É uma meta aproximada — as rodadas continuam até sobrar uma quantidade "fechada", pra ninguém entrar no mata-mata de folga (pode passar um pouco dessa meta pra mais ou pra menos).</div>
       </div>`;
     } else {
       html += `<div class="card">
@@ -3025,7 +3037,7 @@ function renderSituacaoEliminacaoLista(){
 function renderRodadasEliminacao(){
   let html = `
     <div class="section-title">Rodadas · Eliminação</div>
-    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. Os confrontos priorizam quem tem menos vitórias; em rodada com número ímpar, quem tem mais vitórias folga. As duplas que sobrarem avançam para o mata-mata.</div>`;
+    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. Os confrontos priorizam quem tem menos vitórias; em rodada com número ímpar, quem tem mais vitórias folga. As rodadas continuam até sobrar uma quantidade "fechada" (2, 4, 8...) — no mata-mata ninguém entra de folga, só avança quem vence.</div>`;
 
   const pendentes = pendingElimMessages().filter(p=>String(p.key).startsWith("e"));
   if(pendentes.length){
@@ -3074,9 +3086,9 @@ function renderRodadasEliminacao(){
 
   if(!completa){
     html += `<div class="card empty" style="padding:16px;">Registre os resultados de todos os jogos da rodada para liberar a próxima etapa.</div>`;
-  } else if(!matamataPronto() && vivas.length > meta){
+  } else if(!matamataPronto() && !ehPotenciaDeDois(vivas.length)){
     html += `<button class="btn" id="btn-sortear-proxima-rodada">Sortear rodada ${state.elimRodadas.length+1} 🏐</button>
-      <div class="tiebreak-note" style="text-align:center;">${vivas.length} duplas seguem vivas · meta: ${meta} para o mata-mata.</div>`;
+      <div class="tiebreak-note" style="text-align:center;">${vivas.length} duplas seguem vivas · meta: ${meta} para o mata-mata. Continua sorteando até sobrar uma quantidade "fechada" (2, 4, 8...), pra ninguém entrar no mata-mata de folga.</div>`;
   } else if(!matamataPronto()){
     html += `<div class="champion-banner" style="background:linear-gradient(150deg,var(--grass),#2E6E42);">
         <div class="eyebrow">Fase de eliminação concluída</div>
@@ -3154,7 +3166,7 @@ function renderFluxoJogos(){
       let elimHtml = eliminadas.length
         ? `❌ Eliminadas (2 derrotas): ${eliminadas.map(n=>escapeHtml(n)).join(", ")}.`
         : `Nenhuma dupla eliminada.`;
-      elimHtml += `<br>✅ Classificadas para o mata-mata: ${vivas.map(n=>escapeHtml(n)).join(", ")}${state.bracketSeed.some(x=>x===null)?` (com folga por número ímpar de classificados)`:``}.`;
+      elimHtml += `<br>✅ Classificadas para o mata-mata: ${vivas.map(n=>escapeHtml(n)).join(", ")}.`;
       html += fluxoStep(`Eliminação · Fechamento`, elimHtml, "var(--grass)");
     }
   }
