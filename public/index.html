@@ -1554,9 +1554,16 @@ function partidaFinalizada(m){
   return !!m && m.finalizado===true && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
 }
 // Mesma ideia do winner(), mas só resolve de verdade quando a partida está finalizada
-// (folgas/byes continuam resolvendo na hora, já que não há partida pra finalizar).
-function winnerFinal(a,b,m){
-  if(a==null || b==null) return winner(a,b, m?.pa, m?.pb);
+// (folgas/byes continuam resolvendo na hora, MAS só quando permitirBye=true — ver abaixo).
+function winnerFinal(a,b,m,permitirBye){
+  if(a==null || b==null){
+    // "Adversário nulo" só é uma folga de verdade na primeira rodada do mata-mata (quando um
+    // lado do chaveamento já nasce vazio). Em qualquer rodada seguinte (semifinal → final, por
+    // exemplo), um lado nulo significa só "o outro confronto ainda não terminou" — nunca deve
+    // ser tratado como vitória automática, senão a equipe que termina primeiro "ganha folga" e
+    // seria declarada campeã antes até da final ser jogada.
+    return permitirBye ? winner(a,b, m?.pa, m?.pb) : null;
+  }
   if(!partidaFinalizada(m)) return null;
   return winner(a,b,m.pa,m.pb);
 }
@@ -1603,7 +1610,7 @@ function bracketTeamsForRound(r){
   if(r===0) return primeiraRodadaTeams();
   const prevTeams = bracketTeamsForRound(r-1);
   const prevRound = state.bracket[r-1] || [];
-  const prevWinners = prevTeams.map((t,i)=> winnerFinal(t[0], t[1], prevRound[i]));
+  const prevWinners = prevTeams.map((t,i)=> winnerFinal(t[0], t[1], prevRound[i], r-1===0));
   const teams = [];
   for(let i=0; i<prevWinners.length; i+=2) teams.push([prevWinners[i], prevWinners[i+1]]);
   return teams;
@@ -1611,7 +1618,7 @@ function bracketTeamsForRound(r){
 function bracketWinnersForRound(r){
   const teams = bracketTeamsForRound(r);
   const round = state.bracket[r] || [];
-  return teams.map((t,i)=> winnerFinal(t[0], t[1], round[i]));
+  return teams.map((t,i)=> winnerFinal(t[0], t[1], round[i], r===0));
 }
 // Perdedores da semifinal (penúltima rodada) — usados na disputa de 3º/4º lugar
 function semifinalLosers(){
@@ -3708,7 +3715,7 @@ function renderApito(){
 
 function bracketMatchHtml(label, faseLabel, round, idx, a, b, m){
   const pa = m?.pa, pb = m?.pb;
-  const win = winnerFinal(a,b,m);
+  const win = winnerFinal(a,b,m,round===0);
   const matchId = makeMatchId(round, idx);
   const arbAtiva = ["andamento","tecnico"].includes(state.arbitragem?.[matchId]?.status);
   const teamBlock = (nome, oponente, side, isWin)=>{
