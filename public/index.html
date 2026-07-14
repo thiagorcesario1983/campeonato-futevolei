@@ -958,25 +958,31 @@ async function verificarPagamentoPix(){
   showToast(state.pagamento?.status==="pago" ? "Pagamento confirmado! 🎉" : "Ainda não identificamos o pagamento.");
 }
 
-async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim){
+async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim, valor){
   const rotulo = decisao==="aprovado" ? "Aprovando" : (decisao==="recusado" ? "Recusando" : "Bloqueando");
   showToast(rotulo + "...");
   try{
     const res = await fetch("/api/torneios-aprovar", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ id, adminEmail: auth.email, decisao, dataInicio, dataFim })
+      body: JSON.stringify({ id, adminEmail: auth.email, decisao, dataInicio, dataFim, valor })
     });
     if(res.status===403){ showToast("Só o admin pode fazer isso."); return; }
     if(!res.ok) throw new Error("resposta não-ok");
-    const msgFinal = decisao==="aprovado" ? "Torneio aprovado! E-mail enviado ao organizador."
-      : decisao==="recusado" ? "Torneio recusado. E-mail enviado ao organizador."
-      : "Torneio bloqueado. E-mail enviado ao organizador.";
+    const msgFinal = decisao!=="aprovado" ? (decisao==="recusado" ? "Torneio recusado. E-mail enviado ao organizador." : "Torneio bloqueado. E-mail enviado ao organizador.")
+      : (valor===0 ? "Torneio aprovado e liberado de graça! E-mail enviado ao organizador." : "Torneio aprovado! E-mail enviado ao organizador.");
     showToast(msgFinal);
     torneiosList = null;
     if(state.cloudId===id){
       state.aprovacaoStatus = decisao;
       state.dataInicio = dataInicio || state.dataInicio;
       state.dataFim = dataFim || state.dataFim;
+      if(typeof valor === "number" && valor>=0){
+        if(valor===0){
+          state.pagamento = { status:"isento", valor:0, dias: calcularDiasLocal(state.dataInicio, state.dataFim), paymentId:null, copiaCola:null, qrCodeBase64:null, criadoEm:new Date().toISOString(), pagoEm:new Date().toISOString() };
+        } else if(state.pagamento?.status==="isento"){
+          state.pagamento = null; // deixou de ser grátis — precisa gerar o Pix de novo
+        }
+      }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
     render();
@@ -1041,7 +1047,7 @@ function hojeLocalISO(){
 // fim (comparação por data, no fuso local, não por hora exata).
 function torneioEstaAtivo(){
   if(state.aprovacaoStatus!=="aprovado") return {ok:false, motivo:"aprovacao"};
-  if(state.pagamento?.status!=="pago") return {ok:false, motivo:"pagamento"};
+  if(state.pagamento?.status!=="pago" && state.pagamento?.status!=="isento") return {ok:false, motivo:"pagamento"};
   const hoje = hojeLocalISO();
   if(state.dataInicio && hoje < state.dataInicio) return {ok:false, motivo:"antes"};
   if(state.dataFim && hoje > state.dataFim) return {ok:false, motivo:"depois"};
@@ -2723,6 +2729,7 @@ function badgeAprovacao(t){
 function badgePagamento(t){
   const st = t.pagamentoStatus || "nao_solicitado";
   if(st==="pago") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">💰 Pago</span>`;
+  if(st==="isento") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">🎁 Grátis</span>`;
   if(st==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">💳 Pix pendente</span>`;
   return "";
 }
@@ -2883,7 +2890,11 @@ function renderAprovacoesScreen(){
           <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
         </div>
       </div>
-      <div id="preview-valor-aprov-${t.id}" style="font-size:12px;font-weight:600;color:var(--ocean-deep);margin-bottom:10px;">${textoPreviewValorDiarias(t.dataInicio, t.dataFim)}</div>
+      <div id="preview-valor-aprov-${t.id}" style="font-size:11px;color:var(--muted);margin-bottom:4px;">${textoPreviewValorDiarias(t.dataInicio, t.dataFim)}</div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:4px;">Valor do Pix (R$) — zere para liberar de graça</label>
+        <input type="number" min="0" step="0.01" data-aprov-valor="${t.id}" value="${(t.valorOverride ?? (calcularDiasLocal(t.dataInicio, t.dataFim) * 70)).toFixed(2)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
+      </div>
       <div style="display:flex;gap:8px;">
         <button class="btn" data-aprovar="${t.id}" style="flex:1;background:var(--grass);box-shadow:none;">✅ Aprovar</button>
         <button class="btn ghost" data-recusar="${t.id}" style="flex:1;border-color:var(--coral);color:var(--coral);">❌ Recusar</button>
@@ -3717,7 +3728,9 @@ function bindEvents(){
       const decisao = btn.dataset.aprovar ? "aprovado" : (btn.dataset.recusar ? "recusado" : "bloqueado");
       const inputInicio = main.querySelector(`[data-aprov-inicio="${id}"]`);
       const inputFim = main.querySelector(`[data-aprov-fim="${id}"]`);
-      decidirAprovacaoTorneio(id, decisao, inputInicio?.value, inputFim?.value);
+      const inputValor = main.querySelector(`[data-aprov-valor="${id}"]`);
+      const valor = inputValor && inputValor.value !== "" ? Number(inputValor.value) : null;
+      decidirAprovacaoTorneio(id, decisao, inputInicio?.value, inputFim?.value, valor);
     });
   });
   main.querySelectorAll("[data-aprov-inicio],[data-aprov-fim]").forEach(input=>{
