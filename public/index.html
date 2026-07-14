@@ -795,13 +795,20 @@ async function enviarTorneioAgora(payload, keepalive){
       body: JSON.stringify(payload),
       keepalive: !!keepalive
     });
-    if(!res.ok) throw new Error("resposta não-ok");
+    if(!res.ok){
+      let detalhe = `HTTP ${res.status}`;
+      try{
+        const errJson = await res.json();
+        if(errJson && errJson.error) detalhe += `: ${errJson.error}`;
+      }catch(e){}
+      throw new Error(detalhe);
+    }
     const data = await res.json();
     if(data.id && state.cloudId !== data.id){
       state.cloudId = data.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
-    return true;
+    return {ok:true, erro:null};
   }catch(e){
     // Sem servidor de functions disponível (ex: hospedagem local simples) — usa reserva local
     const meta = saveTorneioLocalFallback(payload);
@@ -809,7 +816,7 @@ async function enviarTorneioAgora(payload, keepalive){
       state.cloudId = meta.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
-    return false;
+    return {ok:false, erro: (e && e.message) ? e.message : String(e)};
   }finally{
     enviosPendentes = Math.max(0, enviosPendentes-1);
   }
@@ -825,16 +832,16 @@ function syncTorneio(){
 
 // Envio de emergência: garante que a última alteração não fique só no aparelho
 // se a página for fechada/minimizada antes do envio programado (800ms) terminar.
-function flushSyncTorneio(){
+function flushSyncTorneio(keepalive){
   clearTimeout(syncTimer);
   syncTimer = null;
   if(!auth || !state.cloudId) return Promise.resolve(true);
-  return enviarTorneioAgora(montarPayloadTorneio(), true);
+  return enviarTorneioAgora(montarPayloadTorneio(), !!keepalive);
 }
 document.addEventListener("visibilitychange", ()=>{
-  if(document.visibilityState === "hidden") flushSyncTorneio();
+  if(document.visibilityState === "hidden") flushSyncTorneio(true);
 });
-window.addEventListener("pagehide", flushSyncTorneio);
+window.addEventListener("pagehide", ()=>flushSyncTorneio(true));
 
 async function fetchTorneiosList(){
   if(torneiosLoading) return;
@@ -986,7 +993,7 @@ async function refreshTorneioAtual(){
   if(!auth || !state.cloudId) return;
   try{
     const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(state.cloudId)}&email=${encodeURIComponent(auth.email)}`, { cache:"no-store" });
-    if(!res.ok) throw new Error("resposta não-ok");
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if(data && data.state){
       const tabAtual = state.tab;
@@ -1004,7 +1011,9 @@ async function refreshTorneioAtual(){
       if(state.drawn) refreshTelegramStatus();
       checkElimNotifications();
     }
-  }catch(e){ /* sem conexão — mantém os dados locais que já tinha */ }
+  }catch(e){
+    console.error("refreshTorneioAtual falhou:", e && e.message ? e.message : e); // mantém os dados locais que já tinha
+  }
 }
 
 async function excluirTorneio(id, nome){
@@ -1713,8 +1722,8 @@ async function arbFinalizar(matchId){
   render();
   checkElimNotifications();
   showToast("Salvando...");
-  const ok = await flushSyncTorneio();
-  showToast(ok ? "Partida finalizada e placar salvo!" : "⚠️ Finalizada aqui, mas sem conexão com o servidor — sincroniza sozinho quando a internet voltar.");
+  const {ok, erro} = await flushSyncTorneio();
+  showToast(ok ? "Partida finalizada e placar salvo!" : `⚠️ Finalizada aqui, mas não sincronizou: ${erro||"erro desconhecido"}`);
 }
 function arbReabrir(matchId){
   const arb = getArb(matchId);
@@ -1766,8 +1775,8 @@ async function finalizarJogoManual(matchId){
   render();
   checkElimNotifications();
   showToast("Salvando...");
-  const ok = await flushSyncTorneio();
-  showToast(ok ? "Jogo finalizado e salvo!" : "⚠️ Jogo finalizado aqui, mas sem conexão com o servidor — sincroniza sozinho quando a internet voltar.");
+  const {ok, erro} = await flushSyncTorneio();
+  showToast(ok ? "Jogo finalizado e salvo!" : `⚠️ Finalizado aqui, mas não sincronizou: ${erro||"erro desconhecido"}`);
 }
 function mostrarPopupTroca(){
   const el = document.getElementById("popup-troca");
@@ -3762,21 +3771,43 @@ function showToast(msg){
    PLACAR PARA TV (tela separada, somente leitura, via link)
 ============================================================ */
 let __tvUltimoArb = null;
+function tvAtualizarBadgeConexao(ok, erro){
+  let badge = document.getElementById("tv-conn-badge");
+  if(!badge){
+    badge = document.createElement("div");
+    badge.id = "tv-conn-badge";
+    badge.style.cssText = "position:fixed;top:10px;right:10px;padding:6px 12px;border-radius:20px;font-size:12px;font-family:sans-serif;z-index:999;max-width:80vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    document.body.appendChild(badge);
+  }
+  if(ok){
+    badge.style.display = "none";
+  } else {
+    badge.style.display = "block";
+    badge.style.background = "rgba(200,50,50,.9)";
+    badge.style.color = "#fff";
+    badge.textContent = "🔴 Sem atualização: " + (erro||"erro desconhecido");
+  }
+}
 function iniciarPlacarTV(torneioId, matchId){
   document.body.innerHTML = `<div class="tv-screen" id="tv-screen"><div class="tv-loading">🏐 Carregando placar...</div></div>`;
 
   async function atualizar(){
     try{
       const res = await fetch(`/api/torneios-tv?id=${encodeURIComponent(torneioId)}`, { cache:"no-store" });
-      if(!res.ok) throw new Error("resposta não-ok");
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if(data && data.state){
-        state = Object.assign(defaultState(), data.state);
-        renderTV(matchId);
-      }
+      if(!data || !data.state) throw new Error("resposta sem dados do torneio");
+      state = Object.assign(defaultState(), data.state);
+      renderTV(matchId);
+      tvAtualizarBadgeConexao(true);
     }catch(e){
+      const msg = (e && e.message) ? e.message : String(e);
       const el = document.getElementById("tv-screen");
-      if(el && !el.dataset.loaded) el.innerHTML = `<div class="tv-loading">⚠️ Sem conexão com o servidor. Tentando novamente...</div>`;
+      if(el && !el.dataset.loaded){
+        el.innerHTML = `<div class="tv-loading">⚠️ Não foi possível carregar: ${msg}</div>`;
+      } else {
+        tvAtualizarBadgeConexao(false, msg);
+      }
     }
   }
 
@@ -3796,15 +3827,20 @@ function iniciarPlacarMultiploTV(torneioId, matchIds){
   async function atualizar(){
     try{
       const res = await fetch(`/api/torneios-tv?id=${encodeURIComponent(torneioId)}`, { cache:"no-store" });
-      if(!res.ok) throw new Error("resposta não-ok");
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if(data && data.state){
-        state = Object.assign(defaultState(), data.state);
-        renderTVMulti(matchIds);
-      }
+      if(!data || !data.state) throw new Error("resposta sem dados do torneio");
+      state = Object.assign(defaultState(), data.state);
+      renderTVMulti(matchIds);
+      tvAtualizarBadgeConexao(true);
     }catch(e){
+      const msg = (e && e.message) ? e.message : String(e);
       const el = document.getElementById("tv-screen");
-      if(el && !el.dataset.loaded) el.innerHTML = `<div class="tv-loading">⚠️ Sem conexão com o servidor. Tentando novamente...</div>`;
+      if(el && !el.dataset.loaded){
+        el.innerHTML = `<div class="tv-loading">⚠️ Não foi possível carregar: ${msg}</div>`;
+      } else {
+        tvAtualizarBadgeConexao(false, msg);
+      }
     }
   }
 
