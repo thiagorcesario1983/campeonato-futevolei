@@ -3262,12 +3262,14 @@ function renderRodadasEliminacao(){
   }
 
   state.elimRodadas.forEach((r, ri)=>{
-    html += `<div class="group-card"><div class="group-head">Rodada ${ri+1}</div><div class="group-body">`;
+    html += `<div class="round-label">Rodada ${ri+1}</div>`;
     r.matches.forEach((m, mi)=>{
       const win = winnerFinal(m.a,m.b,m);
       const matchId = `e${ri}_${mi}`;
       const arbAtiva = ["andamento","tecnico"].includes(state.arbitragem?.[matchId]?.status);
-      html += `<div class="match">
+      html += `<div class="bracket-match">
+      <div class="lbl">Jogo ${mi+1}</div>
+      <div class="match">
         <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
         <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="a" value="${m.pa??""}" ${arbAtiva||m.finalizado?"disabled":""}>
         <span class="x">×</span>
@@ -3277,10 +3279,10 @@ function renderRodadasEliminacao(){
       ${liveScoreBadgeHtml(matchId)}
       ${woNoteHtml(m, m.a, m.b)}
       ${(m.finalizado && !m.wo) ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
-      ${acoesJogoHtml(matchId, m)}`;
+      ${acoesJogoHtml(matchId, m)}
+      </div>`;
     });
     if(r.bye) html += `<div class="tiebreak-note">🎟️ ${escapeHtml(r.bye)} folgou nesta rodada (mais vitórias e menos derrotas entre os vivos — avança direto, sem jogar).</div>`;
-    html += `</div></div>`;
   });
 
   const rodadaAtual = elimRodadaAtual();
@@ -3521,13 +3523,15 @@ function renderJogos(){
     if(state.filter==="pendentes") matches = matches.filter(m=>!partidaFinalizada(m));
     if(state.filter==="realizados") matches = matches.filter(m=>partidaFinalizada(m));
     if(!matches.length) return;
-    html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
+    html += `<div class="round-label">Grupo ${letter}</div>`;
     matches.forEach(m=>{
       const idx = state.groupMatches.indexOf(m);
       const win = winnerFinal(m.a,m.b,m);
       const matchId = "g"+idx;
       const arbAtiva = ["andamento","tecnico"].includes(state.arbitragem?.[matchId]?.status);
-      html += `<div class="match">
+      html += `<div class="bracket-match">
+      <div class="lbl">Jogo ${m.jogo}</div>
+      <div class="match">
         <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
         <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="a" value="${m.pa??""}" ${arbAtiva||m.finalizado?"disabled":""}>
         <span class="x">×</span>
@@ -3537,9 +3541,9 @@ function renderJogos(){
       ${liveScoreBadgeHtml(matchId)}
       ${woNoteHtml(m, m.a, m.b)}
       ${(m.finalizado && !m.wo) ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
-      ${acoesJogoHtml(matchId, m)}`;
+      ${acoesJogoHtml(matchId, m)}
+      </div>`;
     });
-    html += `</div></div>`;
   });
   return html;
 }
@@ -4389,6 +4393,13 @@ function renderApitoPublicoTela(){
     </div>
     <div class="ref-actions">${acoes}</div>
     <div style="text-align:center;font-size:12px;color:var(--muted,#888);margin-top:14px;">Apitando como <b>${escapeHtml(c.nome||"")}</b></div>
+  </div>
+  <div class="popup-troca" id="popup-troca">
+    <div class="popup-troca-inner">
+      <div class="popup-troca-icon">🔄</div>
+      <div class="popup-troca-msg">Troca de lado das equipes.</div>
+      <button class="popup-troca-ok" id="btn-fechar-popup-troca">OK</button>
+    </div>
   </div>`;
 
   const btnIniciar = document.getElementById("btn-ap-iniciar");
@@ -4401,6 +4412,11 @@ function renderApitoPublicoTela(){
   });
   document.querySelectorAll("[data-ap-ponto]").forEach(btn=>{
     btn.addEventListener("click", ()=> apitoPublicoAcao("ponto", { lado: btn.dataset.apPonto, delta: Number(btn.dataset.delta) }));
+  });
+  const btnFecharPopupAp = document.getElementById("btn-fechar-popup-troca");
+  if(btnFecharPopupAp) btnFecharPopupAp.addEventListener("click", ()=>{
+    const el = document.getElementById("popup-troca");
+    if(el) el.classList.remove("show");
   });
 
   clearInterval(__apitoPublicoTick);
@@ -4424,6 +4440,7 @@ async function apitoPublicoAcao(action, payload){
     if(action){
       __apitoPublicoArb = data.arb;
       renderApitoPublicoTela();
+      if(data.trocarLado) mostrarPopupTroca();
     }
   }catch(e){
     if(action) alert("Sem conexão — tente de novo.");
