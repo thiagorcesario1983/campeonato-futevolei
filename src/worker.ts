@@ -8,6 +8,17 @@ export interface Env {
   SMTP_PORT?: string; // ex: "587"
   SMTP_USER?: string; // seu e-mail Gmail completo
   SMTP_PASS?: string; // a "senha de app" de 16 caracteres gerada no Google, não a senha normal
+  // Lista de e-mails (Google, reais) com permissão de admin, separados por vírgula.
+  // Ex: "fulano@gmail.com,ciclana@gmail.com". Configurado como secret no painel Cloudflare
+  // (Settings → Variables and Secrets) — nunca pela tela do app.
+  ADMIN_EMAILS?: string;
+  // Credenciais do Mercado Pago (Suas integrações → credenciais de produção), como secrets.
+  MP_ACCESS_TOKEN?: string;
+  // Opcional, mas recomendado: chave secreta gerada ao configurar o Webhook no painel do
+  // Mercado Pago (Suas integrações → Webhooks). Usada só pra filtrar notificações forjadas
+  // mais cedo — o status do pagamento em si é sempre reconferido direto na API deles, então
+  // o sistema continua seguro mesmo sem essa variável configurada.
+  MP_WEBHOOK_SECRET?: string;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -244,12 +255,16 @@ function normEmail(v: unknown): string {
   return String(v || "").trim().toLowerCase();
 }
 
-// E-mail fixo usado pelo login de teste ("Acesso de teste", senha 123456) do próprio app.
-// Quem entra com essa conta pode ver e editar os torneios de qualquer organizador —
-// é o "modo admin" local, pensado pra quem administra o app no seu próprio grupo.
-const ADMIN_EMAIL = "admin@local.teste";
-function ehAdmin(email: string): boolean {
-  return email === ADMIN_EMAIL;
+// Admin agora é uma allowlist de e-mails Google reais (variável ADMIN_EMAILS no Worker),
+// em vez de um e-mail fixo ligado à senha de teste "123456" (removida). Qualquer pessoa
+// continua podendo logar com sua própria conta Google normalmente — só quem está nessa
+// lista enxerga/edita torneios de outros donos e mexe nas configurações/aprovações do app.
+function ehAdmin(email: string, env: Env): boolean {
+  const lista = (env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return !!email && lista.includes(email);
 }
 
 // Código sequencial de 10 posições: 6 dígitos de sequência (controlada pelo app, nunca reseta)
@@ -281,7 +296,7 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   const ehNovo = !existing;
 
   // Só o dono original (ou o admin) pode atualizar um torneio já existente.
-  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail)) {
+  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
     return json({ error: "Sem permissão para alterar este torneio" }, 403);
   }
 
@@ -299,7 +314,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     // ajustá-las depois, na aprovação (rota /api/torneios-aprovar).
     aprovacaoStatus: existing ? existing.aprovacaoStatus : "pendente",
     dataInicio: existing ? existing.dataInicio : (body.dataInicio || null),
-    dataFim: existing ? existing.dataFim : (body.dataFim || null)
+    dataFim: existing ? existing.dataFim : (body.dataFim || null),
+    pagamentoStatus: existing ? (existing.pagamentoStatus || "nao_solicitado") : "nao_solicitado"
   };
 
   try {
@@ -352,7 +368,7 @@ async function torneiosList(request: Request, env: Env): Promise<Response> {
   if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
 
   const index = await getIndex(env);
-  const meus = ehAdmin(solicitanteEmail)
+  const meus = ehAdmin(solicitanteEmail, env)
     ? index
     : index.filter((t: any) => normEmail(t.ownerEmail) === solicitanteEmail);
   return json({ torneios: meus });
@@ -369,7 +385,7 @@ async function torneiosGet(request: Request, env: Env): Promise<Response> {
   if (!raw) return json({ error: "não encontrado" }, 404);
 
   const dados = JSON.parse(raw);
-  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail)) {
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
     return json({ error: "Sem permissão para ver este torneio" }, 403);
   }
 
@@ -385,7 +401,7 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
   }
 
   const solicitanteEmail = normEmail(body.adminEmail);
-  if (!ehAdmin(solicitanteEmail)) {
+  if (!ehAdmin(solicitanteEmail, env)) {
     return json({ error: "Só o admin pode aprovar ou recusar torneios" }, 403);
   }
 
@@ -413,7 +429,8 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     updatedAt: dados.updatedAt,
     aprovacaoStatus: dados.aprovacaoStatus,
     dataInicio: dados.dataInicio,
-    dataFim: dados.dataFim
+    dataFim: dados.dataFim,
+    pagamentoStatus: dados.pagamento?.status || "nao_solicitado"
   };
 
   try {
@@ -480,7 +497,7 @@ async function torneiosDelete(request: Request, env: Env): Promise<Response> {
 
   const index = await getIndex(env);
   const existing = index.find((t: any) => t.id === id);
-  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail)) {
+  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
     return json({ error: "Sem permissão para excluir este torneio" }, 403);
   }
 
@@ -496,14 +513,242 @@ async function torneiosDelete(request: Request, env: Env): Promise<Response> {
 }
 
 /* ============================================================
+   PIX (Mercado Pago) — cobrança das diárias de uso
+   Regra de valor: R$ 70,00 por diária, diária = cada dia dentro do período de validade
+   (dataInicio..dataFim) que o próprio admin define ao aprovar o torneio. Só é possível gerar
+   o Pix depois do torneio estar aprovado — os dados de validade precisam existir primeiro.
+============================================================ */
+const VALOR_DIARIA = 70;
+
+function calcularDias(dataInicio?: string | null, dataFim?: string | null): number {
+  if (!dataInicio || !dataFim) return 0;
+  const ini = new Date(dataInicio + "T00:00:00Z").getTime();
+  const fim = new Date(dataFim + "T00:00:00Z").getTime();
+  if (Number.isNaN(ini) || Number.isNaN(fim) || fim < ini) return 0;
+  return Math.round((fim - ini) / 86400000) + 1;
+}
+
+async function pixCriar(request: Request, env: Env): Promise<Response> {
+  if (!env.MP_ACCESS_TOKEN) {
+    return json({ error: "Pagamento via Pix não configurado neste servidor (MP_ACCESS_TOKEN ausente)" }, 500);
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const id = body.id;
+  const solicitanteEmail = normEmail(body.email);
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+
+  const raw = await env.DB.get(`torneio:${id}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para gerar o Pix deste torneio" }, 403);
+  }
+  if (dados.aprovacaoStatus !== "aprovado") {
+    return json({ error: "O torneio precisa estar aprovado antes de gerar o Pix" }, 400);
+  }
+  if (dados.pagamento?.status === "pago") {
+    return json({ error: "Este torneio já está pago" }, 400);
+  }
+
+  const dias = calcularDias(dados.dataInicio, dados.dataFim);
+  if (dias <= 0) {
+    return json({ error: "Datas de início/fim inválidas para calcular o valor da diária" }, 400);
+  }
+  const valor = dias * VALOR_DIARIA;
+
+  const notificationUrl = `${new URL(request.url).origin}/api/pix-webhook`;
+
+  let mpResp: any;
+  try {
+    const res = await fetch("https://api.mercadopago.com/v1/payments", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${env.MP_ACCESS_TOKEN}`,
+        // Evita cobrar duas vezes se o app reenviar a mesma requisição (ex: conexão instável)
+        "X-Idempotency-Key": `torneio-${id}-${dados.pagamento?.paymentId || "novo"}-${dias}-${valor}`
+      },
+      body: JSON.stringify({
+        transaction_amount: valor,
+        description: `Diárias de uso — campeonato ${dados.codigo} (${dias} diária${dias > 1 ? "s" : ""})`,
+        payment_method_id: "pix",
+        payer: { email: dados.ownerEmail || solicitanteEmail },
+        external_reference: id,
+        notification_url: notificationUrl
+      })
+    });
+    mpResp = await res.json();
+    if (!res.ok) return json({ error: "Falha ao criar cobrança no Mercado Pago", detail: mpResp }, 502);
+  } catch (e: any) {
+    return json({ error: "Falha de rede ao falar com o Mercado Pago", detail: String(e?.message || e) }, 502);
+  }
+
+  const txData = mpResp?.point_of_interaction?.transaction_data;
+  if (!txData?.qr_code) {
+    return json({ error: "Mercado Pago não retornou o código Pix", detail: mpResp }, 502);
+  }
+
+  dados.pagamento = {
+    status: "pendente",
+    valor,
+    dias,
+    paymentId: mpResp.id,
+    copiaCola: txData.qr_code,
+    qrCodeBase64: txData.qr_code_base64 || null,
+    criadoEm: new Date().toISOString(),
+    pagoEm: null
+  };
+
+  try {
+    await env.DB.put(`torneio:${id}`, JSON.stringify(dados));
+    const index = await getIndex(env);
+    const idx = index.findIndex((t: any) => t.id === id);
+    if (idx >= 0) {
+      index[idx].pagamentoStatus = "pendente";
+      await env.DB.put("torneios:index", JSON.stringify(index));
+    }
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  return json({ ok: true, pagamento: dados.pagamento });
+}
+
+// Valida o header x-signature do Mercado Pago (formato "ts=...,v1=..."), conforme a
+// documentação deles. Se MP_WEBHOOK_SECRET não estiver configurado, pula essa checagem —
+// não é o único mecanismo de segurança: logo abaixo, o status do pagamento é sempre
+// reconferido direto na API do Mercado Pago usando nosso próprio token, então uma notificação
+// forjada não consegue, sozinha, liberar um torneio sem um pagamento aprovado de verdade.
+async function verificarAssinaturaMP(request: Request, env: Env, dataId: string | null): Promise<boolean> {
+  if (!env.MP_WEBHOOK_SECRET) return true;
+  const xSignature = request.headers.get("x-signature");
+  const xRequestId = request.headers.get("x-request-id");
+  if (!xSignature) return false;
+
+  let ts: string | null = null;
+  let v1: string | null = null;
+  for (const part of xSignature.split(",")) {
+    const [k, v] = part.trim().split("=");
+    if (k === "ts") ts = v;
+    else if (k === "v1") v1 = v;
+  }
+  if (!ts || !v1) return false;
+
+  const parts: string[] = [];
+  if (dataId) parts.push(`id:${dataId.toLowerCase()}`);
+  if (xRequestId) parts.push(`request-id:${xRequestId}`);
+  parts.push(`ts:${ts}`);
+  const manifest = parts.join(";") + ";";
+
+  try {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", enc.encode(env.MP_WEBHOOK_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const sig = await crypto.subtle.sign("HMAC", key, enc.encode(manifest));
+    const hex = Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    return hex === v1;
+  } catch {
+    return false;
+  }
+}
+
+async function pixWebhook(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  let paymentId = url.searchParams.get("data.id") || url.searchParams.get("id");
+  const tipo = url.searchParams.get("type") || url.searchParams.get("topic");
+
+  let body: any = null;
+  try {
+    body = await request.json();
+  } catch {}
+  if (!paymentId && body?.data?.id) paymentId = String(body.data.id);
+
+  // Só nos interessa notificação de pagamento — outros tópicos (merchant_order etc.) são ignorados.
+  if (tipo && tipo !== "payment") return new Response("OK", { status: 200 });
+  if (!paymentId) return new Response("OK", { status: 200 });
+
+  const assinaturaOk = await verificarAssinaturaMP(request, env, paymentId);
+  if (!assinaturaOk) return new Response("Assinatura inválida", { status: 401 });
+
+  if (!env.MP_ACCESS_TOKEN) return new Response("OK", { status: 200 });
+
+  // Fonte da verdade: consulta direta à API do Mercado Pago com nosso próprio token — nunca
+  // confiamos apenas no conteúdo da notificação recebida, que poderia ser forjado.
+  let pagamento: any;
+  try {
+    const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+      headers: { Authorization: `Bearer ${env.MP_ACCESS_TOKEN}` }
+    });
+    if (!res.ok) return new Response("OK", { status: 200 });
+    pagamento = await res.json();
+  } catch {
+    return new Response("OK", { status: 200 });
+  }
+
+  const torneioId = pagamento?.external_reference;
+  if (!torneioId || pagamento?.status !== "approved") return new Response("OK", { status: 200 });
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return new Response("OK", { status: 200 });
+  const dados = JSON.parse(raw);
+
+  // Idempotência: se já estava marcado como pago, não reenvia e-mail a cada nova notificação
+  // (o Mercado Pago pode reenviar a mesma notificação mais de uma vez).
+  if (dados.pagamento?.status === "pago") return new Response("OK", { status: 200 });
+
+  dados.pagamento = { ...(dados.pagamento || {}), status: "pago", paymentId: pagamento.id, pagoEm: new Date().toISOString() };
+  dados.updatedAt = new Date().toISOString();
+
+  try {
+    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
+    const index = await getIndex(env);
+    const idx = index.findIndex((t: any) => t.id === torneioId);
+    if (idx >= 0) {
+      index[idx].pagamentoStatus = "pago";
+      await env.DB.put("torneios:index", JSON.stringify(index));
+    }
+  } catch {}
+
+  if (dados.ownerEmail) {
+    await enviarEmail(
+      env,
+      dados.ownerEmail,
+      `Pagamento confirmado — campeonato [${dados.codigo}] "${dados.nome}"`,
+      `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
+       <p>Recebemos o pagamento das diárias do campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>). Ele já está liberado para uso.</p>`
+    );
+  }
+  const adminEmail = await env.DB.get("config:admin_notification_email");
+  if (adminEmail) {
+    await enviarEmail(
+      env,
+      adminEmail,
+      `💰 Pagamento recebido [${dados.codigo}]`,
+      `<p>O campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) teve o pagamento confirmado via Pix.</p>`
+    );
+  }
+
+  return new Response("OK", { status: 200 });
+}
+
+/* ============================================================
    CONFIGURAÇÕES GLOBAIS DO APP (só o admin pode alterar)
 ============================================================ */
 async function configGet(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const solicitanteEmail = normEmail(url.searchParams.get("email"));
   const googleClientId = (await env.DB.get("config:google_client_id")) || null;
-  const resposta: any = { googleClientId };
-  if (ehAdmin(solicitanteEmail)) {
+  const isAdmin = solicitanteEmail ? ehAdmin(solicitanteEmail, env) : false;
+  const resposta: any = { googleClientId, isAdmin };
+  if (isAdmin) {
     resposta.adminNotificationEmail = (await env.DB.get("config:admin_notification_email")) || null;
   }
   return json(resposta);
@@ -518,7 +763,7 @@ async function configSet(request: Request, env: Env): Promise<Response> {
   }
 
   const solicitanteEmail = normEmail(body.email);
-  if (!ehAdmin(solicitanteEmail)) {
+  if (!ehAdmin(solicitanteEmail, env)) {
     return json({ error: "Só o admin pode alterar as configurações do app" }, 403);
   }
 
@@ -569,6 +814,12 @@ export default {
     }
     if (path === "/api/torneios-aprovar") {
       return method === "POST" ? torneiosAprovar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/pix-criar") {
+      return method === "POST" ? pixCriar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/pix-webhook") {
+      return pixWebhook(request, env);
     }
     if (path === "/api/config-get") {
       return configGet(request, env);
