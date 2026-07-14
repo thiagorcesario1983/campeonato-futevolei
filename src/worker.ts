@@ -315,7 +315,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     aprovacaoStatus: existing ? existing.aprovacaoStatus : "pendente",
     dataInicio: existing ? existing.dataInicio : (body.dataInicio || null),
     dataFim: existing ? existing.dataFim : (body.dataFim || null),
-    pagamentoStatus: existing ? (existing.pagamentoStatus || "nao_solicitado") : "nao_solicitado"
+    pagamentoStatus: existing ? (existing.pagamentoStatus || "nao_solicitado") : "nao_solicitado",
+    valorOverride: existing ? (existing.valorOverride ?? null) : null
   };
 
   try {
@@ -416,6 +417,28 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
   dados.aprovacaoStatus = decisao;
   if (typeof body.dataInicio === "string") dados.dataInicio = body.dataInicio || null;
   if (typeof body.dataFim === "string") dados.dataFim = body.dataFim || null;
+
+  // Valor do Pix: o admin pode sobrescrever o cálculo automático (dias × R$ 70), por exemplo
+  // pra aplicar desconto. Se vier 0, o campeonato é liberado direto, sem precisar de Pix.
+  if (typeof body.valor === "number" && Number.isFinite(body.valor) && body.valor >= 0) {
+    dados.valorOverride = body.valor;
+    if (body.valor === 0) {
+      dados.pagamento = {
+        status: "isento",
+        valor: 0,
+        dias: calcularDias(dados.dataInicio, dados.dataFim),
+        paymentId: null,
+        copiaCola: null,
+        qrCodeBase64: null,
+        criadoEm: new Date().toISOString(),
+        pagoEm: new Date().toISOString()
+      };
+    } else if (dados.pagamento?.status === "isento") {
+      // Deixou de ser grátis depois de já ter sido marcado como isento — precisa gerar o Pix agora.
+      dados.pagamento = null;
+    }
+  }
+
   dados.updatedAt = new Date().toISOString();
 
   const meta = {
@@ -430,7 +453,8 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     aprovacaoStatus: dados.aprovacaoStatus,
     dataInicio: dados.dataInicio,
     dataFim: dados.dataFim,
-    pagamentoStatus: dados.pagamento?.status || "nao_solicitado"
+    pagamentoStatus: dados.pagamento?.status || "nao_solicitado",
+    valorOverride: dados.valorOverride ?? null
   };
 
   try {
@@ -563,7 +587,12 @@ async function pixCriar(request: Request, env: Env): Promise<Response> {
   if (dias <= 0) {
     return json({ error: "Datas de início/fim inválidas para calcular o valor da diária" }, 400);
   }
-  const valor = dias * VALOR_DIARIA;
+  const valor = (typeof dados.valorOverride === "number" && dados.valorOverride >= 0)
+    ? dados.valorOverride
+    : dias * VALOR_DIARIA;
+  if (valor <= 0) {
+    return json({ error: "O valor está zerado — esse torneio já deveria ter sido liberado automaticamente na aprovação, sem precisar de Pix." }, 400);
+  }
 
   const notificationUrl = `${new URL(request.url).origin}/api/pix-webhook`;
 
