@@ -2004,8 +2004,8 @@ function fecharPopupWO(){
 async function confirmarWO(matchId, ladoAusente){
   const m = getMatchObj(matchId);
   if(!m) return;
-  m.pa = ladoAusente==="a" ? 0 : 1;
-  m.pb = ladoAusente==="b" ? 0 : 1;
+  m.pa = ladoAusente==="a" ? 0 : 18;
+  m.pb = ladoAusente==="b" ? 0 : 18;
   m.wo = ladoAusente;
   m.finalizado = true;
   if(state.arbitragem && state.arbitragem[matchId]){
