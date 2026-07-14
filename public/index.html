@@ -1814,7 +1814,11 @@ async function reabrirJogoManual(matchId){
   m.finalizado = false;
   m.wo = null;
   if(state.arbitragem && state.arbitragem[matchId] && state.arbitragem[matchId].status==="finalizada"){
-    state.arbitragem[matchId].status = "tecnico";
+    // Volta pra "não iniciada" (não "tempo técnico"), porque "tempo técnico"/"andamento" são
+    // justamente os status que deixam os campos de placar desabilitados — o objetivo aqui é
+    // liberar a edição direta pelos campos, sem precisar passar pelo Apitar jogo de novo.
+    state.arbitragem[matchId].status = "nao_iniciada";
+    state.arbitragem[matchId].inicioMs = null;
   }
   save();
   render();
