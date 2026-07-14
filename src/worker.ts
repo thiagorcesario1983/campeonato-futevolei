@@ -1,5 +1,3 @@
-import { connect } from "cloudflare:sockets";
-
 export interface Env {
   DB: KVNamespace;
   ASSETS: Fetcher;
@@ -51,6 +49,10 @@ async function enviarEmail(env: Env, to: string, subject: string, html: string):
   if (!host || !user || !pass || !to) return false;
 
   try {
+    // Import dinâmico (não no topo do arquivo): se "cloudflare:sockets" falhar por qualquer
+    // motivo, isso afeta só o envio de e-mail — o resto do Worker (salvar torneio, placar de
+    // TV, etc.) continua funcionando normalmente.
+    const { connect } = await import("cloudflare:sockets");
     let socket = connect({ hostname: host, port }, { secureTransport: port === 465 ? "on" : "starttls" });
     let writer = socket.writable.getWriter();
     let reader = socket.readable.getReader();
