@@ -566,6 +566,7 @@ function defaultState(){
     aprovacaoStatus: "pendente", // "pendente" | "aprovado" | "recusado" — definido pelo admin
     dataInicio: null, // validade do campeonato (yyyy-mm-dd), definida na criação
     dataFim: null,
+    pagamento: null, // {status:"pendente"|"pago", valor, dias, paymentId, copiaCola, qrCodeBase64, criadoEm, pagoEm} — null até o Pix ser gerado
     headerImage: null, // data URL da imagem de topo customizada para este campeonato (opcional)
     paletteFromImage: false, // se true, o app usa as cores extraídas da imagem do topo como tema
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
@@ -593,11 +594,11 @@ function migrarBracketAntigo(s){
 
 let state = load();
 const AUTH_KEY = "futevolei_auth_v1";
-// Mesmo e-mail fixo do "Acesso de teste" (senha 123456) no worker.ts — quem entra com essa conta
-// vê e edita os torneios de qualquer organizador, tanto na nuvem quanto na reserva local.
-const ADMIN_EMAIL = "admin@local.teste";
+// Admin agora é decidido pelo servidor (lista de e-mails Google reais em ADMIN_EMAILS no
+// Worker), nunca pelo e-mail em si aqui no cliente. auth.isAdmin é preenchido pelo servidor
+// logo após o login (ver fetchAndCacheClientId) e cacheado localmente.
 function ehAdmin(){
-  return !!auth && (auth.email||"").trim().toLowerCase() === ADMIN_EMAIL;
+  return !!auth && !!auth.isAdmin;
 }
 function loadAuth(){
   try{ return JSON.parse(localStorage.getItem(AUTH_KEY)); }catch(e){ return null; }
@@ -651,6 +652,14 @@ async function fetchAndCacheClientId(){
     const atual = loadClientId();
     if(typeof data.adminNotificationEmail === "string"){
       adminNotificationEmailCache = data.adminNotificationEmail;
+    }
+    // O servidor é a única fonte de verdade sobre quem é admin (lista ADMIN_EMAILS no Worker).
+    // Atualiza e persiste isso sempre que confirmamos com o servidor, pra não ficar "preso"
+    // com um valor antigo se a lista mudar.
+    if(auth && !!auth.isAdmin !== !!data.isAdmin){
+      auth = { ...auth, isAdmin: !!data.isAdmin };
+      saveAuth(auth);
+      render();
     }
     if(novo !== atual){
       cacheClientId(novo);
@@ -868,6 +877,21 @@ async function fetchTorneiosList(){
   render();
 }
 
+function textoPreviewValorDiarias(dataInicio, dataFim){
+  const dias = calcularDiasLocal(dataInicio, dataFim);
+  if(!dias) return "";
+  const valor = dias*70;
+  return `💰 ${dias} diária${dias>1?"s":""} × R$ 70,00 = R$ ${valor.toFixed(2).replace(".", ",")}`;
+}
+
+function atualizarPreviewValorDiarias(){
+  const el = document.getElementById("preview-valor-diarias");
+  const iEl = document.getElementById("input-novo-inicio");
+  const fEl = document.getElementById("input-novo-fim");
+  if(!el || !iEl || !fEl) return;
+  el.textContent = textoPreviewValorDiarias(iEl.value, fEl.value);
+}
+
 async function criarNovoTorneio(nome, dataInicio, dataFim){
   state = defaultState();
   state.tournamentId = Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4);
@@ -896,6 +920,42 @@ async function criarNovoTorneio(nome, dataInicio, dataFim){
   mostrarFormNovoTorneio = false;
   torneiosList = null;
   render();
+}
+
+async function gerarPixTorneio(){
+  if(!state.cloudId) return;
+  showToast("Gerando Pix...");
+  try{
+    const res = await fetch("/api/pix-criar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, email: auth.email })
+    });
+    const data = await res.json();
+    if(!res.ok){ showToast(data.error || "Não foi possível gerar o Pix."); return; }
+    state.pagamento = data.pagamento;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    showToast("Pix gerado! Escaneie o QR ou copie o código.");
+    render();
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível gerar o Pix.");
+  }
+}
+
+async function copiarCodigoPix(){
+  const codigo = state.pagamento?.copiaCola;
+  if(!codigo) return;
+  try{
+    await navigator.clipboard.writeText(codigo);
+    showToast("Código Pix copiado!");
+  }catch(e){
+    showToast("Não foi possível copiar automaticamente — selecione o código manualmente.");
+  }
+}
+
+async function verificarPagamentoPix(){
+  showToast("Verificando pagamento...");
+  await refreshTorneioAtual();
+  showToast(state.pagamento?.status==="pago" ? "Pagamento confirmado! 🎉" : "Ainda não identificamos o pagamento.");
 }
 
 async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim){
@@ -954,6 +1014,7 @@ function abrirTorneioComDados(data){
   state.aprovacaoStatus = data.aprovacaoStatus || "pendente";
   state.dataInicio = data.dataInicio || null;
   state.dataFim = data.dataFim || null;
+  state.pagamento = data.pagamento || null;
   state.tab = "resumo";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   telegramStatus = {};
@@ -974,12 +1035,13 @@ function hojeLocalISO(){
   return `${ano}-${mes}-${dia}`;
 }
 
-// Um torneio só fica liberado pra uso (fora do modo admin) depois de aprovado E dentro do
-// período de validade definido — antes ou depois disso, o app mostra uma tela de status
-// em vez das abas normais. O período vale o dia inteiro, de 00:00:00 do início até 23:59:59
-// do fim (comparação por data, no fuso local, não por hora exata).
+// Um torneio só fica liberado pra uso (fora do modo admin) depois de aprovado, PAGO e dentro
+// do período de validade definido — antes ou depois disso, o app mostra uma tela de status em
+// vez das abas normais. O período vale o dia inteiro, de 00:00:00 do início até 23:59:59 do
+// fim (comparação por data, no fuso local, não por hora exata).
 function torneioEstaAtivo(){
   if(state.aprovacaoStatus!=="aprovado") return {ok:false, motivo:"aprovacao"};
+  if(state.pagamento?.status!=="pago") return {ok:false, motivo:"pagamento"};
   const hoje = hojeLocalISO();
   if(state.dataInicio && hoje < state.dataInicio) return {ok:false, motivo:"antes"};
   if(state.dataFim && hoje > state.dataFim) return {ok:false, motivo:"depois"};
@@ -1019,6 +1081,7 @@ async function refreshTorneioAtual(){
       state.aprovacaoStatus = data.aprovacaoStatus || "pendente";
       state.dataInicio = data.dataInicio || null;
       state.dataFim = data.dataFim || null;
+      state.pagamento = data.pagamento || null;
       state.tab = tabAtual;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       telegramStatus = {};
@@ -2544,6 +2607,11 @@ function render(){
 
 function renderTorneioBloqueado(){
   const motivo = torneioEstaAtivo().motivo;
+
+  if(state.aprovacaoStatus==="aprovado" && motivo==="pagamento"){
+    return renderTelaPix();
+  }
+
   let titulo, texto;
   if(state.aprovacaoStatus==="recusado"){
     titulo = "❌ Solicitação recusada";
@@ -2571,22 +2639,58 @@ function renderTorneioBloqueado(){
   </div>`;
 }
 
+// Tela de pagamento: aparece pra quem já foi aprovado, mas ainda não pagou as diárias.
+// Sem Pix gerado ainda: mostra um botão pra gerar. Com Pix gerado: mostra QR + copia-e-cola
+// e um botão pra checar manualmente (o pagamento também é liberado sozinho, via webhook,
+// assim que o Mercado Pago confirma — o botão é só pra não depender de esperar o e-mail).
+function renderTelaPix(){
+  const pg = state.pagamento;
+  const dias = pg?.dias || calcularDiasLocal(state.dataInicio, state.dataFim);
+  const valorEstimado = dias * 70;
+
+  if(!pg || pg.status!=="pendente"){
+    return `<div class="card empty" style="margin-top:20px;">
+      <span class="ball-icon">🏐</span>
+      <div style="font-weight:700;font-size:16px;color:var(--ocean-deep);margin:10px 0 8px;">✅ Aprovado — falta o pagamento</div>
+      <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">
+        Período de ${formatarDataBR(state.dataInicio)} a ${formatarDataBR(state.dataFim)}
+        ${dias ? ` (${dias} diária${dias>1?"s":""} × R$ 70,00 = <b>R$ ${valorEstimado.toFixed(2).replace(".", ",")}</b>)` : ""}.
+        Gere o Pix abaixo para liberar o uso.
+      </div>
+      <button class="btn primary" id="btn-gerar-pix" style="max-width:260px;margin:0 auto;">Gerar Pix</button>
+    </div>`;
+  }
+
+  return `<div class="card empty" style="margin-top:20px;">
+    <span class="ball-icon">🏐</span>
+    <div style="font-weight:700;font-size:16px;color:var(--ocean-deep);margin:10px 0 8px;">💳 Pagamento das diárias</div>
+    <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">
+      ${pg.dias} diária${pg.dias>1?"s":""} (${formatarDataBR(state.dataInicio)} – ${formatarDataBR(state.dataFim)}) × R$ 70,00 = <b>R$ ${pg.valor.toFixed(2).replace(".", ",")}</b>
+    </div>
+    ${pg.qrCodeBase64 ? `<img src="data:image/png;base64,${pg.qrCodeBase64}" alt="QR Code Pix" style="width:220px;height:220px;margin:0 auto 14px;display:block;border-radius:10px;border:1px solid var(--border);">` : ""}
+    <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Pix copia e cola</label>
+    <textarea readonly style="width:100%;min-height:70px;font-family:'DM Mono',monospace;font-size:11px;padding:8px;border-radius:8px;border:1px solid var(--border);margin-bottom:10px;" onclick="this.select()">${escapeHtml(pg.copiaCola)}</textarea>
+    <button class="btn secondary" id="btn-copiar-pix" style="margin-bottom:8px;">Copiar código</button>
+    <button class="btn ghost" id="btn-verificar-pix">Já paguei, verificar</button>
+    <div class="sub" style="margin-top:12px;">Assim que o pagamento cair, o campeonato é liberado automaticamente — mas fique à vontade pra checar aqui também.</div>
+  </div>`;
+}
+
+// Mesmo cálculo de dias do worker.ts, usado aqui só pra mostrar uma prévia do valor antes
+// de gerar o Pix (o valor final de verdade é sempre recalculado e travado no servidor).
+function calcularDiasLocal(dataInicio, dataFim){
+  if(!dataInicio || !dataFim) return 0;
+  const ini = new Date(dataInicio+"T00:00:00Z").getTime();
+  const fim = new Date(dataFim+"T00:00:00Z").getTime();
+  if(isNaN(ini) || isNaN(fim) || fim<ini) return 0;
+  return Math.round((fim-ini)/86400000) + 1;
+}
+
 function isLocalHost(){
   const h = location.hostname;
   return h==="localhost" || h==="127.0.0.1" || h==="" || location.protocol==="file:";
-}
-
-function handleAdminLogin(){
-  const val = (document.getElementById("input-admin-pass")||{}).value || "";
-  if(val === "123456"){
-    auth = { email:"admin@local.teste", name:"Admin (teste local)", picture:"" };
-    saveAuth(auth);
-    limparTorneioLocal(); // garante que não herda o torneio de uma sessão anterior neste navegador
-    render();
-    fetchAndCacheClientId();
-  } else {
-    showToast("Senha incorreta.");
-  }
 }
 
 function renderLoginScreen(){
@@ -2599,18 +2703,11 @@ function renderLoginScreen(){
   if(!clientId){
     html += `<div class="gcid-box card">
       <label>⏳ Login com Google ainda não configurado</label>
-      <div class="hint">Peça para o administrador entrar com o "Acesso de teste" abaixo e configurar o Client ID em Configurações do app. Enquanto isso, use o acesso de teste para entrar.</div>
+      <div class="hint">Peça para o administrador configurar o Client ID do Google no painel do Worker (variável ADMIN_EMAILS + Client ID em Configurações do app, usando uma conta já liberada como admin).</div>
     </div>`;
   } else {
     html += `<div id="google-signin-btn"></div>`;
   }
-
-  html += `<div class="gcid-box card" style="margin-top:18px;border-color:var(--coral);">
-    <label>⚠️ Acesso de teste</label>
-    <input type="password" id="input-admin-pass" placeholder="Senha de teste">
-    <button class="btn secondary" id="btn-admin-login" style="margin-top:10px;">Entrar como teste</button>
-    <div class="hint">Acesso simplificado para testes (sem precisar do Google). Use com cuidado: qualquer pessoa com essa senha consegue entrar.</div>
-  </div>`;
 
   html += `</div>`;
   return html;
@@ -2622,6 +2719,12 @@ function badgeAprovacao(t){
   if(st==="recusado") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">❌ Recusado</span>`;
   if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
   return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente</span>`;
+}
+function badgePagamento(t){
+  const st = t.pagamentoStatus || "nao_solicitado";
+  if(st==="pago") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">💰 Pago</span>`;
+  if(st==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">💳 Pix pendente</span>`;
+  return "";
 }
 function formatarDataBR(iso){
   if(!iso) return "—";
@@ -2673,7 +2776,8 @@ function renderTorneiosScreen(){
       <input type="date" id="input-novo-inicio" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
       <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Data de fim</label>
       <input type="date" id="input-novo-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:6px;">
-      <div class="hint" style="margin-bottom:14px;">O torneio só fica liberado para uso depois que o admin aprovar — e dentro desse período informado.</div>
+      <div id="preview-valor-diarias" style="font-size:13px;font-weight:600;color:var(--ocean-deep);margin-bottom:10px;">${textoPreviewValorDiarias(hoje, hoje)}</div>
+      <div class="hint" style="margin-bottom:14px;">O torneio só fica liberado para uso depois que o admin aprovar, o Pix das diárias for pago, e dentro desse período informado. O valor final é sempre recalculado na hora de gerar o Pix — essa é só uma estimativa.</div>
       <div style="display:flex;gap:8px;">
         <button class="btn secondary" id="btn-cancelar-novo-torneio" style="flex:1;">Cancelar</button>
         <button class="btn" id="btn-confirmar-novo-torneio" style="flex:1;">Criar</button>
@@ -2707,6 +2811,7 @@ function renderTorneiosScreen(){
         <div class="sub" style="font-family:'DM Mono',monospace;margin-top:2px;">#${escapeHtml(t.codigo||"—")}</div>
         <div class="row" style="margin-top:4px;">
           ${badgeAprovacao(t)}
+          ${badgePagamento(t)}
           <span class="sub" style="margin-left:8px;">${formatarDataBR(t.dataInicio)} – ${formatarDataBR(t.dataFim)}</span>
         </div>
         <div class="row" style="margin-top:6px;align-items:center;">
@@ -2764,10 +2869,11 @@ function renderAprovacoesScreen(){
       <div class="row" style="margin-bottom:2px;">
         <span class="nome" style="font-weight:700;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
         ${badgeAprovacao(t)}
+        ${badgePagamento(t)}
       </div>
       <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:6px;">#${escapeHtml(t.codigo||"—")}</div>
       <div class="sub" style="margin-bottom:10px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
-      <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <div style="display:flex;gap:8px;margin-bottom:6px;">
         <div style="flex:1;">
           <label style="font-size:11px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:4px;">Início</label>
           <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
@@ -2777,6 +2883,7 @@ function renderAprovacoesScreen(){
           <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
         </div>
       </div>
+      <div id="preview-valor-aprov-${t.id}" style="font-size:12px;font-weight:600;color:var(--ocean-deep);margin-bottom:10px;">${textoPreviewValorDiarias(t.dataInicio, t.dataFim)}</div>
       <div style="display:flex;gap:8px;">
         <button class="btn" data-aprovar="${t.id}" style="flex:1;background:var(--grass);box-shadow:none;">✅ Aprovar</button>
         <button class="btn ghost" data-recusar="${t.id}" style="flex:1;border-color:var(--coral);color:var(--coral);">❌ Recusar</button>
@@ -3542,6 +3649,13 @@ function escapeHtml(s){
    EVENTOS
 ============================================================ */
 function bindEvents(){
+  const btnGerarPix = document.getElementById("btn-gerar-pix");
+  if(btnGerarPix) btnGerarPix.addEventListener("click", gerarPixTorneio);
+  const btnCopiarPix = document.getElementById("btn-copiar-pix");
+  if(btnCopiarPix) btnCopiarPix.addEventListener("click", copiarCodigoPix);
+  const btnVerificarPix = document.getElementById("btn-verificar-pix");
+  if(btnVerificarPix) btnVerificarPix.addEventListener("click", verificarPagamentoPix);
+
   const btnSalvarGcidAdmin = document.getElementById("btn-salvar-gcid-admin");
   if(btnSalvarGcidAdmin) btnSalvarGcidAdmin.addEventListener("click", async ()=>{
     const val = document.getElementById("input-gcid-admin").value.trim();
@@ -3567,12 +3681,6 @@ function bindEvents(){
   if(btnLogout) btnLogout.addEventListener("click", ()=>{
     if(confirm("Sair da sua conta Google neste aparelho?")) logout();
   });
-  const btnAdminLogin = document.getElementById("btn-admin-login");
-  if(btnAdminLogin) btnAdminLogin.addEventListener("click", handleAdminLogin);
-  const inputAdminPass = document.getElementById("input-admin-pass");
-  if(inputAdminPass) inputAdminPass.addEventListener("keydown", e=>{
-    if(e.key==="Enter") handleAdminLogin();
-  });
   const btnNovoTorneio = document.getElementById("btn-novo-torneio");
   if(btnNovoTorneio) btnNovoTorneio.addEventListener("click", ()=>{
     mostrarFormNovoTorneio = true;
@@ -3583,6 +3691,10 @@ function bindEvents(){
     mostrarFormNovoTorneio = false;
     render();
   });
+  const inputNovoInicio = document.getElementById("input-novo-inicio");
+  const inputNovoFim = document.getElementById("input-novo-fim");
+  if(inputNovoInicio) inputNovoInicio.addEventListener("input", atualizarPreviewValorDiarias);
+  if(inputNovoFim) inputNovoFim.addEventListener("input", atualizarPreviewValorDiarias);
   const btnConfirmarNovoTorneio = document.getElementById("btn-confirmar-novo-torneio");
   if(btnConfirmarNovoTorneio) btnConfirmarNovoTorneio.addEventListener("click", ()=>{
     const nome = (document.getElementById("input-novo-nome").value||"").trim();
@@ -3606,6 +3718,15 @@ function bindEvents(){
       const inputInicio = main.querySelector(`[data-aprov-inicio="${id}"]`);
       const inputFim = main.querySelector(`[data-aprov-fim="${id}"]`);
       decidirAprovacaoTorneio(id, decisao, inputInicio?.value, inputFim?.value);
+    });
+  });
+  main.querySelectorAll("[data-aprov-inicio],[data-aprov-fim]").forEach(input=>{
+    input.addEventListener("input", ()=>{
+      const id = input.dataset.aprovInicio || input.dataset.aprovFim;
+      const inputInicio = main.querySelector(`[data-aprov-inicio="${id}"]`);
+      const inputFim = main.querySelector(`[data-aprov-fim="${id}"]`);
+      const preview = document.getElementById(`preview-valor-aprov-${id}`);
+      if(preview) preview.textContent = textoPreviewValorDiarias(inputInicio?.value, inputFim?.value);
     });
   });
   const btnMigrar = document.getElementById("btn-migrar-local");
