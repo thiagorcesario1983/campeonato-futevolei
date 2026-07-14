@@ -4,7 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Futevôlei — Campeonato</title>
-<meta name="theme-color" content="#0B3C49">
+<meta name="theme-color" content="#205527" id="meta-theme-color">
+<script>
+// Aplica o tema (claro/escuro) o mais cedo possível, antes do CSS pintar a tela, pra evitar
+// o "flash" de tema errado. Preferência salva localmente (não é por torneio, é do aparelho).
+(function(){
+  try{
+    var t = localStorage.getItem("futevolei_tema_v1");
+    if(!t) t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", t);
+  }catch(e){}
+})();
+</script>
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <link rel="icon" href="./icons/icon-192.png">
@@ -14,17 +25,34 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@500&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --sand:#EDE3CC;
-    --sand-dark:#C9B896;
-    --ocean:#0E7C7B;
-    --ocean-deep:#0B3C49;
-    --coral:#F2652A;
-    --grass:#4C9A64;
-    --white:#FFFCF6;
-    --ink:#0B3C49;
-    --muted:#6B7C7A;
+    /* Paleta inspirada nas cores oficiais da Heineken (verde PMS 7739 C / PMS 7483 C,
+       vermelho e prata) — ver comentário completo mais abaixo, junto do modo escuro. */
+    --sand:#F1F3EF;
+    --sand-dark:#C9D2C6;
+    --ocean:#008200;
+    --ocean-deep:#205527;
+    --coral:#FF2B00;
+    --grass:#1AA31A;
+    --white:#FFFFFF;
+    --ink:#16241A;
+    --muted:#5C6B60;
     --radius:16px;
-    --shadow: 0 10px 24px -12px rgba(11,60,73,.35);
+    --shadow: 0 10px 24px -12px rgba(22,36,26,.35);
+  }
+  /* Modo escuro: mesmas variáveis, valores adaptados pra contraste em fundo escuro. Como o app
+     inteiro já usa var(--sand)/var(--white)/var(--ink) etc. em vez de cores fixas, só trocar
+     esses valores já re-pinta o app inteiro — sem precisar editar cada componente. */
+  [data-theme="dark"]{
+    --sand:#0E1510;
+    --sand-dark:#2A3A2C;
+    --ocean:#22B84A;
+    --ocean-deep:#0B2A12;
+    --coral:#FF6B52;
+    --grass:#2ECC40;
+    --white:#17211A;
+    --ink:#EAF2EC;
+    --muted:#9FB3A5;
+    --shadow: 0 10px 24px -12px rgba(0,0,0,.6);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -121,9 +149,9 @@
     overflow:hidden;
   }
   .stat.ocean{background:linear-gradient(150deg,var(--ocean),var(--ocean-deep));}
-  .stat.coral{background:linear-gradient(150deg,var(--coral),#C94A16);}
-  .stat.grass{background:linear-gradient(150deg,var(--grass),#2E6E42);}
-  .stat.ink{background:linear-gradient(150deg,#33424A,var(--ocean-deep));}
+  .stat.coral{background:linear-gradient(150deg,var(--coral),#B31F00);}
+  .stat.grass{background:linear-gradient(150deg,var(--grass),#205527);}
+  .stat.ink{background:linear-gradient(150deg,#2A3A2C,var(--ocean-deep));}
   .stat .num{
     font-family:'DM Mono',monospace;
     font-size:22px;
@@ -511,6 +539,42 @@
   .tv-multi-footer{margin-top:4px;text-align:center;}
   .tv-multi-timer{font-family:'DM Mono',monospace;font-weight:600;display:block;}
   .tv-multi-status{text-transform:uppercase;letter-spacing:.06em;opacity:.75;display:block;margin-top:2px;}
+
+  /* ---------- Loading (spinner) ---------- */
+  @keyframes girar{to{transform:rotate(360deg);}}
+  .spinner{
+    width:38px;height:38px;border-radius:50%;
+    border:4px solid rgba(255,255,255,.25);
+    border-top-color:var(--white);
+    animation:girar .7s linear infinite;
+  }
+  .spinner.inline{
+    width:16px;height:16px;border-width:2.5px;
+    border:2.5px solid rgba(0,0,0,.15);
+    border-top-color:currentColor;
+    display:inline-block;vertical-align:-3px;margin-right:7px;
+  }
+  .loading-overlay{
+    position:fixed;inset:0;z-index:9999;
+    background:rgba(11,25,15,.55);
+    display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    opacity:0;transition:opacity .15s;
+  }
+  .loading-overlay.show{display:flex;opacity:1;}
+  .loading-overlay .loading-msg{color:var(--white);font-size:13px;font-weight:600;text-align:center;padding:0 30px;}
+
+  /* ---------- Modo claro/escuro ---------- */
+  .theme-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .theme-switch{
+    position:relative;width:46px;height:26px;border-radius:20px;background:var(--sand-dark);
+    flex-shrink:0;cursor:pointer;border:none;padding:0;
+  }
+  .theme-switch::after{
+    content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+    background:var(--white);transition:left .18s;box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  [data-theme="dark"] .theme-switch{background:var(--ocean);}
+  [data-theme="dark"] .theme-switch::after{left:23px;}
 </style>
 </head>
 <body>
@@ -522,6 +586,10 @@
     </header>
     <main id="main"></main>
     <div class="toast" id="toast"></div>
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-msg" id="loading-msg"></div>
+    </div>
     <nav class="tabbar">
       <button data-tab="resumo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="lbl">Resumo</span></button>
       <button data-tab="sorteio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 9h.01M16 9h.01M8 15l4-3 4 3"/></svg><span class="lbl">Duplas</span></button>
@@ -569,7 +637,6 @@ function defaultState(){
     pagamento: null, // {status:"pendente"|"pago", valor, dias, paymentId, copiaCola, qrCodeBase64, criadoEm, pagoEm} — null até o Pix ser gerado
     valorOverride: null, // valor do Pix definido manualmente pelo admin na aprovação (sobrescreve o cálculo automático de dias × R$ 70)
     headerImage: null, // data URL da imagem de topo customizada para este campeonato (opcional)
-    paletteFromImage: false, // se true, o app usa as cores extraídas da imagem do topo como tema
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
     apitoMatchId: null
   };
@@ -901,7 +968,7 @@ async function criarNovoTorneio(nome, dataInicio, dataFim){
   state.dataInicio = dataInicio;
   state.dataFim = dataFim;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  showToast("Enviando solicitação...");
+  showLoading("Enviando solicitação...");
   try{
     const res = await fetch("/api/torneios-save", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -917,6 +984,8 @@ async function criarNovoTorneio(nome, dataInicio, dataFim){
     state.codigo = meta.codigo || null;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     showToast("Sem conexão com a nuvem — torneio salvo só neste navegador.");
+  }finally{
+    hideLoading();
   }
   mostrarFormNovoTorneio = false;
   torneiosList = null;
@@ -925,7 +994,7 @@ async function criarNovoTorneio(nome, dataInicio, dataFim){
 
 async function gerarPixTorneio(){
   if(!state.cloudId) return;
-  showToast("Gerando Pix...");
+  showLoading("Gerando Pix...");
   try{
     const res = await fetch("/api/pix-criar", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -939,6 +1008,8 @@ async function gerarPixTorneio(){
     render();
   }catch(e){
     showToast("Sem conexão com o servidor — não foi possível gerar o Pix.");
+  }finally{
+    hideLoading();
   }
 }
 
@@ -955,7 +1026,7 @@ async function copiarCodigoPix(){
 
 async function verificarPagamentoPix(silencioso){
   if(!state.cloudId) return;
-  if(!silencioso) showToast("Verificando pagamento direto com o Mercado Pago...");
+  if(!silencioso) showLoading("Verificando pagamento direto com o Mercado Pago...");
   try{
     const res = await fetch("/api/pix-verificar", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -976,6 +1047,8 @@ async function verificarPagamentoPix(silencioso){
     render();
   }catch(e){
     if(!silencioso) showToast("Sem conexão com o servidor — não foi possível verificar o pagamento.");
+  }finally{
+    if(!silencioso) hideLoading();
   }
 }
 
@@ -990,7 +1063,7 @@ function verificarPixAoAbrir(){
 
 async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim, valor){
   const rotulo = decisao==="aprovado" ? "Aprovando" : (decisao==="recusado" ? "Recusando" : "Bloqueando");
-  showToast(rotulo + "...");
+  showLoading(rotulo + "...");
   try{
     const res = await fetch("/api/torneios-aprovar", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -1018,11 +1091,13 @@ async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim, valor){
     render();
   }catch(e){
     showToast("Sem conexão com o servidor — não foi possível salvar a decisão.");
+  }finally{
+    hideLoading();
   }
 }
 
 async function abrirTorneio(id){
-  showToast("Carregando torneio...");
+  showLoading("Carregando torneio...");
   try{
     const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(id)}&email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
     if(res.status===403){ showToast("Esse torneio pertence a outra conta."); return; }
@@ -1039,6 +1114,8 @@ async function abrirTorneio(id){
     } else {
       showToast("Não foi possível carregar esse torneio.");
     }
+  }finally{
+    hideLoading();
   }
 }
 
@@ -1232,98 +1309,6 @@ function processarImagemTopo(file){
     };
     reader.readAsDataURL(file);
   });
-}
-
-/* ---------- Paleta de cores extraída da imagem do topo ---------- */
-function hslParaHex(h,s,l){
-  s = Math.max(0,Math.min(1,s)); l = Math.max(0,Math.min(1,l));
-  const c = (1-Math.abs(2*l-1))*s, x = c*(1-Math.abs((h/60)%2-1)), m = l-c/2;
-  let r,g,b;
-  if(h<60){r=c;g=x;b=0;} else if(h<120){r=x;g=c;b=0;} else if(h<180){r=0;g=c;b=x;}
-  else if(h<240){r=0;g=x;b=c;} else if(h<300){r=x;g=0;b=c;} else {r=c;g=0;b=x;}
-  const toHex = v => Math.round((v+m)*255).toString(16).padStart(2,"0");
-  return "#"+toHex(r)+toHex(g)+toHex(b);
-}
-// Analisa a imagem e devolve {ocean, oceanDeep, coral} baseados nas cores mais marcantes dela.
-// Ignora tons neutros/pastéis (fundo comum em logos e fotos) pra não deixar o tema "sem graça",
-// e normaliza saturação/luminosidade pra garantir contraste legível com texto branco por cima.
-// Devolve null se a imagem não tiver cor saturada suficiente (ex: preto e branco) — nesse caso
-// o app mantém as cores padrão.
-function extrairPaletaDeImagem(img){
-  try{
-    const size = 48;
-    const canvas = document.createElement("canvas");
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0, size, size);
-    const data = ctx.getImageData(0,0,size,size).data;
-
-    const buckets = {};
-    for(let i=0;i<data.length;i+=4){
-      const r=data[i], g=data[i+1], b=data[i+2], a=data[i+3];
-      if(a<180) continue;
-      const max=Math.max(r,g,b), min=Math.min(r,g,b);
-      const sat = max===0?0:(max-min)/max;
-      if(sat<0.25 || max<35) continue;
-      const key = Math.round(r/28)+","+Math.round(g/28)+","+Math.round(b/28);
-      const bk = buckets[key] || (buckets[key]={r:0,g:0,b:0,n:0,sat:0});
-      bk.r+=r; bk.g+=g; bk.b+=b; bk.n++; bk.sat+=sat;
-    }
-    const arr = Object.values(buckets).map(b=>({r:b.r/b.n, g:b.g/b.n, b:b.b/b.n, n:b.n, sat:b.sat/b.n}));
-    if(!arr.length) return null;
-    arr.forEach(c=> c.score = c.n*Math.pow(c.sat,1.5));
-    arr.sort((a,b)=>b.score-a.score);
-
-    const hueDe = c=>{
-      const r=c.r/255, g=c.g/255, b=c.b/255;
-      const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;
-      if(d===0) return 0;
-      let h;
-      if(mx===r) h=((g-b)/d)%6; else if(mx===g) h=(b-r)/d+2; else h=(r-g)/d+4;
-      h*=60; if(h<0) h+=360;
-      return h;
-    };
-    const distHue = (a,b)=> Math.min(Math.abs(a-b), 360-Math.abs(a-b));
-
-    const accentHue = hueDe(arr[0]);
-    const primarioAlt = arr.find(c=> distHue(hueDe(c), accentHue) > 45);
-    const primaryHue = primarioAlt ? hueDe(primarioAlt) : accentHue;
-
-    return {
-      ocean: hslParaHex(primaryHue, 0.55, 0.30),
-      oceanDeep: hslParaHex(primaryHue, 0.60, 0.16),
-      coral: hslParaHex(accentHue, 0.75, 0.48)
-    };
-  }catch(e){ return null; }
-}
-
-let __paletteImgCache = { src: null, palette: null };
-function aplicarPaletaDoTema(){
-  const root = document.documentElement;
-  if(!root) return;
-  if(!state.paletteFromImage || !state.headerImage){
-    root.style.removeProperty("--ocean");
-    root.style.removeProperty("--ocean-deep");
-    root.style.removeProperty("--coral");
-    return;
-  }
-  const setVars = (p)=>{
-    if(!p) return; // imagem sem cor saturada suficiente — mantém o tema padrão
-    root.style.setProperty("--ocean", p.ocean);
-    root.style.setProperty("--ocean-deep", p.oceanDeep);
-    root.style.setProperty("--coral", p.coral);
-  };
-  if(__paletteImgCache.src === state.headerImage){
-    setVars(__paletteImgCache.palette);
-    return;
-  }
-  const img = new Image();
-  img.onload = ()=>{
-    const palette = extrairPaletaDeImagem(img);
-    __paletteImgCache = { src: state.headerImage, palette };
-    setVars(palette);
-  };
-  img.src = state.headerImage;
 }
 
 function groupLetters(n){
@@ -2061,7 +2046,7 @@ function abrirPlacarMultiploTV(){
 // login pra apitar. Protegido por um token aleatório — quem não tem o link não acessa nada.
 async function compartilharLinkApito(matchId){
   if(!state.cloudId){ showToast("Salve o torneio na nuvem antes de compartilhar o link."); return; }
-  showToast("Gerando link...");
+  showLoading("Gerando link...");
   try{
     const res = await fetch("/api/apito-link", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -2094,6 +2079,8 @@ async function compartilharLinkApito(matchId){
     }
   }catch(e){
     showToast("Sem conexão com o servidor — não foi possível gerar o link.");
+  }finally{
+    hideLoading();
   }
 }
 
@@ -2637,7 +2624,6 @@ function render(){
   const torneioBar = document.getElementById("torneio-bar");
   stopRefTick();
   atualizarHeader();
-  aplicarPaletaDoTema();
 
   if(!auth){
     nav.style.display = "none";
@@ -3481,9 +3467,19 @@ function renderPlacarMultiplo(){
 }
 
 function renderConfiguracoes(){
+  const temaEscuro = temaAtual()==="dark";
   let html = `
     <div class="section-title">Configurações</div>
     <div class="section-sub">Personalização e integrações deste torneio.</div>
+    <div class="card tg-settings">
+      <div class="theme-toggle-row">
+        <div>
+          <label style="margin-bottom:2px;">${temaEscuro ? "🌙 Modo escuro" : "☀️ Modo claro"}</label>
+          <div class="hint" style="margin-top:0;">Preferência salva neste aparelho, vale pra qualquer torneio.</div>
+        </div>
+        <button class="theme-switch" id="btn-alternar-tema" aria-label="Alternar tema"></button>
+      </div>
+    </div>
     <div class="card tg-settings">
       <label>Imagem do topo (banner deste campeonato)</label>
       ${state.headerImage ? `<img src="${state.headerImage}" style="width:100%;border-radius:10px;margin-bottom:10px;display:block;max-height:140px;object-fit:cover;">` : ``}
@@ -3495,12 +3491,6 @@ function renderConfiguracoes(){
         ${state.headerImage ? `<button class="btn ghost" id="btn-remover-header-image" style="flex:0 0 auto;width:auto;">Remover</button>` : ``}
       </div>
       <div class="hint">Aparece no cabeçalho do app e no topo do Story enquanto este torneio estiver aberto. Fica salva com o torneio (some se você remover ou trocar).</div>
-      ${state.headerImage ? `
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ocean-deep);cursor:pointer;margin-top:14px;">
-        <input type="checkbox" id="chk-palette-from-image" ${state.paletteFromImage?"checked":""} style="width:17px;height:17px;flex-shrink:0;">
-        Usar as cores dessa imagem no app
-      </label>
-      <div class="hint">O app extrai as cores predominantes da imagem e usa nos botões, cabeçalho e destaques, no lugar das cores padrão.</div>` : ``}
     </div>
     <div class="card tg-settings">
       <label>Bot do Telegram (usuário, sem @)</label>
@@ -3903,16 +3893,11 @@ function bindEvents(){
   const btnRemoverHeaderImage = document.getElementById("btn-remover-header-image");
   if(btnRemoverHeaderImage) btnRemoverHeaderImage.addEventListener("click", ()=>{
     state.headerImage = null;
-    state.paletteFromImage = false;
     save(); render();
     showToast("Imagem do topo removida.");
   });
-  const chkPaletteFromImage = document.getElementById("chk-palette-from-image");
-  if(chkPaletteFromImage) chkPaletteFromImage.addEventListener("change", e=>{
-    state.paletteFromImage = e.target.checked;
-    save(); render();
-    showToast(state.paletteFromImage ? "Usando as cores da imagem." : "Voltando às cores padrão.");
-  });
+  const btnAlternarTema = document.getElementById("btn-alternar-tema");
+  if(btnAlternarTema) btnAlternarTema.addEventListener("click", alternarTema);
   main.querySelectorAll("[data-placar-check]").forEach(chk=>{
     chk.addEventListener("change", e=>{
       const id = e.target.dataset.placarCheck;
@@ -4132,6 +4117,41 @@ function showToast(msg){
   t.classList.add("show");
   clearTimeout(window.__toastTimer);
   window.__toastTimer = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+/* ---------- Loading (spinner) ---------- */
+// Overlay de tela cheia com o círculo girando, pra ações que demoram um pouco (abrir torneio,
+// gerar Pix, verificar pagamento, salvar decisão de aprovação, etc.)
+let __loadingDepth = 0;
+function showLoading(msg){
+  __loadingDepth++;
+  const overlay = document.getElementById("loading-overlay");
+  const msgEl = document.getElementById("loading-msg");
+  if(msgEl) msgEl.textContent = msg || "Carregando...";
+  if(overlay) overlay.classList.add("show");
+}
+function hideLoading(){
+  __loadingDepth = Math.max(0, __loadingDepth-1);
+  if(__loadingDepth>0) return; // ainda tem outra chamada em andamento — não esconde ainda
+  const overlay = document.getElementById("loading-overlay");
+  if(overlay) overlay.classList.remove("show");
+}
+
+/* ---------- Modo claro / escuro ---------- */
+const THEME_KEY = "futevolei_tema_v1";
+function aplicarTema(tema){
+  document.documentElement.setAttribute("data-theme", tema==="dark" ? "dark" : "light");
+  const meta = document.getElementById("meta-theme-color");
+  if(meta) meta.setAttribute("content", tema==="dark" ? "#0B2A12" : "#205527");
+}
+function temaAtual(){
+  return document.documentElement.getAttribute("data-theme")==="dark" ? "dark" : "light";
+}
+function alternarTema(){
+  const novo = temaAtual()==="dark" ? "light" : "dark";
+  try{ localStorage.setItem(THEME_KEY, novo); }catch(e){}
+  aplicarTema(novo);
+  render();
 }
 
 /* ============================================================
