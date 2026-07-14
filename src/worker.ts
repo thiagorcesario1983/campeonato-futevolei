@@ -689,6 +689,51 @@ async function verificarAssinaturaMP(request: Request, env: Env, dataId: string 
   }
 }
 
+// Lógica compartilhada de "marcar como pago", usada tanto pelo webhook (automático) quanto
+// pela verificação ativa (botão "Já paguei, verificar" — usada quando o webhook não chega).
+// Idempotente: se já estava pago, não reenvia e-mail de novo.
+async function confirmarPagamentoAprovado(env: Env, torneioId: string, pagamentoMP: any): Promise<any | null> {
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return null;
+  const dados = JSON.parse(raw);
+
+  if (dados.pagamento?.status === "pago") return dados;
+
+  dados.pagamento = { ...(dados.pagamento || {}), status: "pago", paymentId: pagamentoMP.id, pagoEm: new Date().toISOString() };
+  dados.updatedAt = new Date().toISOString();
+
+  try {
+    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
+    const index = await getIndex(env);
+    const idx = index.findIndex((t: any) => t.id === torneioId);
+    if (idx >= 0) {
+      index[idx].pagamentoStatus = "pago";
+      await env.DB.put("torneios:index", JSON.stringify(index));
+    }
+  } catch {}
+
+  if (dados.ownerEmail) {
+    await enviarEmail(
+      env,
+      dados.ownerEmail,
+      `Pagamento confirmado — campeonato [${dados.codigo}] "${dados.nome}"`,
+      `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
+       <p>Recebemos o pagamento das diárias do campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>). Ele já está liberado para uso.</p>`
+    );
+  }
+  const adminEmail = await env.DB.get("config:admin_notification_email");
+  if (adminEmail) {
+    await enviarEmail(
+      env,
+      adminEmail,
+      `💰 Pagamento recebido [${dados.codigo}]`,
+      `<p>O campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) teve o pagamento confirmado via Pix.</p>`
+    );
+  }
+
+  return dados;
+}
+
 async function pixWebhook(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   let paymentId = url.searchParams.get("data.id") || url.searchParams.get("id");
@@ -725,47 +770,62 @@ async function pixWebhook(request: Request, env: Env): Promise<Response> {
   const torneioId = pagamento?.external_reference;
   if (!torneioId || pagamento?.status !== "approved") return new Response("OK", { status: 200 });
 
-  const raw = await env.DB.get(`torneio:${torneioId}`);
-  if (!raw) return new Response("OK", { status: 200 });
-  const dados = JSON.parse(raw);
-
-  // Idempotência: se já estava marcado como pago, não reenvia e-mail a cada nova notificação
-  // (o Mercado Pago pode reenviar a mesma notificação mais de uma vez).
-  if (dados.pagamento?.status === "pago") return new Response("OK", { status: 200 });
-
-  dados.pagamento = { ...(dados.pagamento || {}), status: "pago", paymentId: pagamento.id, pagoEm: new Date().toISOString() };
-  dados.updatedAt = new Date().toISOString();
-
-  try {
-    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
-    const index = await getIndex(env);
-    const idx = index.findIndex((t: any) => t.id === torneioId);
-    if (idx >= 0) {
-      index[idx].pagamentoStatus = "pago";
-      await env.DB.put("torneios:index", JSON.stringify(index));
-    }
-  } catch {}
-
-  if (dados.ownerEmail) {
-    await enviarEmail(
-      env,
-      dados.ownerEmail,
-      `Pagamento confirmado — campeonato [${dados.codigo}] "${dados.nome}"`,
-      `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
-       <p>Recebemos o pagamento das diárias do campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>). Ele já está liberado para uso.</p>`
-    );
-  }
-  const adminEmail = await env.DB.get("config:admin_notification_email");
-  if (adminEmail) {
-    await enviarEmail(
-      env,
-      adminEmail,
-      `💰 Pagamento recebido [${dados.codigo}]`,
-      `<p>O campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) teve o pagamento confirmado via Pix.</p>`
-    );
-  }
+  await confirmarPagamentoAprovado(env, torneioId, pagamento);
 
   return new Response("OK", { status: 200 });
+}
+
+// Verificação ATIVA (sob demanda): usada pelo botão "Já paguei, verificar" no app. Não depende
+// do webhook ter chegado — consulta a API do Mercado Pago na hora, usando o paymentId que
+// guardamos ao gerar o Pix. Isso cobre os casos em que o webhook falha, atrasa, ou nem chega
+// (assinatura errada, URL de notificação desatualizada, instabilidade, etc.).
+async function pixVerificar(request: Request, env: Env): Promise<Response> {
+  if (!env.MP_ACCESS_TOKEN) {
+    return json({ error: "Pagamento via Pix não configurado neste servidor (MP_ACCESS_TOKEN ausente)" }, 500);
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const id = body.id;
+  const solicitanteEmail = normEmail(body.email);
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+
+  const raw = await env.DB.get(`torneio:${id}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para verificar o pagamento deste torneio" }, 403);
+  }
+
+  if (dados.pagamento?.status === "pago" || dados.pagamento?.status === "isento") {
+    return json({ ok: true, pagamento: dados.pagamento });
+  }
+
+  const paymentId = dados.pagamento?.paymentId;
+  if (!paymentId) return json({ ok: true, pagamento: dados.pagamento || null });
+
+  try {
+    const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+      headers: { Authorization: `Bearer ${env.MP_ACCESS_TOKEN}` }
+    });
+    if (!res.ok) return json({ ok: true, pagamento: dados.pagamento, statusMercadoPago: null });
+    const pagamentoMP = await res.json();
+
+    if (pagamentoMP?.status === "approved") {
+      const atualizado = await confirmarPagamentoAprovado(env, id, pagamentoMP);
+      return json({ ok: true, pagamento: atualizado?.pagamento || dados.pagamento });
+    }
+    return json({ ok: true, pagamento: dados.pagamento, statusMercadoPago: pagamentoMP?.status || null });
+  } catch (e: any) {
+    return json({ error: "Falha de rede ao falar com o Mercado Pago", detail: String(e?.message || e) }, 502);
+  }
 }
 
 /* ============================================================
@@ -849,6 +909,9 @@ export default {
     }
     if (path === "/api/pix-webhook") {
       return pixWebhook(request, env);
+    }
+    if (path === "/api/pix-verificar") {
+      return method === "POST" ? pixVerificar(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path === "/api/config-get") {
       return configGet(request, env);
