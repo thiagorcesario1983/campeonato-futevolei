@@ -302,9 +302,12 @@
     overflow-x:auto;-webkit-overflow-scrolling:touch;
     padding:8px 4px calc(8px + env(safe-area-inset-bottom));
     z-index:10;
-    scrollbar-width:none;
+    scrollbar-width:thin;
+    scrollbar-color:var(--sand-dark) transparent;
   }
-  nav.tabbar::-webkit-scrollbar{display:none;}
+  nav.tabbar::-webkit-scrollbar{height:5px;}
+  nav.tabbar::-webkit-scrollbar-track{background:transparent;}
+  nav.tabbar::-webkit-scrollbar-thumb{background:var(--sand-dark);border-radius:4px;}
   nav.tabbar button{
     flex:0 0 auto;min-width:64px;background:none;border:none;display:flex;flex-direction:column;
     align-items:center;gap:3px;padding:6px 6px;cursor:pointer;color:var(--muted);
@@ -3083,11 +3086,13 @@ function listarTodosOsJogos(){
   if(!state.drawn) return lista;
   if(state.formato==="grupos"){
     state.groupMatches.forEach((m,idx)=>{
+      if(partidaFinalizada(m)) return;
       lista.push({matchId:`g${idx}`, label:`Grupo ${m.group} · Jogo ${m.jogo}`, a:m.a, b:m.b});
     });
   } else {
     state.elimRodadas.forEach((r,ri)=>{
       r.matches.forEach((m,mi)=>{
+        if(partidaFinalizada(m)) return;
         lista.push({matchId:`e${ri}_${mi}`, label:`Eliminação · Rodada ${ri+1}`, a:m.a, b:m.b});
       });
     });
@@ -3096,14 +3101,15 @@ function listarTodosOsJogos(){
     const rounds = totalRoundsBracket();
     for(let r=0;r<rounds;r++){
       const teams = bracketTeamsForRound(r);
+      const round = state.bracket[r] || [];
       const label = nomeRodada(r, rounds);
       teams.forEach((t,i)=>{
-        if(t[0] && t[1]) lista.push({matchId:`b${r}_${i}`, label, a:t[0], b:t[1]});
+        if(t[0] && t[1] && !partidaFinalizada(round[i])) lista.push({matchId:`b${r}_${i}`, label, a:t[0], b:t[1]});
       });
     }
     if(state.terceiroLugar){
       const [la,lb] = semifinalLosers();
-      if(la && lb) lista.push({matchId:"terceiro", label:"Disputa de 3º Lugar", a:la, b:lb});
+      if(la && lb && !partidaFinalizada(state.terceiro)) lista.push({matchId:"terceiro", label:"Disputa de 3º Lugar", a:la, b:lb});
     }
   }
   return lista;
@@ -3115,15 +3121,15 @@ function renderPlacarMultiplo(){
   }
   const jogos = listarTodosOsJogos();
   if(!jogos.length){
-    return `<div class="section-title">Placar</div><div class="card empty"><span class="ball-icon">🏐</span>Nenhum jogo disponível ainda.</div>`;
+    return `<div class="section-title">Placar</div><div class="card empty"><span class="ball-icon">🏐</span>Nenhum jogo pendente no momento — todos os disponíveis já foram finalizados.</div>`;
   }
 
-  // remove da seleção jogos que não existem mais (ex: apagados por um novo sorteio)
+  // remove da seleção jogos que não existem mais (ex: apagados por um novo sorteio, ou já finalizados)
   const idsValidos = new Set(jogos.map(j=>j.matchId));
   Array.from(placarSelecionados).forEach(id=>{ if(!idsValidos.has(id)) placarSelecionados.delete(id); });
 
   let html = `<div class="section-title">Placar</div>
-    <div class="section-sub">Selecione os jogos que estão acontecendo agora e abra todos numa tela só, pensada para um monitor ou TV — igual ao "Placar do jogo", mas com vários de uma vez, divididos em partes iguais.</div>`;
+    <div class="section-sub">Jogos ainda não finalizados. Selecione os que estão acontecendo agora e abra todos numa tela só, pensada para um monitor ou TV — igual ao "Placar do jogo", mas com vários de uma vez, divididos em partes iguais.</div>`;
   jogos.forEach(j=>{
     const checked = placarSelecionados.has(j.matchId);
     html += `<label class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;">
