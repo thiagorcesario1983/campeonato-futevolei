@@ -43,16 +43,16 @@
      inteiro já usa var(--sand)/var(--white)/var(--ink) etc. em vez de cores fixas, só trocar
      esses valores já re-pinta o app inteiro — sem precisar editar cada componente. */
   [data-theme="dark"]{
-    --sand:#0E1510;
-    --sand-dark:#2A3A2C;
-    --ocean:#22B84A;
-    --ocean-deep:#0B2A12;
-    --coral:#FF6B52;
-    --grass:#2ECC40;
-    --white:#17211A;
-    --ink:#EAF2EC;
-    --muted:#9FB3A5;
-    --shadow: 0 10px 24px -12px rgba(0,0,0,.6);
+    --sand:#000000;
+    --sand-dark:#3A3A3A;
+    --ocean:#2ECC58;
+    --ocean-deep:#0F3D1D;
+    --coral:#FF7A5C;
+    --grass:#3AD65A;
+    --white:#121212;
+    --ink:#F5F5F5;
+    --muted:#B5B5B5;
+    --shadow: 0 10px 24px -12px rgba(0,0,0,.8);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -107,6 +107,14 @@
     z-index:1;
     text-shadow: 0 2px 10px rgba(0,0,0,.35);
   }
+  .theme-toggle-icon{
+    position:absolute;top:16px;right:16px;z-index:2;
+    width:38px;height:38px;border-radius:50%;
+    background:rgba(255,255,255,.18);border:none;
+    font-size:18px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .theme-toggle-icon:active{background:rgba(255,255,255,.3);}
 
   /* ---------- Content ---------- */
   main{
@@ -563,24 +571,13 @@
   .loading-overlay.show{display:flex;opacity:1;}
   .loading-overlay .loading-msg{color:var(--white);font-size:13px;font-weight:600;text-align:center;padding:0 30px;}
 
-  /* ---------- Modo claro/escuro ---------- */
-  .theme-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
-  .theme-switch{
-    position:relative;width:46px;height:26px;border-radius:20px;background:var(--sand-dark);
-    flex-shrink:0;cursor:pointer;border:none;padding:0;
-  }
-  .theme-switch::after{
-    content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
-    background:var(--white);transition:left .18s;box-shadow:0 1px 3px rgba(0,0,0,.3);
-  }
-  [data-theme="dark"] .theme-switch{background:var(--ocean);}
-  [data-theme="dark"] .theme-switch::after{left:23px;}
 </style>
 </head>
 <body>
 <div class="stage">
   <div class="app">
     <header id="app-header">
+      <button class="theme-toggle-icon" id="btn-theme-icon" aria-label="Alternar modo claro/escuro">🌙</button>
       <h1 id="header-title">Futevôlei</h1>
       <div id="torneio-bar"></div>
     </header>
@@ -3467,19 +3464,9 @@ function renderPlacarMultiplo(){
 }
 
 function renderConfiguracoes(){
-  const temaEscuro = temaAtual()==="dark";
   let html = `
     <div class="section-title">Configurações</div>
     <div class="section-sub">Personalização e integrações deste torneio.</div>
-    <div class="card tg-settings">
-      <div class="theme-toggle-row">
-        <div>
-          <label style="margin-bottom:2px;">${temaEscuro ? "🌙 Modo escuro" : "☀️ Modo claro"}</label>
-          <div class="hint" style="margin-top:0;">Preferência salva neste aparelho, vale pra qualquer torneio.</div>
-        </div>
-        <button class="theme-switch" id="btn-alternar-tema" aria-label="Alternar tema"></button>
-      </div>
-    </div>
     <div class="card tg-settings">
       <label>Imagem do topo (banner deste campeonato)</label>
       ${state.headerImage ? `<img src="${state.headerImage}" style="width:100%;border-radius:10px;margin-bottom:10px;display:block;max-height:140px;object-fit:cover;">` : ``}
@@ -3896,8 +3883,6 @@ function bindEvents(){
     save(); render();
     showToast("Imagem do topo removida.");
   });
-  const btnAlternarTema = document.getElementById("btn-alternar-tema");
-  if(btnAlternarTema) btnAlternarTema.addEventListener("click", alternarTema);
   main.querySelectorAll("[data-placar-check]").forEach(chk=>{
     chk.addEventListener("change", e=>{
       const id = e.target.dataset.placarCheck;
@@ -4142,7 +4127,9 @@ const THEME_KEY = "futevolei_tema_v1";
 function aplicarTema(tema){
   document.documentElement.setAttribute("data-theme", tema==="dark" ? "dark" : "light");
   const meta = document.getElementById("meta-theme-color");
-  if(meta) meta.setAttribute("content", tema==="dark" ? "#0B2A12" : "#205527");
+  if(meta) meta.setAttribute("content", tema==="dark" ? "#000000" : "#205527");
+  const icone = document.getElementById("btn-theme-icon");
+  if(icone) icone.textContent = tema==="dark" ? "☀️" : "🌙";
 }
 function temaAtual(){
   return document.documentElement.getAttribute("data-theme")==="dark" ? "dark" : "light";
@@ -4151,7 +4138,6 @@ function alternarTema(){
   const novo = temaAtual()==="dark" ? "light" : "dark";
   try{ localStorage.setItem(THEME_KEY, novo); }catch(e){}
   aplicarTema(novo);
-  render();
 }
 
 /* ============================================================
@@ -4506,6 +4492,11 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
       if(state.tab==="matamata" && state.drawn) checkElimNotifications();
     });
   });
+  const btnThemeIcon = document.getElementById("btn-theme-icon");
+  if(btnThemeIcon){
+    btnThemeIcon.textContent = temaAtual()==="dark" ? "☀️" : "🌙";
+    btnThemeIcon.addEventListener("click", alternarTema);
+  }
 
   render();
   fetchAndCacheClientId();
