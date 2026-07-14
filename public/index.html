@@ -36,6 +36,7 @@
     --white:#FFFFFF;
     --ink:#16241A;
     --muted:#5C6B60;
+    --heading:#205527; /* usada em títulos/labels — mesma cor de sempre no modo claro */
     --radius:16px;
     --shadow: 0 10px 24px -12px rgba(22,36,26,.35);
   }
@@ -52,6 +53,7 @@
     --white:#121212;
     --ink:#F5F5F5;
     --muted:#B5B5B5;
+    --heading:#4DFF7E; /* verde neon — as versões antigas (mesmo tom do fundo) ficavam ilegíveis no escuro */
     --shadow: 0 10px 24px -12px rgba(0,0,0,.8);
   }
   *{box-sizing:border-box;}
@@ -125,7 +127,7 @@
     font-family:'Bebas Neue',sans-serif;
     font-size:20px;
     letter-spacing:.02em;
-    color:var(--ocean-deep);
+    color:var(--heading);
     margin:0 0 4px;
   }
   .section-sub{
@@ -207,7 +209,7 @@
   .tg-status.ok{background:#E3F4FC;color:#0E7FB8;}
   .tg-status.pending{background:#FDF1E7;color:var(--coral);}
   .tg-settings{margin-bottom:14px;}
-  .tg-settings label{font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;}
+  .tg-settings label{font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;}
   .tg-settings .hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;}
   .bulk-row{display:flex;gap:8px;margin-bottom:14px;}
   .copy-note{
@@ -225,6 +227,15 @@
     background:var(--white);
   }
   input[type=text]:focus{outline:none;border-color:var(--ocean);}
+  /* Base pra qualquer outro campo (número, data, textarea, select) que não tenha estilo próprio —
+     sem isso, esses campos ficavam com o branco/preto padrão do navegador, sem acompanhar o tema. */
+  input, textarea, select{
+    color:var(--ink);
+    background:var(--white);
+    font-family:'Work Sans',sans-serif;
+    accent-color:var(--ocean);
+  }
+  input::placeholder, textarea::placeholder{color:var(--muted);opacity:1;}
   .btn{
     display:inline-flex;align-items:center;justify-content:center;gap:8px;
     background:var(--coral);color:var(--white);border:none;
@@ -235,7 +246,7 @@
   }
   .btn:active{transform:scale(.97);}
   .btn.secondary{
-    background:transparent;color:var(--ocean-deep);
+    background:transparent;color:var(--heading);
     border:1.5px solid var(--sand-dark);box-shadow:none;
   }
   .btn.ghost{background:transparent;color:var(--muted);box-shadow:none;font-weight:500;}
@@ -264,7 +275,7 @@
     border:1.5px solid var(--sand-dark);color:var(--muted);cursor:pointer;
     font-family:'Work Sans',sans-serif;
   }
-  .chip.active{background:var(--ocean-deep);color:var(--white);border-color:var(--ocean-deep);}
+  .chip.active{background:var(--ocean-deep);color:var(--white);border-color:var(--heading);}
 
   /* ---------- Match rows ---------- */
   .match{
@@ -296,8 +307,8 @@
     color:var(--muted);text-align:center;padding:6px 3px;letter-spacing:.03em;
   }
   th.name-col, td.name-col{text-align:left;}
-  td{padding:7px 3px;text-align:center;border-top:1px solid #F1ECDD;}
-  tr.qualified td{background:#EAF4EE;font-weight:600;}
+  td{padding:7px 3px;text-align:center;border-top:1px solid var(--sand-dark);}
+  tr.qualified td{background:var(--sand);font-weight:600;}
   tr.qualified td.pos{color:var(--grass);}
   td.pos{font-family:'DM Mono',monospace;font-weight:700;}
 
@@ -387,7 +398,7 @@
     background:var(--white);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);
     border-left:4px solid var(--ocean);
   }
-  .flow-card .flow-title{font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:5px;}
+  .flow-card .flow-title{font-weight:700;font-size:13px;color:var(--heading);margin-bottom:5px;}
   .flow-card .flow-detail{font-size:12px;color:var(--muted);line-height:1.6;}
   .flow-badge{
     display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;
@@ -400,11 +411,11 @@
     text-align:center;padding:20px 10px;
   }
   .login-wrap .ball-big{font-size:56px;margin-bottom:10px;}
-  .login-wrap h2{font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--ocean-deep);margin:0 0 8px;}
+  .login-wrap h2{font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--heading);margin:0 0 8px;}
   .login-wrap p{font-size:13px;color:var(--muted);margin:0 0 22px;max-width:320px;line-height:1.5;}
   #google-signin-btn{display:flex;justify-content:center;}
   .gcid-box{width:100%;max-width:320px;text-align:left;}
-  .gcid-box label{font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;}
+  .gcid-box label{font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;}
   .gcid-box .hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;text-align:left;}
 
   .torneio-bar{
@@ -417,14 +428,14 @@
   }
   .user-chip{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
   .user-chip img{width:42px;height:42px;border-radius:50%;}
-  .user-chip .name{font-weight:700;font-size:14px;color:var(--ocean-deep);}
+  .user-chip .name{font-weight:700;font-size:14px;color:var(--heading);}
   .user-chip .email{font-size:11px;color:var(--muted);}
   .torneio-item{
     border:1.5px solid var(--sand-dark);border-radius:12px;padding:12px 14px;margin-bottom:10px;
     cursor:pointer;background:var(--white);
   }
   .torneio-item .row{display:flex;justify-content:space-between;align-items:center;gap:10px;}
-  .torneio-item .nome{font-weight:700;font-size:14.5px;color:var(--ocean-deep);}
+  .torneio-item .nome{font-weight:700;font-size:14.5px;color:var(--heading);}
   .torneio-item .sub{font-size:11px;color:var(--muted);margin-top:4px;}
   .status-pill{
     font-size:10.5px;font-weight:700;border-radius:20px;padding:4px 10px;white-space:nowrap;flex-shrink:0;
@@ -443,7 +454,7 @@
     flex:1;border:none;border-radius:9px;padding:7px 6px;font-size:11.5px;font-weight:700;
     font-family:'Work Sans',sans-serif;cursor:pointer;background:var(--ocean-deep);color:var(--white);
   }
-  .ref-mini-btn.ghost{background:var(--sand);color:var(--ocean-deep);border:1px solid var(--sand-dark);}
+  .ref-mini-btn.ghost{background:var(--sand);color:var(--heading);border:1px solid var(--sand-dark);}
   .ref-mini-btn:active{transform:scale(.96);}
 
   /* ---------- Tela do juiz (Apitar jogo) ---------- */
@@ -471,7 +482,7 @@
   .ref-vs{font-family:'Bebas Neue',sans-serif;font-size:20px;opacity:.6;}
   .ref-score-btn{
     width:56px;height:44px;border-radius:12px;border:none;font-size:24px;font-weight:700;
-    cursor:pointer;color:var(--ocean-deep);
+    cursor:pointer;color:var(--heading);
   }
   .ref-score-btn.plus{background:var(--grass);color:var(--white);}
   .ref-score-btn.minus{background:rgba(255,255,255,.85);}
@@ -1787,7 +1798,7 @@ function liveScoreBadgeHtml(matchId){
     html += `<div class="live-score-badge">${rotulo} · ${arb.placarA}×${arb.placarB}</div>`;
   }
   if(arb.arbitroNome){
-    html += `<div class="live-score-badge" style="background:var(--sand);color:var(--ocean-deep);">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>`;
+    html += `<div class="live-score-badge" style="background:var(--sand);color:var(--heading);">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>`;
   }
   return html;
 }
@@ -2712,7 +2723,7 @@ function renderTorneioBloqueado(){
   }
   return `<div class="card empty" style="margin-top:20px;">
     <span class="ball-icon">🏐</span>
-    <div style="font-weight:700;font-size:16px;color:var(--ocean-deep);margin:10px 0 8px;">${titulo}</div>
+    <div style="font-weight:700;font-size:16px;color:var(--heading);margin:10px 0 8px;">${titulo}</div>
     <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
     <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">${texto}</div>
     ${badgeAprovacao({aprovacaoStatus:state.aprovacaoStatus})}
@@ -2733,7 +2744,7 @@ function renderTelaPix(){
   if(!pg || pg.status!=="pendente"){
     return `<div class="card empty" style="margin-top:20px;">
       <span class="ball-icon">🏐</span>
-      <div style="font-weight:700;font-size:16px;color:var(--ocean-deep);margin:10px 0 8px;">✅ Aprovado — falta o pagamento</div>
+      <div style="font-weight:700;font-size:16px;color:var(--heading);margin:10px 0 8px;">✅ Aprovado — falta o pagamento</div>
       <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
       <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">
         Período de ${formatarDataBR(state.dataInicio)} a ${formatarDataBR(state.dataFim)}
@@ -2746,13 +2757,13 @@ function renderTelaPix(){
 
   return `<div class="card empty" style="margin-top:20px;">
     <span class="ball-icon">🏐</span>
-    <div style="font-weight:700;font-size:16px;color:var(--ocean-deep);margin:10px 0 8px;">💳 Pagamento das diárias</div>
+    <div style="font-weight:700;font-size:16px;color:var(--heading);margin:10px 0 8px;">💳 Pagamento das diárias</div>
     <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
     <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">
       ${pg.dias} diária${pg.dias>1?"s":""} (${formatarDataBR(state.dataInicio)} – ${formatarDataBR(state.dataFim)}) = <b>R$ ${pg.valor.toFixed(2).replace(".", ",")}</b>
     </div>
     ${pg.qrCodeBase64 ? `<img src="data:image/png;base64,${pg.qrCodeBase64}" alt="QR Code Pix" style="width:220px;height:220px;margin:0 auto 14px;display:block;border-radius:10px;border:1px solid var(--border);">` : ""}
-    <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Pix copia e cola</label>
+    <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Pix copia e cola</label>
     <textarea readonly style="width:100%;min-height:70px;font-family:'DM Mono',monospace;font-size:11px;padding:8px;border-radius:8px;border:1px solid var(--border);margin-bottom:10px;" onclick="this.select()">${escapeHtml(pg.copiaCola)}</textarea>
     <button class="btn secondary" id="btn-copiar-pix" style="margin-bottom:8px;">Copiar código</button>
     <button class="btn ghost" id="btn-verificar-pix">Já paguei, verificar</button>
@@ -2853,13 +2864,13 @@ function renderTorneiosScreen(){
   if(mostrarFormNovoTorneio){
     const hoje = hojeLocalISO();
     html += `<div class="card" style="border:1.5px solid var(--ocean);">
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Nome do torneio</label>
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do torneio</label>
       <input type="text" id="input-novo-nome" placeholder="Campeonato de Futevôlei" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Data de início</label>
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Data de início</label>
       <input type="date" id="input-novo-inicio" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Data de fim</label>
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Data de fim</label>
       <input type="date" id="input-novo-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:6px;">
-      <div id="preview-valor-diarias" style="font-size:13px;font-weight:600;color:var(--ocean-deep);margin-bottom:10px;">${textoPreviewValorDiarias(hoje, hoje)}</div>
+      <div id="preview-valor-diarias" style="font-size:13px;font-weight:600;color:var(--heading);margin-bottom:10px;">${textoPreviewValorDiarias(hoje, hoje)}</div>
       <div class="hint" style="margin-bottom:14px;">O torneio só fica liberado para uso depois que o admin aprovar, o Pix das diárias for pago, e dentro desse período informado. O valor final é sempre recalculado na hora de gerar o Pix — essa é só uma estimativa.</div>
       <div style="display:flex;gap:8px;">
         <button class="btn secondary" id="btn-cancelar-novo-torneio" style="flex:1;">Cancelar</button>
@@ -2912,8 +2923,8 @@ function renderConfigAdminScreen(){
   return `<div class="section-title">Configurações</div>
     <div class="section-sub">Configurações globais do app — valem para todo mundo que acessar.</div>
     <div class="card" style="border:1.5px solid var(--ocean);margin-bottom:14px;">
-      <div style="font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:8px;">🔑 Google Client ID</div>
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Client ID</label>
+      <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">🔑 Google Client ID</div>
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Client ID</label>
       <input type="text" id="input-gcid-admin" placeholder="algo.apps.googleusercontent.com" value="${escapeHtml(gcidAtual)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;">
       <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Criado gratuitamente no Google Cloud Console (OAuth), autorizado para este domínio. Salvo aqui uma vez, vale para todo mundo que acessar o app — sem precisar configurar em cada navegador.</div>
       <div style="display:flex;gap:8px;">
@@ -2922,8 +2933,8 @@ function renderConfigAdminScreen(){
       </div>
     </div>
     <div class="card" style="border:1.5px solid var(--ocean);">
-      <div style="font-weight:700;font-size:13px;color:var(--ocean-deep);margin-bottom:8px;">📧 E-mail para notificações</div>
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">E-mail</label>
+      <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">📧 E-mail para notificações</div>
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">E-mail</label>
       <input type="email" id="input-email-admin" placeholder="voce@exemplo.com" value="${escapeHtml(adminNotificationEmailCache)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
       <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Recebe um aviso sempre que um novo campeonato for solicitado, e outras notificações do sistema.</div>
       <button class="btn" id="btn-salvar-email-admin">Salvar e-mail</button>
@@ -2958,17 +2969,17 @@ function renderAprovacoesScreen(){
       <div class="sub" style="margin-bottom:10px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
       <div style="display:flex;gap:8px;margin-bottom:6px;">
         <div style="flex:1;">
-          <label style="font-size:11px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:4px;">Início</label>
+          <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Início</label>
           <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
         </div>
         <div style="flex:1;">
-          <label style="font-size:11px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:4px;">Fim</label>
+          <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Fim</label>
           <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
         </div>
       </div>
       <div id="preview-valor-aprov-${t.id}" style="font-size:11px;color:var(--muted);margin-bottom:4px;">${textoPreviewValorDiarias(t.dataInicio, t.dataFim)}</div>
       <div style="margin-bottom:10px;">
-        <label style="font-size:11px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:4px;">Valor do Pix (R$) — zere para liberar de graça</label>
+        <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Valor do Pix (R$) — zere para liberar de graça</label>
         <input type="number" min="0" step="0.01" data-aprov-valor="${t.id}" value="${(t.valorOverride ?? (calcularDiasLocal(t.dataInicio, t.dataFim) * 70)).toFixed(2)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
       </div>
       <div style="display:flex;gap:8px;">
@@ -3103,7 +3114,7 @@ function renderSorteio(){
 
   if(!state.drawn){
     html += `<div class="card">
-      <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:8px;">Formato do campeonato</label>
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:8px;">Formato do campeonato</label>
       <div style="display:flex;gap:8px;">
         <div class="chip ${state.formato!=="eliminacao"?"active":""}" data-formato="grupos" style="flex:1;text-align:center;">Por grupos</div>
         <div class="chip ${state.formato==="eliminacao"?"active":""}" data-formato="eliminacao" style="flex:1;text-align:center;">Eliminação</div>
@@ -3117,13 +3128,13 @@ function renderSorteio(){
 
     if(state.formato==="eliminacao"){
       html += `<div class="card">
-        <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Duplas que avançam para o mata-mata</label>
+        <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Duplas que avançam para o mata-mata</label>
         <input type="number" min="2" step="1" id="input-elim-target" value="${state.elimTarget}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
         <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (2, 4, 8...) e menor que a quantidade total de duplas. É uma meta aproximada — as rodadas continuam até sobrar uma quantidade "fechada", pra ninguém entrar no mata-mata de folga (pode passar um pouco dessa meta pra mais ou pra menos).</div>
       </div>`;
     } else {
       html += `<div class="card">
-        <label style="font-size:12px;font-weight:600;color:var(--ocean-deep);display:block;margin-bottom:6px;">Quantidade de grupos</label>
+        <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Quantidade de grupos</label>
         <input type="number" min="1" step="1" id="input-num-grupos" value="${state.numGrupos}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
         <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (1, 2, 4, 8...) e dividir a quantidade de duplas em partes iguais, com no mínimo 3 duplas por grupo. Os 2 primeiros de cada grupo avançam para o mata-mata.</div>
       </div>`;
@@ -3158,7 +3169,7 @@ function renderSorteio(){
     html += `<button class="btn" id="btn-sortear" ${cfg.ok?"":'disabled style="opacity:.5;"'}>${labelBtn}</button>`;
   } else if(state.formato==="eliminacao"){
     html += `<div class="card" style="text-align:center;">
-      <div style="font-weight:700;color:var(--ocean-deep);margin-bottom:4px;">✅ 1ª rodada sorteada</div>
+      <div style="font-weight:700;color:var(--heading);margin-bottom:4px;">✅ 1ª rodada sorteada</div>
       <div class="section-sub" style="margin:0;">Acompanhe as rodadas, registre os resultados e sorteie as próximas etapas na aba <b>Jogos</b>.</div>
     </div>`;
 
@@ -3453,7 +3464,7 @@ function renderPlacarMultiplo(){
     html += `<label class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;">
       <input type="checkbox" data-placar-check="${j.matchId}" ${checked?"checked":""} style="width:18px;height:18px;flex-shrink:0;">
       <div>
-        <div style="font-weight:600;font-size:13px;color:var(--ocean-deep);">${escapeHtml(j.a)} × ${escapeHtml(j.b)}</div>
+        <div style="font-weight:600;font-size:13px;color:var(--heading);">${escapeHtml(j.a)} × ${escapeHtml(j.b)}</div>
         <div class="sub">${escapeHtml(j.label)}</div>
       </div>
     </label>`;
@@ -3579,7 +3590,7 @@ function renderMataMata(){
         : "1º e 2º de cada grupo se cruzam na primeira rodada do mata-mata; a partir daí, os vencedores avançam até a final."}${state.terceiroLugar ? `<br><b>3º/4º lugar:</b> perdedores da semifinal` : ``}
     </div>
     <div class="card" style="padding:10px 14px;margin-bottom:12px;">
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ocean-deep);cursor:pointer;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--heading);cursor:pointer;">
         <input type="checkbox" id="chk-terceiro" ${state.terceiroLugar?"checked":""} style="width:17px;height:17px;">
         Disputar jogo de 3º e 4º lugar
       </label>
