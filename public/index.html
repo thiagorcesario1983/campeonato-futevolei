@@ -1814,6 +1814,7 @@ function acoesJogoHtml(matchId, m){
   const podeFinalizar = m && !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
   let html = `<div class="ref-actions-row">
     <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
+    <button class="ref-mini-btn ghost" data-compartilhar-apito="${matchId}">🔗 Compartilhar</button>
     <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>`;
   if(m && !m.finalizado){
     html += `<button class="ref-mini-btn ghost" data-wo="${matchId}" style="border-color:var(--coral);color:var(--coral);">🚫 W.O.</button>`;
@@ -2064,7 +2065,16 @@ async function compartilharLinkApito(matchId){
 
     const [a,b] = getMatchTeams(matchId);
     const label = getMatchLabel(matchId);
-    const url = `${location.origin}${location.pathname}?apitar=1&torneio=${encodeURIComponent(state.cloudId)}&match=${encodeURIComponent(matchId)}&token=${encodeURIComponent(data.token)}&a=${encodeURIComponent(a||"")}&b=${encodeURIComponent(b||"")}&label=${encodeURIComponent(label||"")}`;
+    const params = new URLSearchParams({
+      apitar: "1",
+      torneio: state.cloudId,
+      match: matchId,
+      token: data.token,
+      a: a || "",
+      b: b || "",
+      label: label || ""
+    });
+    const url = `${location.origin}${location.pathname}?${params.toString()}`;
 
     if(navigator.share){
       try{ await navigator.share({ title:"Apitar jogo", text:`Apite o jogo ${label}: ${a} × ${b}`, url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
@@ -4073,6 +4083,9 @@ function bindEvents(){
   });
   main.querySelectorAll("[data-placartv]").forEach(btn=>{
     btn.addEventListener("click", ()=> abrirPlacarTV(btn.dataset.placartv));
+  });
+  main.querySelectorAll("[data-compartilhar-apito]").forEach(btn=>{
+    btn.addEventListener("click", ()=> compartilharLinkApito(btn.dataset.compartilharApito));
   });
   const btnRefFechar = document.getElementById("btn-ref-fechar");
   if(btnRefFechar) btnRefFechar.addEventListener("click", fecharApito);
