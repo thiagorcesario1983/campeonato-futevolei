@@ -548,6 +548,20 @@ function getMatchRef(state: any, matchId: string): any | null {
   return null;
 }
 
+// Mesma regra do cliente: troca de lado a cada múltiplo de 6 pontos somados (soma dos dois placares).
+function checkTrocaLado(arb: any): boolean {
+  const soma = (arb.placarA || 0) + (arb.placarB || 0);
+  const multiploAtual = soma > 0 ? Math.floor(soma / 6) * 6 : 0;
+  let deveTrocar = false;
+  if (multiploAtual > 0 && multiploAtual > (arb.ultimoMultiploTroca || 0)) {
+    arb.ultimoMultiploTroca = multiploAtual;
+    deveTrocar = true;
+  } else if (soma < (arb.ultimoMultiploTroca || 0)) {
+    arb.ultimoMultiploTroca = multiploAtual;
+  }
+  return deveTrocar;
+}
+
 function defaultArb(): any {
   return {
     status: "nao_iniciada",
@@ -655,6 +669,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
     arb.arbitroNome = body.arbitroNome.trim().slice(0, 60);
   }
 
+  let trocarLado = false;
   if (action === "iniciar") {
     if (arb.status === "nao_iniciada") {
       arb.inicioMs = Date.now();
@@ -675,6 +690,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
       const delta = body.delta === -1 ? -1 : 1;
       const campo = lado === "a" ? "placarA" : "placarB";
       arb[campo] = Math.max(0, (arb[campo] || 0) + delta);
+      trocarLado = checkTrocaLado(arb);
       m.pa = arb.placarA;
       m.pb = arb.placarB;
     }
@@ -708,7 +724,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
     return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
   }
 
-  return json({ ok: true, arb, finalizado: !!m.finalizado });
+  return json({ ok: true, arb, finalizado: !!m.finalizado, trocarLado });
 }
 
 async function torneiosDelete(request: Request, env: Env): Promise<Response> {
