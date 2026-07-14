@@ -295,6 +295,12 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   const existing = index.find((t: any) => t.id === id);
   const ehNovo = !existing;
 
+  // O índice só guarda um resumo leve — pra não perder campos que não fazem parte dele (como o
+  // objeto completo do pagamento Pix: código copia-e-cola, QR, paymentId, etc.), buscamos aqui
+  // o registro completo já salvo e preservamos esse campo ao regravar o torneio.
+  const existingRaw = existing ? await env.DB.get(`torneio:${id}`) : null;
+  const existingFull = existingRaw ? JSON.parse(existingRaw) : null;
+
   // Só o dono original (ou o admin) pode atualizar um torneio já existente.
   if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
     return json({ error: "Sem permissão para alterar este torneio" }, 403);
@@ -320,7 +326,7 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   };
 
   try {
-    await env.DB.put(`torneio:${id}`, JSON.stringify({ ...meta, state: body.state }));
+    await env.DB.put(`torneio:${id}`, JSON.stringify({ ...meta, pagamento: existingFull?.pagamento ?? null, state: body.state }));
     const newIndex = index.filter((t: any) => t.id !== id);
     newIndex.push(meta);
     await env.DB.put("torneios:index", JSON.stringify(newIndex));
@@ -583,6 +589,15 @@ async function pixCriar(request: Request, env: Env): Promise<Response> {
     return json({ error: "Este torneio já está pago" }, 400);
   }
 
+  // Proteção extra: se o registro de pagamento tiver sido perdido por algum motivo, busca no
+  // Mercado Pago se já existe um pagamento aprovado pra este torneio antes de gerar uma
+  // cobrança nova — evita cobrar duas vezes por engano.
+  const jaAprovado = await buscarPagamentoPorReferencia(env, id);
+  if (jaAprovado) {
+    const atualizado = await confirmarPagamentoAprovado(env, id, jaAprovado);
+    return json({ ok: true, pagamento: atualizado?.pagamento || dados.pagamento, recuperadoPorBusca: true });
+  }
+
   const dias = calcularDias(dados.dataInicio, dados.dataFim);
   if (dias <= 0) {
     return json({ error: "Datas de início/fim inválidas para calcular o valor da diária" }, 400);
@@ -734,6 +749,24 @@ async function confirmarPagamentoAprovado(env: Env, torneioId: string, pagamento
   return dados;
 }
 
+// Recuperação: busca no Mercado Pago se já existe um pagamento aprovado pra este torneio,
+// usando o external_reference (que é sempre o id do torneio) — sem depender do paymentId
+// estar salvo no nosso banco. Cobre casos em que esse campo se perdeu por algum motivo (ex: o
+// bug antigo do torneios-save, já corrigido) e serve de rede de segurança geral daqui pra frente.
+async function buscarPagamentoPorReferencia(env: Env, torneioId: string): Promise<any | null> {
+  if (!env.MP_ACCESS_TOKEN) return null;
+  try {
+    const url = `https://api.mercadopago.com/v1/payments/search?external_reference=${encodeURIComponent(torneioId)}&sort=date_created&criteria=desc`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${env.MP_ACCESS_TOKEN}` } });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const results: any[] = Array.isArray(data?.results) ? data.results : [];
+    return results.find((p: any) => p?.status === "approved") || null;
+  } catch {
+    return null;
+  }
+}
+
 async function pixWebhook(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   let paymentId = url.searchParams.get("data.id") || url.searchParams.get("id");
@@ -809,7 +842,16 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
   }
 
   const paymentId = dados.pagamento?.paymentId;
-  if (!paymentId) return json({ ok: true, pagamento: dados.pagamento || null });
+  if (!paymentId) {
+    // Sem paymentId salvo (ex: torneio afetado pelo bug antigo, já corrigido, que perdia esse
+    // campo em salvamentos normais) — tenta recuperar buscando direto no Mercado Pago.
+    const encontrado = await buscarPagamentoPorReferencia(env, id);
+    if (encontrado) {
+      const atualizado = await confirmarPagamentoAprovado(env, id, encontrado);
+      return json({ ok: true, pagamento: atualizado?.pagamento || dados.pagamento, recuperadoPorBusca: true });
+    }
+    return json({ ok: true, pagamento: dados.pagamento || null });
+  }
 
   try {
     const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
