@@ -953,9 +953,28 @@ async function copiarCodigoPix(){
 }
 
 async function verificarPagamentoPix(){
-  showToast("Verificando pagamento...");
-  await refreshTorneioAtual();
-  showToast(state.pagamento?.status==="pago" ? "Pagamento confirmado! 🎉" : "Ainda não identificamos o pagamento.");
+  if(!state.cloudId) return;
+  showToast("Verificando pagamento direto com o Mercado Pago...");
+  try{
+    const res = await fetch("/api/pix-verificar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, email: auth.email })
+    });
+    const data = await res.json();
+    if(!res.ok){ showToast(data.error || "Não foi possível verificar o pagamento."); return; }
+    state.pagamento = data.pagamento;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if(state.pagamento?.status==="pago"){
+      showToast("Pagamento confirmado! 🎉");
+    } else {
+      const statusMP = data.statusMercadoPago;
+      const rotulos = { pending:"ainda pendente no Mercado Pago", in_process:"em análise pelo Mercado Pago", rejected:"recusado pelo Mercado Pago", cancelled:"cancelado" };
+      showToast(statusMP && rotulos[statusMP] ? `Pagamento ${rotulos[statusMP]}.` : "Ainda não identificamos o pagamento.");
+    }
+    render();
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível verificar o pagamento.");
+  }
 }
 
 async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim, valor){
