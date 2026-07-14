@@ -2081,6 +2081,7 @@ async function compartilharLinkApito(matchId){
 }
 
 
+let refTickInterval = null;
 function stopRefTick(){
   if(refTickInterval){ clearInterval(refTickInterval); refTickInterval = null; }
 }
@@ -4417,6 +4418,7 @@ async function apitoPublicoAcao(action, payload){
 }
 
 
+const __urlParams = new URLSearchParams(location.search);
 const __tvMatchId = __urlParams.get("placarTV");
 const __tvMultiIds = __urlParams.get("placarMultiTV");
 const __tvTorneioId = __urlParams.get("torneio");
