@@ -934,7 +934,7 @@ async function gerarPixTorneio(){
     if(!res.ok){ showToast(data.error || "Não foi possível gerar o Pix."); return; }
     state.pagamento = data.pagamento;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    showToast("Pix gerado! Escaneie o QR ou copie o código.");
+    showToast(state.pagamento?.status==="pago" ? "Pagamento já confirmado! 🎉" : "Pix gerado! Escaneie o QR ou copie o código.");
     render();
   }catch(e){
     showToast("Sem conexão com o servidor — não foi possível gerar o Pix.");
