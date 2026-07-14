@@ -2987,15 +2987,11 @@ function renderAprovacoesScreen(){
       </div>
       <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:6px;">#${escapeHtml(t.codigo||"—")}</div>
       <div class="sub" style="margin-bottom:10px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
-      <div style="display:flex;gap:8px;margin-bottom:6px;">
-        <div style="flex:1;min-width:0;">
-          <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Início</label>
-          <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 6px;font-size:12.5px;box-sizing:border-box;">
-        </div>
-        <div style="flex:1;min-width:0;">
-          <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Fim</label>
-          <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 6px;font-size:12.5px;box-sizing:border-box;">
-        </div>
+      <div style="margin-bottom:6px;">
+        <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Início</label>
+        <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;box-sizing:border-box;margin-bottom:6px;">
+        <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Fim</label>
+        <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;box-sizing:border-box;">
       </div>
       <div id="preview-valor-aprov-${t.id}" style="font-size:11px;color:var(--muted);margin-bottom:4px;">${textoPreviewValorDiarias(t.dataInicio, t.dataFim)}</div>
       <div style="margin-bottom:10px;">
