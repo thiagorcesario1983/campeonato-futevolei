@@ -953,6 +953,26 @@ async function fetchTorneiosList(){
   render();
 }
 
+// Máscara de moeda estilo "caixa eletrônico": os dígitos digitados sempre entram pela direita
+// (representam centavos), então o valor cresce da direita pra esquerda — sem precisar digitar
+// vírgula nem se preocupar com posição do cursor. Ex: digitar 1,2,3,4 vira R$ 12,34.
+function formatarCentavosBRL(digitosStr){
+  let digits = (digitosStr || "").replace(/\D/g,"");
+  digits = digits.replace(/^0+(?=\d)/, "");
+  if(digits==="") digits = "0";
+  while(digits.length<3) digits = "0"+digits;
+  const centavos = digits.slice(-2);
+  let reais = digits.slice(0,-2).replace(/^0+(?=\d)/, "") || "0";
+  reais = reais.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `R$ ${reais},${centavos}`;
+}
+// Converte o texto mascarado (ex: "R$ 1.234,56") de volta pro número puro (1234.56).
+function valorMascaradoParaNumero(texto){
+  const digits = (texto || "").replace(/\D/g,"");
+  if(!digits) return 0;
+  return Number(digits) / 100;
+}
+
 function textoPreviewValorDiarias(dataInicio, dataFim){
   const dias = calcularDiasLocal(dataInicio, dataFim);
   if(!dias) return "";
@@ -2968,19 +2988,19 @@ function renderAprovacoesScreen(){
       <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:6px;">#${escapeHtml(t.codigo||"—")}</div>
       <div class="sub" style="margin-bottom:10px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
       <div style="display:flex;gap:8px;margin-bottom:6px;">
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;">
           <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Início</label>
-          <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
+          <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 6px;font-size:12.5px;box-sizing:border-box;">
         </div>
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;">
           <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Fim</label>
-          <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
+          <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 6px;font-size:12.5px;box-sizing:border-box;">
         </div>
       </div>
       <div id="preview-valor-aprov-${t.id}" style="font-size:11px;color:var(--muted);margin-bottom:4px;">${textoPreviewValorDiarias(t.dataInicio, t.dataFim)}</div>
       <div style="margin-bottom:10px;">
         <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Valor do Pix (R$) — zere para liberar de graça</label>
-        <input type="number" min="0" step="0.01" data-aprov-valor="${t.id}" value="${(t.valorOverride ?? (calcularDiasLocal(t.dataInicio, t.dataFim) * 70)).toFixed(2)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;">
+        <input type="text" inputmode="numeric" data-aprov-valor="${t.id}" value="${formatarCentavosBRL(String(Math.round((t.valorOverride ?? (calcularDiasLocal(t.dataInicio, t.dataFim) * 70)) * 100)))}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;font-family:'DM Mono',monospace;box-sizing:border-box;">
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn" data-aprovar="${t.id}" style="flex:1;background:var(--grass);box-shadow:none;">✅ Aprovar</button>
@@ -3815,8 +3835,17 @@ function bindEvents(){
       const inputInicio = main.querySelector(`[data-aprov-inicio="${id}"]`);
       const inputFim = main.querySelector(`[data-aprov-fim="${id}"]`);
       const inputValor = main.querySelector(`[data-aprov-valor="${id}"]`);
-      const valor = inputValor && inputValor.value !== "" ? Number(inputValor.value) : null;
+      const valor = inputValor ? valorMascaradoParaNumero(inputValor.value) : null;
       decidirAprovacaoTorneio(id, decisao, inputInicio?.value, inputFim?.value, valor);
+    });
+  });
+  main.querySelectorAll("[data-aprov-valor]").forEach(input=>{
+    input.addEventListener("focus", e=> e.target.select());
+    input.addEventListener("input", e=>{
+      const digits = e.target.value.replace(/\D/g,"");
+      e.target.value = formatarCentavosBRL(digits);
+      const pos = e.target.value.length;
+      e.target.setSelectionRange(pos, pos);
     });
   });
   main.querySelectorAll("[data-aprov-inicio],[data-aprov-fim]").forEach(input=>{
