@@ -978,15 +978,13 @@ async function verificarPagamentoPix(silencioso){
   }
 }
 
-// Verifica automaticamente (sem toasts de "ainda pendente") assim que a tela de Pix pendente
-// é aberta — cobre pagamentos que já caíram mas cujo webhook não tinha chegado até então,
-// sem precisar que ninguém lembre de clicar em "Já paguei, verificar".
-let ultimoCloudIdAutoVerificado = null;
-function autoVerificarPixSeNecessario(){
-  if(!state.cloudId || state.pagamento?.status!=="pendente") return;
-  if(ultimoCloudIdAutoVerificado===state.cloudId) return;
-  ultimoCloudIdAutoVerificado = state.cloudId;
-  verificarPagamentoPix(true);
+// Chamado só nos momentos reais de "abrir" o torneio (clique na lista, ou reload de página
+// direto nele) — nunca pelas atualizações automáticas de 5s, pra não ficar martelando a API
+// do Mercado Pago sem necessidade. As atualizações de 5s (refreshTorneioAtual) continuam só
+// lendo o banco, sem custo de chamada externa — é assim que o status "pago" fica salvo e
+// reaproveitado depois, sem precisar reconsultar o Mercado Pago toda hora.
+function verificarPixAoAbrir(){
+  if(state.pagamento?.status==="pendente") verificarPagamentoPix(true);
 }
 
 async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim, valor){
@@ -1056,6 +1054,7 @@ function abrirTorneioComDados(data){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   telegramStatus = {};
   render();
+  verificarPixAoAbrir();
   if(state.drawn) refreshTelegramStatus();
   checkElimNotifications();
   if(ehAdmin() || torneioEstaAtivo().ok) showToast(`"${data.nome}" carregado!`);
@@ -1103,7 +1102,7 @@ function iniciarLiveRefresh(){
   }, 5000);
 }
 
-async function refreshTorneioAtual(){
+async function refreshTorneioAtual(chamadaInicial){
   if(!auth || !state.cloudId) return;
   try{
     const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(state.cloudId)}&email=${encodeURIComponent(auth.email)}`, { cache:"no-store" });
@@ -1123,6 +1122,7 @@ async function refreshTorneioAtual(){
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       telegramStatus = {};
       render();
+      if(chamadaInicial) verificarPixAoAbrir();
       if(state.drawn) refreshTelegramStatus();
       checkElimNotifications();
     }
@@ -2603,7 +2603,6 @@ function render(){
     </div>`;
     main.innerHTML = renderTorneioBloqueado();
     bindEvents();
-    autoVerificarPixSeNecessario();
     return;
   }
 
@@ -4255,7 +4254,7 @@ if(__tvMatchId && __tvTorneioId){
   render();
   fetchAndCacheClientId();
   if(auth && state.cloudId){
-    refreshTorneioAtual();
+    refreshTorneioAtual(true);
     if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
     if(state.drawn) checkElimNotifications();
     iniciarLiveRefresh();
