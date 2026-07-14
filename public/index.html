@@ -554,7 +554,7 @@ function defaultState(){
     elimRodadas: [], // (formato "eliminacao") [{matches:[{a,b,pa,pb}], bye:nome|null}, ...]
     bracketSeed: null, // (formato "eliminacao") lista fixa de classificados (com folgas=null) que abre a 1ª rodada do mata-mata
     bracket: [], // [[{pa,pb}, ...], [...], ...] — cada posição é uma rodada do mata-mata (tamanho = log2(qualificados))
-    terceiro: {pa:null,pb:null,finalizado:false},
+    terceiro: {pa:null,pb:null,finalizado:false,wo:null},
     terceiroLugar: false,
     filter: "todos",
     tournamentId: null,
@@ -1230,7 +1230,7 @@ function sortear(){
     state.elimRodadas = [];
     state.bracketSeed = null;
     state.bracket = [];
-    state.terceiro = {pa:null, pb:null, finalizado:false};
+    state.terceiro = {pa:null, pb:null, finalizado:false, wo:null};
     state.drawn = true;
     sortearRodadaEliminacao();
     save();
@@ -1250,7 +1250,7 @@ function sortear(){
     let jogoNum = 1;
     for(let x=0; x<g.length; x++){
       for(let y=x+1; y<g.length; y++){
-        groupMatches.push({group:letters[gi], jogo:jogoNum++, a:g[x], b:g[y], pa:null, pb:null, finalizado:false});
+        groupMatches.push({group:letters[gi], jogo:jogoNum++, a:g[x], b:g[y], pa:null, pb:null, finalizado:false, wo:null});
       }
     }
   });
@@ -1258,7 +1258,7 @@ function sortear(){
   state.groupMatches = groupMatches;
   state.drawn = true;
   state.bracket = criarBracketVazio(qualificadosCount());
-  state.terceiro = {pa:null, pb:null, finalizado:false};
+  state.terceiro = {pa:null, pb:null, finalizado:false, wo:null};
   save();
 }
 // Configuração de duplas/grupos (formato "grupos") é válida quando: nº de grupos é potência de 2
@@ -1349,7 +1349,7 @@ function sortearRodadaEliminacao(){
   }
   const matches = [];
   for(let i=0;i<vivos.length;i+=2){
-    matches.push({a:vivos[i], b:vivos[i+1], pa:null, pb:null, finalizado:false});
+    matches.push({a:vivos[i], b:vivos[i+1], pa:null, pb:null, finalizado:false, wo:null});
   }
   state.elimRodadas.push({matches, bye});
   save();
@@ -1376,7 +1376,7 @@ function iniciarMataMataEliminacao(){
   while(comFolgas.length < tamanhoBracket) comFolgas.push(null);
   state.bracketSeed = shuffle(comFolgas);
   state.bracket = criarBracketVazio(tamanhoBracket);
-  state.terceiro = {pa:null, pb:null, finalizado:false};
+  state.terceiro = {pa:null, pb:null, finalizado:false, wo:null};
   save();
 }
 function matamataPronto(){
@@ -1440,7 +1440,7 @@ function criarBracketVazio(qualificados){
   const bracket = [];
   for(let r=0; r<rounds; r++){
     const nMatches = qualificados / Math.pow(2, r+1);
-    bracket.push(Array.from({length:nMatches}, ()=>({pa:null, pb:null, finalizado:false})));
+    bracket.push(Array.from({length:nMatches}, ()=>({pa:null, pb:null, finalizado:false, wo:null})));
   }
   return bracket;
 }
@@ -1666,6 +1666,31 @@ function liveScoreBadgeHtml(matchId){
   const rotulo = arb.status==="andamento" ? "🔴 Em andamento" : "⏸️ Tempo técnico";
   return `<div class="live-score-badge">${rotulo} · ${arb.placarA}×${arb.placarB}</div>`;
 }
+function woNoteHtml(m, a, b){
+  if(!m || !m.wo) return "";
+  const ausente = m.wo==="a" ? a : b;
+  const venceu = m.wo==="a" ? b : a;
+  return `<div class="tiebreak-note" style="color:var(--coral);font-weight:600;">🚫 W.O. — ${escapeHtml(ausente)} não compareceu. ${escapeHtml(venceu)} venceu por W.O.</div>`;
+}
+// Monta a linha de botões de ação (apitar/placar TV/finalizar/reabrir/W.O.) de um jogo, com o
+// mesmo critério em todo lugar onde uma partida aparece (grupos, eliminação, mata-mata).
+function acoesJogoHtml(matchId, m){
+  const podeFinalizar = m && !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
+  let html = `<div class="ref-actions-row">
+    <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
+    <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>`;
+  if(m && !m.finalizado){
+    html += `<button class="ref-mini-btn ghost" data-wo="${matchId}" style="border-color:var(--coral);color:var(--coral);">🚫 W.O.</button>`;
+  }
+  if(podeFinalizar){
+    html += `<button class="ref-mini-btn" data-finalizar="${matchId}" style="background:var(--grass);color:#fff;">✅ Finalizar jogo</button>`;
+  }
+  if(m && m.finalizado){
+    html += `<button class="ref-mini-btn ghost" data-reabrir="${matchId}">🔓 Reabrir partida</button>`;
+  }
+  html += `</div>`;
+  return html;
+}
 function formatTempo(ms){
   const totalSec = Math.max(0, Math.floor(ms/1000));
   const m = Math.floor(totalSec/60), s = totalSec%60;
@@ -1780,6 +1805,79 @@ async function finalizarJogoManual(matchId){
   showToast("Salvando...");
   const {ok, erro} = await flushSyncTorneio();
   showToast(ok ? "Jogo finalizado e salvo!" : `⚠️ Finalizado aqui, mas não sincronizou: ${erro||"erro desconhecido"}`);
+}
+// Libera de novo os campos de placar de uma partida já finalizada (por qualquer via: Apitar
+// jogo, botão Finalizar ou W.O.) — quem organiza pode corrigir e finalizar de novo depois.
+async function reabrirJogoManual(matchId){
+  const m = getMatchObj(matchId);
+  if(!m) return;
+  m.finalizado = false;
+  m.wo = null;
+  if(state.arbitragem && state.arbitragem[matchId] && state.arbitragem[matchId].status==="finalizada"){
+    state.arbitragem[matchId].status = "tecnico";
+  }
+  save();
+  render();
+  showToast("Salvando...");
+  const {ok, erro} = await flushSyncTorneio();
+  showToast(ok ? "Partida reaberta — ajuste o placar e finalize de novo." : `⚠️ Reaberta aqui, mas não sincronizou: ${erro||"erro desconhecido"}`);
+}
+// W.O.: abre um popup pra escolher qual dupla não compareceu. A outra é declarada vencedora
+// e a partida já sai finalizada — sem precisar digitar placar nenhum.
+function abrirPopupWO(matchId){
+  const [a,b] = getMatchTeams(matchId);
+  if(!a || !b) return;
+  fecharPopupWO();
+  const overlay = document.createElement("div");
+  overlay.id = "popup-wo";
+  overlay.className = "popup-troca show";
+  overlay.innerHTML = `
+    <div class="popup-troca-inner" style="max-width:300px;">
+      <div class="popup-troca-icon">🚫</div>
+      <div class="popup-troca-msg" style="font-size:17px;margin-bottom:2px;">Qual dupla não compareceu?</div>
+      <div class="section-sub" style="margin:0 0 16px;text-align:center;">A outra dupla é declarada vencedora e o jogo já sai finalizado.</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="popup-troca-ok" data-wo-lado="a" style="width:100%;">${escapeHtml(a)} não veio</button>
+        <button class="popup-troca-ok" data-wo-lado="b" style="width:100%;">${escapeHtml(b)} não veio</button>
+        <button class="popup-troca-ok" id="btn-wo-cancelar" style="width:100%;background:transparent;color:var(--muted);border:1.5px solid var(--sand-dark);box-shadow:none;">Cancelar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll("[data-wo-lado]").forEach(btn=>{
+    btn.addEventListener("click", ()=> confirmarWO(matchId, btn.dataset.woLado));
+  });
+  const btnCancelar = overlay.querySelector("#btn-wo-cancelar");
+  if(btnCancelar) btnCancelar.addEventListener("click", fecharPopupWO);
+}
+function fecharPopupWO(){
+  const el = document.getElementById("popup-wo");
+  if(el) el.remove();
+}
+async function confirmarWO(matchId, ladoAusente){
+  const m = getMatchObj(matchId);
+  if(!m) return;
+  m.pa = ladoAusente==="a" ? 0 : 1;
+  m.pb = ladoAusente==="b" ? 0 : 1;
+  m.wo = ladoAusente;
+  m.finalizado = true;
+  if(state.arbitragem && state.arbitragem[matchId]){
+    const arb = state.arbitragem[matchId];
+    if(arb.status==="andamento" && arb.inicioMs){
+      arb.acumuladoMs += Date.now() - arb.inicioMs;
+      arb.inicioMs = null;
+    }
+    arb.status = "finalizada";
+    arb.placarA = Number(m.pa);
+    arb.placarB = Number(m.pb);
+    arb.duracaoFinalSegundos = Math.floor(arb.acumuladoMs/1000);
+  }
+  fecharPopupWO();
+  save();
+  render();
+  checkElimNotifications();
+  showToast("Salvando...");
+  const {ok, erro} = await flushSyncTorneio();
+  showToast(ok ? "W.O. registrado!" : `⚠️ Registrado aqui, mas não sincronizou: ${erro||"erro desconhecido"}`);
 }
 function mostrarPopupTroca(){
   const el = document.getElementById("popup-troca");
@@ -2937,7 +3035,6 @@ function renderRodadasEliminacao(){
       const win = winnerFinal(m.a,m.b,m);
       const matchId = `e${ri}_${mi}`;
       const arbAtiva = ["andamento","tecnico"].includes(state.arbitragem?.[matchId]?.status);
-      const podeFinalizar = !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
       html += `<div class="match">
         <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
         <input class="score-input" type="number" min="0" inputmode="numeric" data-erm="${ri}_${mi}" data-side="a" value="${m.pa??""}" ${arbAtiva||m.finalizado?"disabled":""}>
@@ -2946,12 +3043,9 @@ function renderRodadasEliminacao(){
         <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
       </div>
       ${liveScoreBadgeHtml(matchId)}
-      ${m.finalizado ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
-      <div class="ref-actions-row">
-        <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
-        <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
-        ${podeFinalizar ? `<button class="ref-mini-btn" data-finalizar="${matchId}" style="background:var(--grass);color:#fff;">✅ Finalizar jogo</button>` : ""}
-      </div>`;
+      ${woNoteHtml(m, m.a, m.b)}
+      ${(m.finalizado && !m.wo) ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
+      ${acoesJogoHtml(matchId, m)}`;
     });
     if(r.bye) html += `<div class="tiebreak-note">🎟️ ${escapeHtml(r.bye)} folgou nesta rodada (mais vitórias e menos derrotas entre os vivos — avança direto, sem jogar).</div>`;
     html += `</div></div>`;
@@ -3201,7 +3295,6 @@ function renderJogos(){
       const win = winnerFinal(m.a,m.b,m);
       const matchId = "g"+idx;
       const arbAtiva = ["andamento","tecnico"].includes(state.arbitragem?.[matchId]?.status);
-      const podeFinalizar = !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
       html += `<div class="match">
         <span class="team ${win===m.a?'win':''}">${escapeHtml(m.a)}</span>
         <input class="score-input" type="number" min="0" inputmode="numeric" data-gm="${idx}" data-side="a" value="${m.pa??""}" ${arbAtiva||m.finalizado?"disabled":""}>
@@ -3210,12 +3303,9 @@ function renderJogos(){
         <span class="team ${win===m.b?'win':''}">${escapeHtml(m.b)}</span>
       </div>
       ${liveScoreBadgeHtml(matchId)}
-      ${m.finalizado ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
-      <div class="ref-actions-row">
-        <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
-        <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
-        ${podeFinalizar ? `<button class="ref-mini-btn" data-finalizar="${matchId}" style="background:var(--grass);color:#fff;">✅ Finalizar jogo</button>` : ""}
-      </div>`;
+      ${woNoteHtml(m, m.a, m.b)}
+      ${(m.finalizado && !m.wo) ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
+      ${acoesJogoHtml(matchId, m)}`;
     });
     html += `</div></div>`;
   });
@@ -3404,18 +3494,14 @@ function bracketMatchHtml(label, faseLabel, round, idx, a, b, m){
       <input class="score-input" type="number" min="0" inputmode="numeric" data-round="${round}" data-idx="${idx}" data-side="${side}" value="${scoreVal}" ${arbAtiva||m?.finalizado?"disabled":""}>
     </div>${contatos}`;
   };
-  const podeFinalizar = m && !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
-  const acoes = (a && b) ? `<div class="ref-actions-row">
-      <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
-      <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>
-      ${podeFinalizar ? `<button class="ref-mini-btn" data-finalizar="${matchId}" style="background:var(--grass);color:#fff;">✅ Finalizar jogo</button>` : ""}
-    </div>` : "";
+  const acoes = (a && b) ? acoesJogoHtml(matchId, m) : "";
   return `<div class="bracket-match">
     <div class="lbl">${label}</div>
     ${teamBlock(a, b, "a", win===a)}
     ${teamBlock(b, a, "b", win===b)}
     ${(a && b) ? liveScoreBadgeHtml(matchId) : ""}
-    ${m?.finalizado ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
+    ${(a && b) ? woNoteHtml(m, a, b) : ""}
+    ${(m?.finalizado && !m?.wo) ? `<div class="tiebreak-note">✅ Partida finalizada.</div>` : ""}
     ${acoes}
   </div>`;
 }
@@ -3735,6 +3821,16 @@ function bindEvents(){
   });
   main.querySelectorAll("[data-finalizar]").forEach(btn=>{
     btn.addEventListener("click", ()=> finalizarJogoManual(btn.dataset.finalizar));
+  });
+  main.querySelectorAll("[data-wo]").forEach(btn=>{
+    btn.addEventListener("click", ()=> abrirPopupWO(btn.dataset.wo));
+  });
+  main.querySelectorAll("[data-reabrir]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      if(confirm("Reabrir esta partida? O placar poderá ser editado de novo até finalizar.")){
+        reabrirJogoManual(btn.dataset.reabrir);
+      }
+    });
   });
   main.querySelectorAll("[data-placartv]").forEach(btn=>{
     btn.addEventListener("click", ()=> abrirPlacarTV(btn.dataset.placartv));
