@@ -325,6 +325,41 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     valorOverride: existing ? (existing.valorOverride ?? null) : null
   };
 
+  // O cliente que está salvando pode estar com uma cópia desatualizada da arbitragem — por
+  // exemplo, se um árbitro convidado (link de "Apitar jogo") gerou um token ou pontuou uma
+  // partida depois da última vez que este cliente carregou o torneio. Sem isso, o próximo
+  // salvamento normal (qualquer coisa que o organizador editar) sobrescreveria e perderia
+  // esse progresso, ou pior, invalidaria o link (token apagado) mesmo sem ninguém mexer nele.
+  const STATUS_RANK: Record<string, number> = { nao_iniciada: 0, andamento: 1, tecnico: 1, finalizada: 2 };
+  if (existingFull?.state?.arbitragem && body.state) {
+    if (!body.state.arbitragem) body.state.arbitragem = {};
+    for (const matchId of Object.keys(existingFull.state.arbitragem)) {
+      const arbServidor: any = existingFull.state.arbitragem[matchId];
+      const arbCliente: any = body.state.arbitragem[matchId];
+      if (!arbServidor) continue;
+
+      if (!arbCliente) {
+        body.state.arbitragem[matchId] = arbServidor;
+        const ref = getMatchRef(body.state, matchId);
+        if (ref) { ref.pa = arbServidor.placarA; ref.pb = arbServidor.placarB; ref.finalizado = arbServidor.status === "finalizada"; }
+        continue;
+      }
+
+      // Preserva sempre o token do link de árbitro convidado, mesmo que o cliente não o conheça.
+      if (arbServidor.tokenApito && !arbCliente.tokenApito) arbCliente.tokenApito = arbServidor.tokenApito;
+
+      const rankServidor = STATUS_RANK[arbServidor.status] ?? 0;
+      const rankCliente = STATUS_RANK[arbCliente.status] ?? 0;
+      const somaServidor = (arbServidor.placarA || 0) + (arbServidor.placarB || 0);
+      const somaCliente = (arbCliente.placarA || 0) + (arbCliente.placarB || 0);
+      if (rankServidor > rankCliente || (rankServidor === rankCliente && somaServidor > somaCliente)) {
+        body.state.arbitragem[matchId] = { ...arbServidor, tokenApito: arbServidor.tokenApito || arbCliente.tokenApito };
+        const ref = getMatchRef(body.state, matchId);
+        if (ref) { ref.pa = arbServidor.placarA; ref.pb = arbServidor.placarB; ref.finalizado = arbServidor.status === "finalizada"; }
+      }
+    }
+  }
+
   try {
     await env.DB.put(`torneio:${id}`, JSON.stringify({ ...meta, pagamento: existingFull?.pagamento ?? null, state: body.state }));
     const newIndex = index.filter((t: any) => t.id !== id);
