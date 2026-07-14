@@ -2,6 +2,11 @@
   "name": "campeonato-futevolei",
   "main": "src/worker.ts",
   "compatibility_date": "2025-06-05",
+  // Sem isso, o Wrangler trata "nenhuma variável declarada aqui" como a configuração correta
+  // e, a cada deploy, remove qualquer variável/secret que só exista no painel Cloudflare
+  // (Settings → Variables and Secrets) e não esteja neste arquivo — foi isso que estava
+  // apagando ADMIN_EMAILS (e possivelmente outras) a cada push.
+  "keep_vars": true,
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"
