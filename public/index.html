@@ -1523,8 +1523,24 @@ function matamataPronto(){
   return state.formato==="eliminacao" ? !!(state.bracketSeed && state.bracketSeed.length) : allGroupsFilled();
 }
 
+// Reseta só os dados de jogo (duplas, sorteio, grupos/eliminação, mata-mata, arbitragem) e
+// preserva os campos de identidade/nuvem — state = defaultState() sozinho zerava cloudId, e
+// como syncTorneio() se recusa a sincronizar sem cloudId, o reset nem persistia na nuvem
+// (voltava tudo assim que o app recarregasse os dados do servidor).
 function resetTudo(){
-  state = defaultState();
+  const preservar = {
+    cloudId: state.cloudId,
+    cloudNome: state.cloudNome,
+    codigo: state.codigo,
+    aprovacaoStatus: state.aprovacaoStatus,
+    dataInicio: state.dataInicio,
+    dataFim: state.dataFim,
+    pagamento: state.pagamento,
+    valorOverride: state.valorOverride,
+    headerImage: state.headerImage,
+    telegramBot: state.telegramBot
+  };
+  state = Object.assign(defaultState(), preservar);
   save();
 }
 
