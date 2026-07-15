@@ -655,6 +655,26 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     }
   }
 
+  // Se o valor definido pelo admin não bate com o que o cupom aplicado geraria automaticamente,
+  // ele está efetivamente sobrescrevendo/ignorando o desconto — nesse caso, esse uso não deveria
+  // contar pro limite do cupom. cupomUsoRevertido evita reverter de novo numa aprovação seguinte
+  // deste mesmo torneio (só acontece uma vez).
+  if (typeof body.valor === "number" && dados.cupomAplicado && !dados.cupomUsoRevertido) {
+    const diasParaCupom = calcularDias(dados.dataInicio, dados.dataFim);
+    const valorEsperadoComCupom = calcularValorComCupom(diasParaCupom, dados.cupomAplicado);
+    const bateComEsperado = Math.round(body.valor * 100) === Math.round(valorEsperadoComCupom * 100);
+    if (!bateComEsperado) {
+      const listaCupons = await getCuponsIndex(env);
+      const cupomIdx = listaCupons.findIndex((c) => c.nomeNormalizado === normalizarNomeCupom(dados.cupomAplicado.nome));
+      if (cupomIdx >= 0) {
+        listaCupons[cupomIdx].usos = Math.max(0, (listaCupons[cupomIdx].usos || 0) - 1);
+        listaCupons[cupomIdx].updatedAt = new Date().toISOString();
+        await saveCuponsIndex(env, listaCupons);
+      }
+      dados.cupomUsoRevertido = true;
+    }
+  }
+
   dados.updatedAt = new Date().toISOString();
 
   const meta = {

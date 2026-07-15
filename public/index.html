@@ -2555,46 +2555,48 @@ function renderStory(canvas, H){
   canvas.height = H;
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
-  const OCEAN = "#0E7C7B", OCEAN_DEEP = "#0B3C49", SAND = "#EDE3CC", WHITE = "#FFFCF6", MUTED = "#6B7C7A";
+  const GREEN = "#008200", GREEN_DEEP = "#0F3D1D", WHITE = "#FFFFFF", MUTED_ON_GREEN = "rgba(255,255,255,0.8)";
 
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = SAND;
+  const bg = ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0, GREEN);
+  bg.addColorStop(1, GREEN_DEEP);
+  ctx.fillStyle = bg;
   ctx.fillRect(0,0,W,H);
 
-  const headerH = 300;
+  const headerH = 260;
   const headerImg = getStoryHeaderImage();
-  const grad = ctx.createLinearGradient(0,0,W,headerH);
-  grad.addColorStop(0, OCEAN);
-  grad.addColorStop(1, OCEAN_DEEP);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,W,headerH);
-
   if(headerImg){
     drawImageContain(ctx, headerImg, 0, 0, W, headerH);
+  } else {
+    ctx.textAlign = "center";
+    ctx.fillStyle = WHITE;
+    ctx.font = "bold 50px Arial, sans-serif";
+    ctx.fillText(truncate(ctx, "🏐 " + (state.cloudNome || "Campeonato de Futevôlei"), W-100), W/2, headerH/2+16);
   }
 
   let cursorY;
   if(!state.drawn){
     ctx.textAlign = "center";
-    ctx.fillStyle = OCEAN_DEEP;
+    ctx.fillStyle = WHITE;
     ctx.font = "600 42px Arial, sans-serif";
     ctx.fillText("Sorteie as duplas para", W/2, headerH+180);
     ctx.fillText("gerar a imagem do campeonato", W/2, headerH+240);
     cursorY = headerH+300;
   } else if(state.formato==="eliminacao" && !matamataPronto()){
     ctx.textAlign = "center";
-    ctx.fillStyle = OCEAN_DEEP;
+    ctx.fillStyle = WHITE;
     ctx.font = "600 42px Arial, sans-serif";
     ctx.fillText("Fase de eliminação", W/2, headerH+160);
     ctx.fillText(`Rodada ${state.elimRodadas.length} em andamento`, W/2, headerH+220);
     ctx.font = "600 30px Arial, sans-serif";
-    ctx.fillStyle = MUTED;
+    ctx.fillStyle = MUTED_ON_GREEN;
     ctx.fillText(`${elimVivas().length} duplas seguem vivas`, W/2, headerH+280);
     cursorY = headerH+340;
   } else if(state.formato==="eliminacao"){
-    cursorY = drawBracket(ctx, W, headerH+80);
+    cursorY = drawBracket(ctx, W, headerH+60);
   } else {
-    const groupsBottom = drawGroupsSection(ctx, W, headerH+80);
+    const groupsBottom = drawGroupsSection(ctx, W, headerH+60);
     cursorY = drawBracket(ctx, W, groupsBottom+50);
   }
 
@@ -2602,10 +2604,10 @@ function renderStory(canvas, H){
 }
 
 function drawGroupsSection(ctx, W, startY){
-  const OCEAN_DEEP = "#0B3C49", MUTED = "#6B7C7A", WHITE = "#FFFCF6", LIGHTGREEN = "#DCEEE1";
+  const GREEN_DEEP = "#0F3D1D", WHITE = "#FFFFFF", GOLD = "#FFD34D";
 
   ctx.textAlign = "center";
-  ctx.fillStyle = MUTED;
+  ctx.fillStyle = WHITE;
   ctx.font = "600 26px Arial, sans-serif";
   ctx.fillText("FASE DE GRUPOS", W/2, startY);
 
@@ -2628,7 +2630,7 @@ function drawGroupsSection(ctx, W, startY){
       const x = cols===2 ? (margin + ci*(cardW+gap)) : (W-cardW)/2;
       const py = maxBottom;
 
-      ctx.fillStyle = OCEAN_DEEP;
+      ctx.fillStyle = GREEN_DEEP;
       roundRect(ctx, x, py, cardW, headerBarH, 8);
       ctx.fill();
       ctx.fillStyle = WHITE;
@@ -2639,17 +2641,17 @@ function drawGroupsSection(ctx, W, startY){
       const rows = standingsFor(letter);
       rows.forEach((r,i)=>{
         const ry = py + headerBarH + i*rowH;
-        ctx.fillStyle = i<2 ? LIGHTGREEN : WHITE;
+        ctx.fillStyle = i<2 ? GOLD : WHITE;
         roundRect(ctx, x, ry+3, cardW, rowH-6, 6);
         ctx.fill();
 
         ctx.textAlign = "left";
-        ctx.fillStyle = OCEAN_DEEP;
+        ctx.fillStyle = GREEN_DEEP;
         ctx.font = (i<2 ? "bold " : "600 ") + "23px Arial, sans-serif";
         ctx.fillText(truncate(ctx, `${i+1}º  ${r.nome}`, cardW-110), x+16, ry+rowH/2+5);
 
         ctx.textAlign = "right";
-        ctx.fillStyle = MUTED;
+        ctx.fillStyle = GREEN_DEEP;
         ctx.font = "600 19px Arial, sans-serif";
         ctx.fillText(r.pts + " pts", x+cardW-16, ry+rowH/2+4);
       });
@@ -2660,34 +2662,52 @@ function drawGroupsSection(ctx, W, startY){
   return maxBottom - rowGap;
 }
 
-/* ---------- Chaveamento (bracket) ---------- */
-function drawTeamBar(ctx, x, y, w, h, text, destaque){
-  const WHITE = "#FFFCF6", GOLD_BG = "#FFF2D9", OCEAN_DEEP = "#0B3C49", CORAL = "#F2652A";
+/* ---------- Chaveamento (bracket), estilo "TV de Copa do Mundo": pílulas com placar,
+   conectores em cerquilha e as duas metades convergindo pra uma Final central. ---------- */
+function drawTeamBar(ctx, x, y, w, h, text, destaque, score){
+  const WHITE = "#FFFFFF", GOLD_BG = "#FFF2D9", GREEN_DEEP = "#0F3D1D", CORAL = "#FF2B00";
   ctx.fillStyle = destaque ? GOLD_BG : WHITE;
-  roundRect(ctx, x, y, w, h, 10);
+  roundRect(ctx, x, y, w, h, h/2);
   ctx.fill();
   if(destaque){
     ctx.strokeStyle = CORAL;
     ctx.lineWidth = 3;
-    roundRect(ctx, x+1.5, y+1.5, w-3, h-3, 9);
+    roundRect(ctx, x+1.5, y+1.5, w-3, h-3, h/2-1.5);
     ctx.stroke();
   }
-  ctx.fillStyle = OCEAN_DEEP;
-  ctx.font = (destaque ? "bold " : "600 ") + "27px Arial, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(truncate(ctx, text || "A definir", w-36), x+w/2, y+h/2+9);
+
+  const hasScore = score!==null && score!==undefined;
+  let textStartX = x + 22;
+  if(hasScore){
+    const raio = h*0.36, cx = x+raio+8, cy = y+h/2;
+    ctx.fillStyle = destaque ? CORAL : GREEN_DEEP;
+    ctx.beginPath();
+    ctx.arc(cx, cy, raio, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = WHITE;
+    ctx.font = "bold " + Math.round(h*0.4) + "px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(String(score), cx, cy+h*0.14);
+    textStartX = cx + raio + 14;
+  }
+
+  ctx.fillStyle = GREEN_DEEP;
+  ctx.font = (destaque ? "bold " : "600 ") + "25px Arial, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(truncate(ctx, text || "A definir", x+w-16-textStartX), textStartX, y+h/2+9);
 }
-function drawMatchBox(ctx, x, y, w, a, b, win, barH){
+function drawMatchBox(ctx, x, y, w, a, b, m, win, barH){
   barH = barH || 50;
-  const gap = 5;
-  drawTeamBar(ctx, x, y, w, barH, a, win && a===win);
-  drawTeamBar(ctx, x, y+barH+gap, w, barH, b, win && b===win);
+  const gap = 6;
+  const scoreA = (m && m.pa!==null && m.pa!=="") ? m.pa : null;
+  const scoreB = (m && m.pb!==null && m.pb!=="") ? m.pb : null;
+  drawTeamBar(ctx, x, y, w, barH, a, win && a===win, scoreA);
+  drawTeamBar(ctx, x, y+barH+gap, w, barH, b, win && b===win, scoreB);
   return y + barH*2 + gap;
 }
 function elbowConnectorH(ctx, xLeft, xRight, y1, y2){
-  const OCEAN_DEEP = "#0B3C49";
   const xMid = xLeft + (xRight-xLeft)*0.5;
-  ctx.strokeStyle = OCEAN_DEEP;
+  ctx.strokeStyle = "rgba(255,255,255,0.65)";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(xLeft, y1); ctx.lineTo(xMid, y1);
@@ -2698,74 +2718,128 @@ function elbowConnectorH(ctx, xLeft, xRight, y1, y2){
 }
 
 function drawBracket(ctx, W, startY){
-  const OCEAN_DEEP = "#0B3C49", CORAL = "#F2652A", MUTED = "#6B7C7A";
+  const WHITE = "#FFFFFF", GOLD = "#FFD34D";
+  const labelY = startY + 30;
+  const margin = 26;
 
   const colLabel = (text, cx, y)=>{
     ctx.textAlign = "center";
-    ctx.fillStyle = MUTED;
-    ctx.font = "600 25px Arial, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = "600 22px Arial, sans-serif";
     ctx.fillText(text.toUpperCase(), cx, y);
+  };
+  const trophyLabel = (cx, y)=>{
+    ctx.textAlign = "center";
+    ctx.fillStyle = GOLD;
+    ctx.font = "bold 32px Arial, sans-serif";
+    ctx.fillText("🏆 FINAL", cx, y);
   };
 
   const rounds = totalRoundsBracket();
-  const teamsPorRodada = [];
-  const vencedoresPorRodada = [];
+  if(rounds < 1) return startY;
+
+  const teamsPorRodada = [], vencedoresPorRodada = [];
   for(let r=0; r<rounds; r++){
-    const teams = bracketTeamsForRound(r);
-    teamsPorRodada.push(teams);
+    teamsPorRodada.push(bracketTeamsForRound(r));
     vencedoresPorRodada.push(bracketWinnersForRound(r));
   }
 
-  const margin = 30;
-  const colW = 280, colGap = 90;
-  const labelY = startY + 30;
+  let cursorY;
 
-  // Posições X de cada coluna (última coluna um pouco mais estreita, "Final")
-  const colX = [];
-  for(let r=0; r<rounds; r++) colX.push(margin + r*(colW+colGap));
+  if(rounds===1){
+    // Bracket mínimo (2 duplas): só a final, sem colunas laterais.
+    const colW = 320, barH = 56;
+    trophyLabel(W/2, labelY);
+    const [a,b] = teamsPorRodada[0][0];
+    cursorY = drawMatchBox(ctx, (W-colW)/2, labelY+40, colW, a, b, state.bracket[0][0], vencedoresPorRodada[0][0], barH);
+  } else {
+    const sideRounds = rounds - 1;
+    // Larguras dinâmicas: preciso caber (sideRounds*2 + 1) colunas lado a lado (esquerda + final + direita).
+    const slots = sideRounds*2 + 1;
+    const colGap = 34;
+    const colW = Math.max(140, Math.min(260, (W - 2*margin - (slots-1)*colGap) / slots));
 
-  const nomesColuna = Array.from({length:rounds}, (_,r)=> nomeRodada(r, rounds));
-  nomesColuna.forEach((nome, r)=> colLabel(nome, colX[r]+colW/2, labelY));
-
-  // Primeira coluna: caixas empilhadas de cima a baixo
-  const barH0 = 46, boxH0 = barH0*2+5, rowGap0 = 46;
-  const top0 = labelY + 40;
-  let centros = teamsPorRodada[0].map((t,i)=> top0 + i*(boxH0+rowGap0) + boxH0/2);
-  const bottoms0 = teamsPorRodada[0].map((t,i)=>{
-    const y = top0 + i*(boxH0+rowGap0);
-    return drawMatchBox(ctx, colX[0], y, colW, t[0], t[1], vencedoresPorRodada[0][i], barH0);
-  });
-
-  let cursorY = Math.max(...bottoms0);
-
-  // Colunas seguintes: cada caixa centrada entre o par de caixas anteriores
-  for(let r=1; r<rounds; r++){
-    const barH = 46 + r*6;
-    const boxH = barH*2+5;
-    const novosCentros = [];
-    const bottoms = [];
-    for(let i=0; i<teamsPorRodada[r].length; i++){
-      const c = (centros[i*2] + centros[i*2+1]) / 2;
-      const top = c - boxH/2;
-      const [a,b] = teamsPorRodada[r][i];
-      const bottom = drawMatchBox(ctx, colX[r], top, colW, a, b, vencedoresPorRodada[r][i], barH);
-      novosCentros.push(c);
-      bottoms.push(bottom);
-      elbowConnectorH(ctx, colX[r-1]+colW, colX[r], centros[i*2], centros[i*2+1]);
+    // Divide cada rodada lateral ao meio — metade vira o lado esquerdo, metade o direito.
+    const ladoTeams = [[], []], ladoVenc = [[], []], ladoMatches = [[], []];
+    for(let r=0; r<sideRounds; r++){
+      const teams = teamsPorRodada[r], venc = vencedoresPorRodada[r], round = state.bracket[r]||[];
+      const mid = teams.length/2;
+      ladoTeams[0].push(teams.slice(0,mid)); ladoVenc[0].push(venc.slice(0,mid)); ladoMatches[0].push(round.slice(0,mid));
+      ladoTeams[1].push(teams.slice(mid)); ladoVenc[1].push(venc.slice(mid)); ladoMatches[1].push(round.slice(mid));
     }
-    centros = novosCentros;
-    cursorY = Math.max(cursorY, ...bottoms);
+
+    function desenharLado(espelhado){
+      const lado = espelhado ? 1 : 0;
+      const times = ladoTeams[lado], venc = ladoVenc[lado], matches = ladoMatches[lado];
+      const xCol = (r)=> espelhado ? (W - margin - colW - r*(colW+colGap)) : (margin + r*(colW+colGap));
+
+      const barH0 = 40, boxH0 = barH0*2+6, rowGap0 = 32;
+      const top0 = labelY + 44;
+      let centros = times[0].map((t,i)=> top0 + i*(boxH0+rowGap0) + boxH0/2);
+      let maxBottom = top0;
+
+      colLabel(nomeRodada(0, rounds), xCol(0)+colW/2, labelY);
+      times[0].forEach((t,i)=>{
+        const y = top0 + i*(boxH0+rowGap0);
+        const bottom = drawMatchBox(ctx, xCol(0), y, colW, t[0], t[1], matches[0][i], venc[0][i], barH0);
+        maxBottom = Math.max(maxBottom, bottom);
+      });
+
+      for(let r=1; r<sideRounds; r++){
+        colLabel(nomeRodada(r, rounds), xCol(r)+colW/2, labelY);
+        const barH = 40 + r*4, boxH = barH*2+6;
+        const novosCentros = [];
+        for(let i=0; i<times[r].length; i++){
+          const c = (centros[i*2] + centros[i*2+1]) / 2;
+          const top = c - boxH/2;
+          const [a,b] = times[r][i];
+          const bottom = drawMatchBox(ctx, xCol(r), top, colW, a, b, matches[r][i], venc[r][i], barH);
+          novosCentros.push(c);
+          maxBottom = Math.max(maxBottom, bottom);
+          const xOuter = espelhado ? xCol(r-1) : xCol(r-1)+colW;
+          const xInner = espelhado ? xCol(r)+colW : xCol(r);
+          if(espelhado) elbowConnectorH(ctx, xInner, xOuter, centros[i*2], centros[i*2+1]);
+          else elbowConnectorH(ctx, xOuter, xInner, centros[i*2], centros[i*2+1]);
+        }
+        centros = novosCentros;
+      }
+
+      const xInner = espelhado ? xCol(sideRounds-1) : xCol(sideRounds-1)+colW;
+      return {centro: centros[0], bottom: maxBottom, xInner};
+    }
+
+    const esquerda = desenharLado(false);
+    const direita = desenharLado(true);
+
+    const finalCentroY = (esquerda.centro + direita.centro) / 2;
+    const finalBarH = 52, finalBoxH = finalBarH*2+6;
+    const finalX = (W-colW)/2;
+
+    trophyLabel(finalX+colW/2, labelY);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.65)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(esquerda.xInner, finalCentroY); ctx.lineTo(finalX, finalCentroY);
+    ctx.moveTo(direita.xInner, finalCentroY); ctx.lineTo(finalX+colW, finalCentroY);
+    ctx.stroke();
+
+    const finalTeams = teamsPorRodada[rounds-1][0];
+    const finalMatch = (state.bracket[rounds-1]||[])[0];
+    const finalBottom = drawMatchBox(ctx, finalX, finalCentroY-finalBoxH/2, colW, finalTeams[0], finalTeams[1], finalMatch, vencedoresPorRodada[rounds-1][0], finalBarH);
+
+    cursorY = Math.max(esquerda.bottom, direita.bottom, finalBottom);
   }
 
   cursorY += 80;
   const finalWin = champion();
   if(finalWin){
     ctx.textAlign = "center";
-    ctx.fillStyle = CORAL;
+    ctx.fillStyle = GOLD;
     ctx.font = "600 30px Arial, sans-serif";
     ctx.fillText("🏆 CAMPEÃO DO TORNEIO", W/2, cursorY);
     cursorY += 66;
-    ctx.fillStyle = OCEAN_DEEP;
+    ctx.fillStyle = WHITE;
     ctx.font = "bold 62px Arial, sans-serif";
     ctx.fillText(truncate(ctx, finalWin, W-160), W/2, cursorY);
   }
@@ -2776,7 +2850,7 @@ function drawBracket(ctx, W, startY){
     cursorY += 90;
     colLabel("3º e 4º lugar", W/2, cursorY-20);
     const terceiroW = 420, terceiroX = (W-terceiroW)/2;
-    cursorY = drawMatchBox(ctx, terceiroX, cursorY, terceiroW, la, lb, tWin);
+    cursorY = drawMatchBox(ctx, terceiroX, cursorY, terceiroW, la, lb, state.terceiro, tWin, 50);
   }
 
   return cursorY;
@@ -3338,6 +3412,42 @@ function renderCuponsAdminScreen(){
   return html;
 }
 
+// Junta os jogos pendentes de todas as fases já em andamento (grupos/eliminação, mata-mata e
+// disputa de 3º lugar) — assim que uma fase nova é sorteada os jogos dela já aparecem aqui, e
+// assim que um jogo é finalizado ele some da lista (nada de limite fixo de quantidade).
+function listaProximosJogos(){
+  const itens = [];
+  if(state.formato==="eliminacao"){
+    const rodadaAtual = elimRodadaAtual();
+    if(rodadaAtual){
+      rodadaAtual.matches.filter(m=>!partidaFinalizada(m)).forEach(m=>{
+        itens.push({tag:`Rodada ${state.elimRodadas.length}`, a:m.a, b:m.b});
+      });
+    }
+  } else {
+    state.groupMatches.filter(m=>!partidaFinalizada(m)).forEach(m=>{
+      itens.push({tag:`${m.group}${m.jogo}`, a:m.a, b:m.b});
+    });
+  }
+  const totalRounds = totalRoundsBracket();
+  for(let r=0; r<totalRounds; r++){
+    const teams = bracketTeamsForRound(r);
+    const round = state.bracket[r] || [];
+    teams.forEach((t,i)=>{
+      if(t[0] && t[1] && !partidaFinalizada(round[i])){
+        itens.push({tag: nomeRodada(r, totalRounds), a:t[0], b:t[1]});
+      }
+    });
+  }
+  if(state.terceiroLugar){
+    const [a,b] = semifinalLosers();
+    if(a && b && !partidaFinalizada(state.terceiro)){
+      itens.push({tag:"3º lugar", a, b});
+    }
+  }
+  return itens;
+}
+
 function renderResumo(){
   const elimTotal = state.bracket.reduce((acc,round)=>acc.concat(round), []);
   const elimFeitos = elimTotal.filter(m=>partidaFinalizada(m)).length;
@@ -3362,18 +3472,6 @@ function renderResumo(){
 
     html += `<div class="section-title" style="margin-top:6px;">Situação das duplas</div>`;
     html += renderSituacaoEliminacaoLista();
-
-    const rodadaAtual = elimRodadaAtual();
-    if(rodadaAtual){
-      const pendentesRodada = rodadaAtual.matches.filter(m=>!partidaFinalizada(m)).slice(0,3);
-      if(pendentesRodada.length){
-        html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
-        pendentesRodada.forEach(m=>{
-          html += `<div class="match"><span class="team">${escapeHtml(m.a)}</span><span class="x">vs</span><span class="team">${escapeHtml(m.b)}</span></div>`;
-        });
-        html += `</div>`;
-      }
-    }
   } else {
     const jogosGrupo = state.groupMatches.filter(m=>partidaFinalizada(m)).length;
     html += `<div class="stat-grid">
@@ -3398,14 +3496,15 @@ function renderResumo(){
       html += `</div></div>`;
     });
 
-    const pendentes = state.groupMatches.filter(m=>!partidaFinalizada(m)).slice(0,3);
-    if(pendentes.length){
-      html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
-      pendentes.forEach(m=>{
-        html += `<div class="match"><span class="group-tag">${m.group}${m.jogo}</span><span class="team">${m.a}</span><span class="x">vs</span><span class="team">${m.b}</span></div>`;
-      });
-      html += `</div>`;
-    }
+  }
+
+  const proximosJogos = listaProximosJogos();
+  if(proximosJogos.length){
+    html += `<div class="section-title" style="margin-top:14px;">Próximos jogos</div><div class="card">`;
+    proximosJogos.forEach(j=>{
+      html += `<div class="match">${j.tag ? `<span class="group-tag">${escapeHtml(j.tag)}</span>` : ""}<span class="team">${escapeHtml(j.a)}</span><span class="x">vs</span><span class="team">${escapeHtml(j.b)}</span></div>`;
+    });
+    html += `</div>`;
   }
 
   html += `<div class="section-title" style="margin-top:14px;">Compartilhar</div>
