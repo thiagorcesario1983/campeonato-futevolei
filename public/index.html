@@ -598,15 +598,21 @@
       <div class="spinner"></div>
       <div class="loading-msg" id="loading-msg"></div>
     </div>
-    <nav class="tabbar">
+    <nav class="tabbar" id="nav-torneio">
       <button data-tab="resumo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="lbl">Resumo</span></button>
       <button data-tab="sorteio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 9h.01M16 9h.01M8 15l4-3 4 3"/></svg><span class="lbl">Duplas</span></button>
       <button data-tab="jogos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Jogos</span></button>
       <button data-tab="classificacao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V10M12 19V4M20 19v-6"/></svg><span class="lbl">Tabela</span></button>
       <button data-tab="matamata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h4v4H4zM4 15h4v4H4zM16 10h4v4h-4zM8 7h4v0M8 17h4v0M12 7v6M12 13v4M12 12h4"/></svg><span class="lbl">Mata-mata</span><span class="nav-badge" id="nav-badge-matamata"></span></button>
-      <button data-tab="configuracoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
       <button data-tab="fluxo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="9" y="15" width="6" height="6" rx="1"/><path d="M6 9v3a3 3 0 0 0 3 3M18 9v3a3 3 0 0 1-3 3"/></svg><span class="lbl">Fluxo Jogos</span></button>
       <button data-tab="placar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="lbl">Placar</span></button>
+      <button data-tab="configuracoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
+    </nav>
+    <nav class="tabbar" id="nav-admin" style="display:none;">
+      <button data-tela-admin="lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg><span class="lbl">Torneios</span></button>
+      <button data-tela-admin="aprovacoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg><span class="lbl">Aprovações</span></button>
+      <button data-tela-admin="cupons"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V8z"/><path d="M9 6v10" stroke-dasharray="2 2"/></svg><span class="lbl">Cupons</span></button>
+      <button data-tela-admin="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
     </nav>
   </div>
 </div>
@@ -645,6 +651,7 @@ function defaultState(){
     dataFim: null,
     pagamento: null, // {status:"pendente"|"pago", valor, dias, paymentId, copiaCola, qrCodeBase64, criadoEm, pagoEm} — null até o Pix ser gerado
     valorOverride: null, // valor do Pix definido manualmente pelo admin na aprovação (sobrescreve o cálculo automático de dias × R$ 70)
+    cupomAplicado: null, // {nome, percentual} — travado no momento da criação, nunca muda depois mesmo que o cupom seja editado/bloqueado
     headerImage: null, // data URL da imagem de topo customizada para este campeonato (opcional)
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
     apitoMatchId: null
@@ -825,9 +832,13 @@ function statusTorneio(){
 let torneiosList = null;
 let torneiosLoading = false;
 let syncTimer = null;
-let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" — só usada quando ehAdmin()
+let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" | "cupons" — só usada quando ehAdmin()
 let mostrarFormNovoTorneio = false;
 let adminNotificationEmailCache = "";
+let cuponsList = null;
+let cuponsLoading = false;
+let mostrarFormNovoCupom = false;
+let cupomValidacaoCache = {}; // {nomeDigitado: {valido, percentual, motivo}} — evita revalidar a cada tecla
 let placarSelecionados = new Set(); // matchIds escolhidos na aba Placar
 
 const LOCAL_TORNEIOS_KEY = "futevolei_local_torneios_v1";
@@ -954,6 +965,95 @@ async function fetchTorneiosList(){
   render();
 }
 
+/* ---------- Cupons de desconto (admin) ---------- */
+async function fetchCuponsList(){
+  if(cuponsLoading) return;
+  cuponsLoading = true;
+  try{
+    const res = await fetch(`/api/cupons-list?email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    cuponsList = data.cupons || [];
+  }catch(e){
+    cuponsList = [];
+    showToast("Não foi possível carregar os cupons.");
+  }
+  cuponsLoading = false;
+  render();
+}
+
+async function criarCupom(payload){
+  showLoading("Cadastrando cupom...");
+  try{
+    const res = await fetch("/api/cupons-salvar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ email: auth.email, ...payload })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao cadastrar cupom");
+    mostrarFormNovoCupom = false;
+    showToast("Cupom cadastrado!");
+    await fetchCuponsList();
+  }catch(e){
+    showToast(e.message || "Falha ao cadastrar cupom.");
+  }finally{
+    hideLoading();
+  }
+}
+
+async function removerCupom(nome){
+  if(!confirm(`Remover o cupom "${nome}"? Torneios que já usaram esse cupom não são afetados.`)) return;
+  showLoading("Removendo cupom...");
+  try{
+    const res = await fetch("/api/cupons-remover", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ email: auth.email, nome })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao remover cupom");
+    showToast("Cupom removido.");
+    await fetchCuponsList();
+  }catch(e){
+    showToast(e.message || "Falha ao remover cupom.");
+  }finally{
+    hideLoading();
+  }
+}
+
+async function alternarBloqueioCupom(nome, bloquear){
+  showLoading(bloquear ? "Bloqueando cupom..." : "Desbloqueando cupom...");
+  try{
+    const res = await fetch("/api/cupons-bloquear", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ email: auth.email, nome, bloquear })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao atualizar cupom");
+    showToast(bloquear ? "Cupom bloqueado." : "Cupom desbloqueado.");
+    await fetchCuponsList();
+  }catch(e){
+    showToast(e.message || "Falha ao atualizar cupom.");
+  }finally{
+    hideLoading();
+  }
+}
+
+// Checagem "ao vivo" do cupom digitado na criação de um torneio — cacheada por nome digitado
+// pra não bater na API a cada tecla de novo com o mesmo valor.
+async function validarCupomDigitado(nome){
+  const chave = (nome||"").trim().toUpperCase();
+  if(!chave) return null;
+  if(cupomValidacaoCache[chave]) return cupomValidacaoCache[chave];
+  try{
+    const res = await fetch(`/api/cupons-validar?nome=${encodeURIComponent(chave)}`, { cache:"no-store" });
+    const data = await res.json();
+    cupomValidacaoCache[chave] = data;
+    return data;
+  }catch(e){
+    return { valido:false, motivo:"Não foi possível checar o cupom agora." };
+  }
+}
+
 // Máscara de moeda estilo "caixa eletrônico": os dígitos digitados sempre entram pela direita
 // (representam centavos), então o valor cresce da direita pra esquerda — sem precisar digitar
 // vírgula nem se preocupar com posição do cursor. Ex: digitar 1,2,3,4 vira R$ 12,34.
@@ -974,22 +1074,65 @@ function valorMascaradoParaNumero(texto){
   return Number(digits) / 100;
 }
 
-function textoPreviewValorDiarias(dataInicio, dataFim){
+// cupomInfo é opcional — só é usado na tela de criação de torneio (a de Aprovações passa só
+// as datas, sem cupom, já que ali o cupom já foi decidido lá atrás, na criação).
+function textoPreviewValorDiarias(dataInicio, dataFim, cupomInfo){
   const dias = calcularDiasLocal(dataInicio, dataFim);
   if(!dias) return "";
-  const valor = dias*70;
-  return `💰 ${dias} diária${dias>1?"s":""} × R$ 70,00 = R$ ${valor.toFixed(2).replace(".", ",")}`;
+  const subtotal = dias*70;
+  let html = `💰 ${dias} diária${dias>1?"s":""} × R$ 70,00 = R$ ${subtotal.toFixed(2).replace(".", ",")}`;
+  if(cupomInfo && cupomInfo.valido){
+    const desconto = subtotal*(cupomInfo.percentual/100);
+    const total = subtotal-desconto;
+    html += `<br>🎟️ Desconto do cupom (-${cupomInfo.percentual}%): -R$ ${desconto.toFixed(2).replace(".", ",")}`;
+    html += `<br><b>Total: R$ ${total.toFixed(2).replace(".", ",")}</b>`;
+  }
+  return html;
 }
+
+let cupomInfoNovoTorneio = null; // {valido, percentual, motivo} da última checagem do cupom digitado
+let cupomNovoTorneioTimer = null;
 
 function atualizarPreviewValorDiarias(){
   const el = document.getElementById("preview-valor-diarias");
   const iEl = document.getElementById("input-novo-inicio");
   const fEl = document.getElementById("input-novo-fim");
   if(!el || !iEl || !fEl) return;
-  el.textContent = textoPreviewValorDiarias(iEl.value, fEl.value);
+  el.innerHTML = textoPreviewValorDiarias(iEl.value, fEl.value, cupomInfoNovoTorneio);
 }
 
-async function criarNovoTorneio(nome, dataInicio, dataFim){
+// Checa o cupom digitado na criação do torneio (com debounce) e atualiza tanto a mensagem de
+// aceito/recusado quanto o subtotal — sem precisar de um render() completo (não perde o foco/
+// os outros campos já preenchidos).
+function atualizarCupomNovoTorneio(){
+  const inputCupom = document.getElementById("input-novo-cupom");
+  const feedback = document.getElementById("feedback-cupom-novo-torneio");
+  if(!inputCupom || !feedback) return;
+  const nome = inputCupom.value.trim();
+  clearTimeout(cupomNovoTorneioTimer);
+  if(!nome){
+    cupomInfoNovoTorneio = null;
+    feedback.textContent = "";
+    atualizarPreviewValorDiarias();
+    return;
+  }
+  feedback.textContent = "Checando cupom...";
+  feedback.style.color = "var(--muted)";
+  cupomNovoTorneioTimer = setTimeout(async ()=>{
+    const resultado = await validarCupomDigitado(nome);
+    cupomInfoNovoTorneio = resultado;
+    if(resultado.valido){
+      feedback.textContent = `✅ Cupom aceito: ${resultado.percentual}% de desconto.`;
+      feedback.style.color = "var(--grass)";
+    } else {
+      feedback.textContent = `⚠️ ${resultado.motivo || "Cupom inválido."}`;
+      feedback.style.color = "var(--coral)";
+    }
+    atualizarPreviewValorDiarias();
+  }, 500);
+}
+
+async function criarNovoTorneio(nome, dataInicio, dataFim, cupomNome){
   state = defaultState();
   state.tournamentId = Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4);
   state.cloudNome = nome;
@@ -1001,11 +1144,16 @@ async function criarNovoTorneio(nome, dataInicio, dataFim){
   try{
     const res = await fetch("/api/torneios-save", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, dataInicio, dataFim, state })
+      body: JSON.stringify({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, dataInicio, dataFim, cupomNome: cupomNome||null, state })
     });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
-    if(data.id){ state.cloudId = data.id; state.codigo = data.codigo || null; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    if(data.id){
+      state.cloudId = data.id;
+      state.codigo = data.codigo || null;
+      state.cupomAplicado = data.cupomAplicado || null;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
     showToast("Torneio solicitado! Aguardando aprovação do admin.");
   }catch(e){
     const meta = saveTorneioLocalFallback({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, dataInicio, dataFim, state });
@@ -1158,6 +1306,7 @@ function abrirTorneioComDados(data){
   state.dataFim = data.dataFim || null;
   state.pagamento = data.pagamento || null;
   state.valorOverride = (typeof data.valorOverride === "number") ? data.valorOverride : null;
+  state.cupomAplicado = data.cupomAplicado || null;
   state.tab = "resumo";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   telegramStatus = {};
@@ -1227,6 +1376,7 @@ async function refreshTorneioAtual(chamadaInicial){
       state.dataFim = data.dataFim || null;
       state.pagamento = data.pagamento || null;
       state.valorOverride = (typeof data.valorOverride === "number") ? data.valorOverride : null;
+      state.cupomAplicado = data.cupomAplicado || null;
       state.tab = tabAtual;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       telegramStatus = {};
@@ -2749,13 +2899,15 @@ function atualizarHeader(){
 }
 
 function render(){
-  const nav = document.querySelector("nav.tabbar");
+  const nav = document.getElementById("nav-torneio");
+  const navAdmin = document.getElementById("nav-admin");
   const torneioBar = document.getElementById("torneio-bar");
   stopRefTick();
   atualizarHeader();
 
   if(!auth){
     nav.style.display = "none";
+    navAdmin.style.display = "none";
     torneioBar.innerHTML = "";
     main.innerHTML = renderLoginScreen();
     bindEvents();
@@ -2765,6 +2917,12 @@ function render(){
 
   if(!state.cloudId){
     nav.style.display = "none";
+    navAdmin.style.display = ehAdmin() ? "flex" : "none";
+    if(ehAdmin()){
+      navAdmin.querySelectorAll("button").forEach(b=>{
+        b.classList.toggle("active", b.dataset.telaAdmin===telaAdmin);
+      });
+    }
     torneioBar.innerHTML = "";
     main.innerHTML = renderTorneiosScreen();
     bindEvents();
@@ -2773,6 +2931,7 @@ function render(){
 
   if(!ehAdmin() && !torneioEstaAtivo().ok){
     nav.style.display = "none";
+    navAdmin.style.display = "none";
     torneioBar.innerHTML = `<div class="torneio-bar">
       <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}${state.codigo ? ` <span style="opacity:.6;font-family:'DM Mono',monospace;font-size:11px;">#${escapeHtml(state.codigo)}</span>` : ""}</span>
       <button class="voltar" id="btn-voltar-torneios">Trocar torneio</button>
@@ -2784,6 +2943,7 @@ function render(){
 
   if(state.tab==="apito" && state.apitoMatchId){
     nav.style.display = "none";
+    navAdmin.style.display = "none";
     torneioBar.innerHTML = "";
     main.innerHTML = renderApito();
     bindEvents();
@@ -2792,12 +2952,13 @@ function render(){
   }
 
   nav.style.display = "flex";
+  navAdmin.style.display = "none";
   torneioBar.innerHTML = `<div class="torneio-bar">
     <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}${state.codigo ? ` <span style="opacity:.6;font-family:'DM Mono',monospace;font-size:11px;">#${escapeHtml(state.codigo)}</span>` : ""}</span>
     <button class="voltar" id="btn-voltar-torneios">Trocar torneio</button>
   </div>`;
 
-  document.querySelectorAll("nav.tabbar button").forEach(b=>{
+  document.querySelectorAll("#nav-torneio button").forEach(b=>{
     b.classList.toggle("active", b.dataset.tab===state.tab);
   });
   const badge = document.getElementById("nav-badge-matamata");
@@ -2901,6 +3062,13 @@ function calcularDiasLocal(dataInicio, dataFim){
   if(isNaN(ini) || isNaN(fim) || fim<ini) return 0;
   return Math.round((fim-ini)/86400000) + 1;
 }
+// Mesmo cálculo do worker.ts (calcularValorComCupom) — desconto sobre o subtotal automático,
+// nunca sobre um valorOverride manual do admin (esse já é a palavra final).
+function calcularValorComCupomLocal(dias, cupomAplicado){
+  const subtotal = dias*70;
+  const desconto = cupomAplicado?.percentual ? subtotal*(cupomAplicado.percentual/100) : 0;
+  return Math.max(0, subtotal-desconto);
+}
 
 function isLocalHost(){
   const h = location.hostname;
@@ -2962,20 +3130,16 @@ function renderTorneiosScreen(){
       <button class="btn ghost" id="btn-logout" style="width:auto;padding:7px 14px;">Sair</button>
     </div>`;
 
-  if(ehAdmin()){
-    html += `<div style="display:flex;gap:8px;margin-bottom:14px;">
-      <div class="chip ${telaAdmin==="config"?"active":""}" data-tela-admin="config" style="flex:1;text-align:center;">Configurações</div>
-      <div class="chip ${telaAdmin==="lista"?"active":""}" data-tela-admin="lista" style="flex:1;text-align:center;">Torneios</div>
-      <div class="chip ${telaAdmin==="aprovacoes"?"active":""}" data-tela-admin="aprovacoes" style="flex:1;text-align:center;">Aprovações</div>
-    </div>`;
-  }
-
   if(ehAdmin() && telaAdmin==="config"){
     html += renderConfigAdminScreen();
     return html;
   }
   if(ehAdmin() && telaAdmin==="aprovacoes"){
     html += renderAprovacoesScreen();
+    return html;
+  }
+  if(ehAdmin() && telaAdmin==="cupons"){
+    html += renderCuponsAdminScreen();
     return html;
   }
 
@@ -2990,7 +3154,10 @@ function renderTorneiosScreen(){
       <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Data de início</label>
       <input type="date" id="input-novo-inicio" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
       <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Data de fim</label>
-      <input type="date" id="input-novo-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:6px;">
+      <input type="date" id="input-novo-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Cupom de desconto (opcional)</label>
+      <input type="text" id="input-novo-cupom" placeholder="ex: JOAO10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;text-transform:uppercase;margin-bottom:4px;">
+      <div id="feedback-cupom-novo-torneio" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
       <div id="preview-valor-diarias" style="font-size:13px;font-weight:600;color:var(--heading);margin-bottom:10px;">${textoPreviewValorDiarias(hoje, hoje)}</div>
       <div class="hint" style="margin-bottom:14px;">O torneio só fica liberado para uso depois que o admin aprovar, o Pix das diárias for pago, e dentro desse período informado. O valor final é sempre recalculado na hora de gerar o Pix — essa é só uma estimativa.</div>
       <div style="display:flex;gap:8px;">
@@ -3088,6 +3255,7 @@ function renderAprovacoesScreen(){
       </div>
       <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:6px;">#${escapeHtml(t.codigo||"—")}</div>
       <div class="sub" style="margin-bottom:10px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
+      ${t.cupomAplicado ? `<div class="sub" style="margin-bottom:10px;">🎟️ Cupom aplicado: <b>${escapeHtml(t.cupomAplicado.nome)}</b> (-${t.cupomAplicado.percentual}%)</div>` : ""}
       <div style="margin-bottom:6px;">
         <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Início</label>
         <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:12px;box-sizing:border-box;margin-bottom:6px;overflow:hidden;">
@@ -3097,7 +3265,7 @@ function renderAprovacoesScreen(){
       <div id="preview-valor-aprov-${t.id}" style="font-size:11px;color:var(--muted);margin-bottom:4px;">${textoPreviewValorDiarias(t.dataInicio, t.dataFim)}</div>
       <div style="margin-bottom:10px;">
         <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Valor do Pix (R$) — zere para liberar de graça</label>
-        <input type="text" inputmode="numeric" data-aprov-valor="${t.id}" value="${formatarCentavosBRL(String(Math.round((t.valorOverride ?? (calcularDiasLocal(t.dataInicio, t.dataFim) * 70)) * 100)))}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;font-family:'DM Mono',monospace;box-sizing:border-box;">
+        <input type="text" inputmode="numeric" data-aprov-valor="${t.id}" value="${formatarCentavosBRL(String(Math.round((t.valorOverride ?? calcularValorComCupomLocal(calcularDiasLocal(t.dataInicio, t.dataFim), t.cupomAplicado)) * 100)))}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;font-family:'DM Mono',monospace;box-sizing:border-box;">
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn" data-aprovar="${t.id}" style="flex:1;background:var(--grass);box-shadow:none;">✅ Aprovar</button>
@@ -3106,6 +3274,67 @@ function renderAprovacoesScreen(){
       </div>
     </div>`;
   });
+  return html;
+}
+
+function badgeCupom(c){
+  if(c.status==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
+  return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativo</span>`;
+}
+
+function renderCuponsAdminScreen(){
+  if(cuponsList===null && !cuponsLoading) fetchCuponsList();
+
+  let html = `<div class="section-title">Cupons de desconto</div>
+    <div class="section-sub">Cadastre cupons pra dar desconto no valor das diárias na hora de criar um torneio. O nome do cupom é único (sem diferenciar maiúsculas/minúsculas) e não pode se repetir.</div>`;
+
+  if(mostrarFormNovoCupom){
+    const hoje = hojeLocalISO();
+    html += `<div class="card" style="border:1.5px solid var(--ocean);">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do cupom</label>
+      <input type="text" id="input-novo-cupom-nome" placeholder="ex: JOAO10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Percentual de desconto (%)</label>
+      <input type="number" id="input-novo-cupom-percentual" min="1" max="100" step="1" placeholder="10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Início da validade</label>
+      <input type="date" id="input-novo-cupom-inicio" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Fim da validade</label>
+      <input type="date" id="input-novo-cupom-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Máximo de usos (opcional)</label>
+      <input type="number" id="input-novo-cupom-max-usos" min="1" step="1" placeholder="deixe em branco para ilimitado" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:6px;">
+      <div class="hint" style="margin-bottom:14px;">O cupom nasce ativo. Ele vale só dentro do período informado acima e enquanto não atingir o máximo de usos (se definido).</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="btn-cancelar-novo-cupom" style="flex:1;">Cancelar</button>
+        <button class="btn" id="btn-confirmar-novo-cupom" style="flex:1;">Cadastrar</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<button class="btn" id="btn-novo-cupom" style="margin-bottom:18px;">➕ Cadastrar novo cupom</button>`;
+  }
+
+  if(cuponsList===null){
+    html += `<div class="card empty">Carregando cupons...</div>`;
+  } else if(!cuponsList.length){
+    html += `<div class="card empty"><span class="ball-icon">🎟️</span>Nenhum cupom cadastrado ainda.</div>`;
+  } else {
+    cuponsList.slice().sort((a,b)=> a.nome.localeCompare(b.nome)).forEach(c=>{
+      const usoTexto = typeof c.maxUsos==="number" ? `${c.usos} / ${c.maxUsos} usos` : `${c.usos} uso${c.usos===1?"":"s"} (ilimitado)`;
+      html += `<div class="card" style="margin-bottom:14px;">
+        <div class="row" style="margin-bottom:2px;">
+          <span class="nome" style="font-weight:700;font-family:'DM Mono',monospace;">${escapeHtml(c.nome)}</span>
+          ${badgeCupom(c)}
+        </div>
+        <div class="sub" style="margin-bottom:4px;">${c.percentual}% de desconto · ${usoTexto}</div>
+        <div class="sub" style="margin-bottom:10px;">Válido de ${formatarDataBR(c.dataInicio)} até ${formatarDataBR(c.dataFim)}</div>
+        <div style="display:flex;gap:8px;">
+          ${c.status==="bloqueado"
+            ? `<button class="btn" data-cupom-desbloquear="${escapeHtml(c.nome)}" style="flex:1;background:var(--grass);box-shadow:none;">🔓 Desbloquear</button>`
+            : `<button class="btn ghost" data-cupom-bloquear="${escapeHtml(c.nome)}" style="flex:1;border-color:var(--muted);color:var(--muted);">🔒 Bloquear</button>`
+          }
+          <button class="btn ghost" data-cupom-remover="${escapeHtml(c.nome)}" style="flex:1;border-color:var(--coral);color:var(--coral);">🗑️ Remover</button>
+        </div>
+      </div>`;
+    });
+  }
   return html;
 }
 
@@ -3925,32 +4154,35 @@ function bindEvents(){
   const btnNovoTorneio = document.getElementById("btn-novo-torneio");
   if(btnNovoTorneio) btnNovoTorneio.addEventListener("click", ()=>{
     mostrarFormNovoTorneio = true;
+    cupomInfoNovoTorneio = null;
     render();
   });
   const btnCancelarNovoTorneio = document.getElementById("btn-cancelar-novo-torneio");
   if(btnCancelarNovoTorneio) btnCancelarNovoTorneio.addEventListener("click", ()=>{
     mostrarFormNovoTorneio = false;
+    cupomInfoNovoTorneio = null;
     render();
   });
   const inputNovoInicio = document.getElementById("input-novo-inicio");
   const inputNovoFim = document.getElementById("input-novo-fim");
   if(inputNovoInicio) inputNovoInicio.addEventListener("input", atualizarPreviewValorDiarias);
   if(inputNovoFim) inputNovoFim.addEventListener("input", atualizarPreviewValorDiarias);
+  const inputNovoCupom = document.getElementById("input-novo-cupom");
+  if(inputNovoCupom) inputNovoCupom.addEventListener("input", atualizarCupomNovoTorneio);
   const btnConfirmarNovoTorneio = document.getElementById("btn-confirmar-novo-torneio");
   if(btnConfirmarNovoTorneio) btnConfirmarNovoTorneio.addEventListener("click", ()=>{
     const nome = (document.getElementById("input-novo-nome").value||"").trim();
     const dataInicio = document.getElementById("input-novo-inicio").value;
     const dataFim = document.getElementById("input-novo-fim").value;
+    const cupomNome = (document.getElementById("input-novo-cupom").value||"").trim();
     if(!nome){ showToast("Dê um nome para o torneio."); return; }
     if(!dataInicio || !dataFim){ showToast("Informe as datas de início e fim."); return; }
     if(dataFim < dataInicio){ showToast("A data de fim não pode ser antes da data de início."); return; }
-    criarNovoTorneio(nome, dataInicio, dataFim);
-  });
-  main.querySelectorAll("[data-tela-admin]").forEach(el=>{
-    el.addEventListener("click", ()=>{
-      telaAdmin = el.dataset.telaAdmin;
-      render();
-    });
+    if(cupomNome && !(cupomInfoNovoTorneio && cupomInfoNovoTorneio.valido)){
+      showToast("O cupom digitado não é válido — corrija ou apague o campo antes de continuar.");
+      return;
+    }
+    criarNovoTorneio(nome, dataInicio, dataFim, cupomNome);
   });
   main.querySelectorAll("[data-aprovar],[data-recusar],[data-bloquear]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
@@ -3980,6 +4212,40 @@ function bindEvents(){
       const preview = document.getElementById(`preview-valor-aprov-${id}`);
       if(preview) preview.textContent = textoPreviewValorDiarias(inputInicio?.value, inputFim?.value);
     });
+  });
+  const btnNovoCupom = document.getElementById("btn-novo-cupom");
+  if(btnNovoCupom) btnNovoCupom.addEventListener("click", ()=>{
+    mostrarFormNovoCupom = true;
+    render();
+  });
+  const btnCancelarNovoCupom = document.getElementById("btn-cancelar-novo-cupom");
+  if(btnCancelarNovoCupom) btnCancelarNovoCupom.addEventListener("click", ()=>{
+    mostrarFormNovoCupom = false;
+    render();
+  });
+  const btnConfirmarNovoCupom = document.getElementById("btn-confirmar-novo-cupom");
+  if(btnConfirmarNovoCupom) btnConfirmarNovoCupom.addEventListener("click", ()=>{
+    const nome = (document.getElementById("input-novo-cupom-nome").value||"").trim();
+    const percentual = Number(document.getElementById("input-novo-cupom-percentual").value);
+    const dataInicio = document.getElementById("input-novo-cupom-inicio").value;
+    const dataFim = document.getElementById("input-novo-cupom-fim").value;
+    const maxUsosTexto = document.getElementById("input-novo-cupom-max-usos").value.trim();
+    if(!nome){ showToast("Dê um nome para o cupom."); return; }
+    if(!percentual || percentual<=0 || percentual>100){ showToast("Percentual precisa ser maior que 0 e no máximo 100."); return; }
+    if(!dataInicio || !dataFim){ showToast("Informe as datas de início e fim da validade."); return; }
+    if(dataFim < dataInicio){ showToast("A data de fim não pode ser antes da data de início."); return; }
+    const maxUsos = maxUsosTexto ? Number(maxUsosTexto) : null;
+    if(maxUsosTexto && (!maxUsos || maxUsos<1)){ showToast("Máximo de usos precisa ser maior que 0, ou deixe em branco."); return; }
+    criarCupom({ nome, percentual, dataInicio, dataFim, maxUsos });
+  });
+  main.querySelectorAll("[data-cupom-bloquear]").forEach(btn=>{
+    btn.addEventListener("click", ()=> alternarBloqueioCupom(btn.dataset.cupomBloquear, true));
+  });
+  main.querySelectorAll("[data-cupom-desbloquear]").forEach(btn=>{
+    btn.addEventListener("click", ()=> alternarBloqueioCupom(btn.dataset.cupomDesbloquear, false));
+  });
+  main.querySelectorAll("[data-cupom-remover]").forEach(btn=>{
+    btn.addEventListener("click", ()=> removerCupom(btn.dataset.cupomRemover));
   });
   const btnMigrar = document.getElementById("btn-migrar-local");
   if(btnMigrar) btnMigrar.addEventListener("click", migrarTorneioLocal);
@@ -4668,13 +4934,19 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
 } else if(__tvMultiIds && __tvTorneioId){
   iniciarPlacarMultiploTV(__tvTorneioId, __tvMultiIds.split(","));
 } else {
-  document.querySelectorAll("nav.tabbar button").forEach(btn=>{
+  document.querySelectorAll("#nav-torneio button").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       state.tab = btn.dataset.tab;
       save();
       render();
       if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
       if(state.tab==="matamata" && state.drawn) checkElimNotifications();
+    });
+  });
+  document.querySelectorAll("#nav-admin button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      telaAdmin = btn.dataset.telaAdmin;
+      render();
     });
   });
   const btnThemeIcon = document.getElementById("btn-theme-icon");

@@ -306,6 +306,20 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     return json({ error: "Sem permissão para alterar este torneio" }, 403);
   }
 
+  // Cupom de desconto: só é considerado na CRIAÇÃO (nunca muda depois, mesmo re-salvando o
+  // torneio) — revalidado aqui no servidor (nunca confia na checagem "ao vivo" do cliente) e,
+  // se válido, incrementa o contador de usos do cupom nesse mesmo passo.
+  let cupomAplicado = existing ? (existing.cupomAplicado ?? null) : null;
+  if (ehNovo && body.cupomNome) {
+    const { lista: listaCupons, cupom, valido } = await resolverCupom(env, body.cupomNome);
+    if (cupom && valido) {
+      cupomAplicado = { nome: cupom.nome, percentual: cupom.percentual };
+      cupom.usos = (cupom.usos || 0) + 1;
+      cupom.updatedAt = new Date().toISOString();
+      await saveCuponsIndex(env, listaCupons);
+    }
+  }
+
   const meta = {
     id,
     codigo: existing ? existing.codigo : await gerarCodigoTorneio(env),
@@ -322,7 +336,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     dataInicio: existing ? existing.dataInicio : (body.dataInicio || null),
     dataFim: existing ? existing.dataFim : (body.dataFim || null),
     pagamentoStatus: existing ? (existing.pagamentoStatus || "nao_solicitado") : "nao_solicitado",
-    valorOverride: existing ? (existing.valorOverride ?? null) : null
+    valorOverride: existing ? (existing.valorOverride ?? null) : null,
+    cupomAplicado
   };
 
   // O cliente que está salvando pode estar com uma cópia desatualizada da arbitragem — por
@@ -373,7 +388,7 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     const adminEmail = await env.DB.get("config:admin_notification_email");
     if (adminEmail) {
       const diasEstim = calcularDias(meta.dataInicio, meta.dataFim);
-      const valorEstim = diasEstim * VALOR_DIARIA;
+      const valorEstim = calcularValorComCupom(diasEstim, cupomAplicado);
       await enviarEmail(
         env,
         adminEmail,
@@ -384,7 +399,7 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
          <b>Organizador:</b> ${meta.ownerName || "-"} (${meta.ownerEmail || "-"})<br>
          <b>Início:</b> ${meta.dataInicio || "não informado"}<br>
          <b>Fim:</b> ${meta.dataFim || "não informado"}<br>
-         <b>Valor estimado:</b> ${diasEstim ? `R$ ${valorEstim.toFixed(2).replace(".", ",")} (${diasEstim} diária${diasEstim > 1 ? "s" : ""} × R$ 70,00)` : "não foi possível calcular"}</p>
+         <b>Valor estimado:</b> ${diasEstim ? `R$ ${valorEstim.toFixed(2).replace(".", ",")} (${diasEstim} diária${diasEstim > 1 ? "s" : ""} × R$ 70,00${cupomAplicado ? `, cupom ${cupomAplicado.nome} -${cupomAplicado.percentual}%` : ""})` : "não foi possível calcular"}</p>
          <p>Entre no app com a conta admin, aba Aprovações, pra revisar (o valor pode ser ajustado por lá).</p>`
       );
     }
@@ -435,6 +450,163 @@ async function torneiosGet(request: Request, env: Env): Promise<Response> {
   }
 
   return json(dados);
+}
+
+/* ============================================================
+   CUPONS DE DESCONTO
+   Guardados numa única chave (cupons:index, lista completa) — ao contrário dos torneios,
+   não existe um "detalhe pesado" separado por cupom, então não precisa do par índice+registro.
+   O nome do cupom é o próprio índice (nunca pode repetir), comparado sempre sem diferenciar
+   maiúsculas/minúsculas via nomeNormalizado.
+============================================================ */
+interface Cupom {
+  nome: string; // como foi cadastrado (exibição)
+  nomeNormalizado: string; // MAIÚSCULO, usado pra comparar/achar duplicidade
+  percentual: number; // 0-100
+  dataInicio: string | null;
+  dataFim: string | null;
+  status: "ativo" | "bloqueado";
+  maxUsos: number | null; // null = ilimitado
+  usos: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+async function getCuponsIndex(env: Env): Promise<Cupom[]> {
+  try {
+    const raw = await env.DB.get("cupons:index");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+async function saveCuponsIndex(env: Env, lista: Cupom[]): Promise<void> {
+  await env.DB.put("cupons:index", JSON.stringify(lista));
+}
+function normalizarNomeCupom(nome: unknown): string {
+  return String(nome || "").trim().toUpperCase();
+}
+function hojeISOUTC(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+// Só checa status/validade/limite de usos de um cupom já encontrado — não mexe em contador nenhum.
+function checarValidadeCupom(cupom: Cupom, hojeISO: string): { valido: boolean; motivo: string | null } {
+  if (cupom.status === "bloqueado") return { valido: false, motivo: "Este cupom foi bloqueado." };
+  if (cupom.dataInicio && hojeISO < cupom.dataInicio) return { valido: false, motivo: "Este cupom ainda não começou a valer." };
+  if (cupom.dataFim && hojeISO > cupom.dataFim) return { valido: false, motivo: "Este cupom já expirou." };
+  if (typeof cupom.maxUsos === "number" && cupom.usos >= cupom.maxUsos) return { valido: false, motivo: "Este cupom já atingiu o limite de usos." };
+  return { valido: true, motivo: null };
+}
+// Usado tanto pela checagem "ao vivo" (tela de criação de torneio) quanto pelo fechamento real
+// da criação (torneiosSave) — devolve a lista inteira já carregada, pra quem for gravar um uso
+// não precisar buscar a chave de novo (cupom é uma referência ao item dentro dessa mesma lista).
+async function resolverCupom(env: Env, nomeDigitado: unknown): Promise<{ lista: Cupom[]; cupom: Cupom | null; valido: boolean; motivo: string | null }> {
+  const nomeNormalizado = normalizarNomeCupom(nomeDigitado);
+  const lista = await getCuponsIndex(env);
+  if (!nomeNormalizado) return { lista, cupom: null, valido: false, motivo: "Informe o nome do cupom." };
+  const cupom = lista.find((c) => c.nomeNormalizado === nomeNormalizado) || null;
+  if (!cupom) return { lista, cupom: null, valido: false, motivo: "Cupom não encontrado." };
+  const { valido, motivo } = checarValidadeCupom(cupom, hojeISOUTC());
+  return { lista, cupom, valido, motivo };
+}
+
+async function cuponsList(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const solicitanteEmail = normEmail(url.searchParams.get("email"));
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode ver os cupons" }, 403);
+  return json({ cupons: await getCuponsIndex(env) });
+}
+
+async function cuponsSalvar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = normEmail(body.email);
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode cadastrar cupons" }, 403);
+
+  const nome = String(body.nome || "").trim();
+  if (!nome) return json({ error: "Nome do cupom obrigatório" }, 400);
+  const nomeNormalizado = normalizarNomeCupom(nome);
+
+  const percentual = Number(body.percentual);
+  if (!Number.isFinite(percentual) || percentual <= 0 || percentual > 100) {
+    return json({ error: "Percentual precisa ser maior que 0 e no máximo 100" }, 400);
+  }
+
+  const dataInicio = body.dataInicio || null;
+  const dataFim = body.dataFim || null;
+  if (!dataInicio || !dataFim) return json({ error: "Informe as datas de início e fim da validade" }, 400);
+  if (dataFim < dataInicio) return json({ error: "A data de fim não pode ser antes da data de início" }, 400);
+
+  let maxUsos: number | null = null;
+  if (body.maxUsos !== null && body.maxUsos !== undefined && body.maxUsos !== "") {
+    const n = Number(body.maxUsos);
+    if (!Number.isFinite(n) || n < 1) {
+      return json({ error: "Máximo de usos precisa ser um número maior que 0, ou deixe em branco pra ilimitado" }, 400);
+    }
+    maxUsos = Math.floor(n);
+  }
+
+  const lista = await getCuponsIndex(env);
+  if (lista.some((c) => c.nomeNormalizado === nomeNormalizado)) {
+    return json({ error: `Já existe um cupom "${nome}" — os nomes não podem se repetir.` }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const novo: Cupom = { nome, nomeNormalizado, percentual, dataInicio, dataFim, status: "ativo", maxUsos, usos: 0, createdAt: now, updatedAt: now };
+  lista.push(novo);
+  await saveCuponsIndex(env, lista);
+  return json({ ok: true, cupom: novo });
+}
+
+async function cuponsRemover(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = normEmail(body.email);
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode remover cupons" }, 403);
+
+  const nomeNormalizado = normalizarNomeCupom(body.nome);
+  const lista = await getCuponsIndex(env);
+  const nova = lista.filter((c) => c.nomeNormalizado !== nomeNormalizado);
+  if (nova.length === lista.length) return json({ error: "Cupom não encontrado" }, 404);
+  await saveCuponsIndex(env, nova);
+  return json({ ok: true });
+}
+
+async function cuponsBloquear(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = normEmail(body.email);
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode bloquear/desbloquear cupons" }, 403);
+
+  const nomeNormalizado = normalizarNomeCupom(body.nome);
+  const lista = await getCuponsIndex(env);
+  const cupom = lista.find((c) => c.nomeNormalizado === nomeNormalizado);
+  if (!cupom) return json({ error: "Cupom não encontrado" }, 404);
+  cupom.status = body.bloquear ? "bloqueado" : "ativo";
+  cupom.updatedAt = new Date().toISOString();
+  await saveCuponsIndex(env, lista);
+  return json({ ok: true, cupom });
+}
+
+// Público (só precisa de e-mail logado, não precisa ser admin) — validação "ao vivo" enquanto o
+// organizador digita o cupom na tela de criação do torneio. Não incrementa uso nenhum; isso só
+// acontece de verdade dentro de torneiosSave, no fechamento real da criação.
+async function cuponsValidar(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const { cupom, valido, motivo } = await resolverCupom(env, url.searchParams.get("nome"));
+  if (!valido) return json({ valido: false, motivo });
+  return json({ valido: true, percentual: cupom!.percentual, motivo: null });
 }
 
 async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
@@ -513,7 +685,7 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
 
   if (dados.ownerEmail) {
     const diasCalc = calcularDias(dados.dataInicio, dados.dataFim);
-    const valorEfetivo = typeof dados.valorOverride === "number" ? dados.valorOverride : diasCalc * VALOR_DIARIA;
+    const valorEfetivo = typeof dados.valorOverride === "number" ? dados.valorOverride : calcularValorComCupom(diasCalc, dados.cupomAplicado);
     const rotulos: Record<string, string> = {
       aprovado: "aprovado ✅",
       recusado: "recusado ❌",
@@ -801,6 +973,14 @@ async function torneiosDelete(request: Request, env: Env): Promise<Response> {
 ============================================================ */
 const VALOR_DIARIA = 70;
 
+// Desconto do cupom aplica sobre o subtotal automático (dias × R$ 70) — nunca sobre um
+// valorOverride definido manualmente pelo admin na aprovação, que é sempre a palavra final.
+function calcularValorComCupom(dias: number, cupomAplicado?: { percentual: number } | null): number {
+  const subtotal = dias * VALOR_DIARIA;
+  const desconto = cupomAplicado?.percentual ? subtotal * (cupomAplicado.percentual / 100) : 0;
+  return Math.max(0, subtotal - desconto);
+}
+
 function calcularDias(dataInicio?: string | null, dataFim?: string | null): number {
   if (!dataInicio || !dataFim) return 0;
   const ini = new Date(dataInicio + "T00:00:00Z").getTime();
@@ -855,7 +1035,7 @@ async function pixCriar(request: Request, env: Env): Promise<Response> {
   }
   const valor = (typeof dados.valorOverride === "number" && dados.valorOverride >= 0)
     ? dados.valorOverride
-    : dias * VALOR_DIARIA;
+    : calcularValorComCupom(dias, dados.cupomAplicado);
   if (valor <= 0) {
     return json({ error: "O valor está zerado — esse torneio já deveria ter sido liberado automaticamente na aprovação, sem precisar de Pix." }, 400);
   }
@@ -1215,6 +1395,21 @@ export default {
     }
     if (path === "/api/pix-verificar") {
       return method === "POST" ? pixVerificar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/cupons-list") {
+      return cuponsList(request, env);
+    }
+    if (path === "/api/cupons-salvar") {
+      return method === "POST" ? cuponsSalvar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/cupons-remover") {
+      return method === "POST" ? cuponsRemover(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/cupons-bloquear") {
+      return method === "POST" ? cuponsBloquear(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/cupons-validar") {
+      return cuponsValidar(request, env);
     }
     if (path === "/api/config-get") {
       return configGet(request, env);
