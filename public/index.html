@@ -636,6 +636,7 @@ function defaultState(){
     tournamentId: null,
     telegramBot: "",
     elimNotified: {},
+    elimRepescagemEscolha: null, // (formato "eliminacao") nomes escolhidos pelo organizador pra repescagem, só quando há empate real (ver elimRepescagemInfo)
     cloudId: null,
     cloudNome: "",
     codigo: null, // identificador sequencial de 10 posições (ex: 0000012026), definido pelo servidor na criação
@@ -1457,6 +1458,73 @@ function elimVitoriasPorDupla(){
 function elimVivas(){
   return duplasNomes().filter(n => !elimEliminada(n));
 }
+// Vitórias/pontos pró/pontos contra de cada dupla, somando todas as partidas finalizadas da fase
+// de eliminação — usado só pra ranquear repescagem (ver elimRepescagemInfo), não pra decidir vivas/eliminadas.
+function elimEstatisticasPorDupla(){
+  const stats = {};
+  duplasNomes().forEach(n => { stats[n] = {vitorias:0, pp:0, pc:0}; });
+  state.elimRodadas.forEach(r=>{
+    r.matches.forEach(m=>{
+      if(!partidaFinalizada(m)) return;
+      const pa = Number(m.pa), pb = Number(m.pb);
+      if(stats[m.a]){ stats[m.a].pp += pa; stats[m.a].pc += pb; }
+      if(stats[m.b]){ stats[m.b].pp += pb; stats[m.b].pc += pa; }
+      const w = winnerFinal(m.a, m.b, m);
+      if(w && stats[w]) stats[w].vitorias++;
+    });
+  });
+  return stats;
+}
+// Compara duas duplas eliminadas pra fins de repescagem: mais vitórias primeiro, depois melhor
+// saldo de pontos, depois mais pontos pró. Retorna 0 quando empatam nos 3 critérios — nesse caso
+// não dá pra decidir sozinho (ver elimRepescagemInfo).
+function compararRepescagem(nomeA, nomeB, stats){
+  const a = stats[nomeA] || {vitorias:0, pp:0, pc:0};
+  const b = stats[nomeB] || {vitorias:0, pp:0, pc:0};
+  const saldoA = a.pp - a.pc, saldoB = b.pp - b.pc;
+  return (b.vitorias - a.vitorias) || (saldoB - saldoA) || (b.pp - a.pp);
+}
+// Quando a fase de eliminação fecha com menos duplas vivas que a meta de qualificados, calcula
+// quem entre as eliminadas "sobe" pro mata-mata pra completar a vaga que faltou — pelos critérios
+// de compararRepescagem. jaGarantidas = quem entra sem dúvida (melhor que a fronteira do empate);
+// grupoEmpatado = quem disputa a(s) vaga(s) restante(s) empatado nos 3 critérios; vagas = quantas
+// dessas o organizador precisa escolher (0 = sem ambiguidade, decide sozinho).
+function elimRepescagemInfo(){
+  const meta = state.elimTarget || 4;
+  const necessario = meta - elimVivas().length;
+  if(necessario <= 0) return {necessario:0, jaGarantidas:[], grupoEmpatado:[], vagas:0};
+
+  const stats = elimEstatisticasPorDupla();
+  const eliminadas = duplasNomes().filter(n => elimEliminada(n));
+  eliminadas.sort((a,b)=> compararRepescagem(a,b,stats));
+
+  if(eliminadas.length <= necessario){
+    return {necessario, jaGarantidas: eliminadas.slice(), grupoEmpatado:[], vagas:0};
+  }
+  const fronteira = eliminadas[necessario-1];
+  const jaGarantidas = eliminadas.filter(n => compararRepescagem(n, fronteira, stats) < 0);
+  const grupoEmpatado = eliminadas.filter(n => compararRepescagem(n, fronteira, stats) === 0);
+  return {necessario, jaGarantidas, grupoEmpatado, vagas: necessario - jaGarantidas.length};
+}
+// true quando existe empate real disputando a(s) última(s) vaga(s) de repescagem e o organizador
+// ainda não escolheu (ou escolheu menos do que precisa) quem completa.
+function elimRepescagemPrecisaEscolha(){
+  const info = elimRepescagemInfo();
+  if(info.grupoEmpatado.length <= info.vagas) return false;
+  const escolha = (state.elimRepescagemEscolha||[]).filter(n => info.grupoEmpatado.includes(n));
+  return escolha.length < info.vagas;
+}
+// Lista final de duplas eliminadas que vão ser resgatadas pro mata-mata (jaGarantidas + quem foi
+// escolhido, automaticamente ou pelo organizador, pra preencher as vagas do empate).
+function elimRepescadasFinal(){
+  const info = elimRepescagemInfo();
+  if(info.necessario <= 0) return [];
+  if(info.grupoEmpatado.length <= info.vagas){
+    return [...info.jaGarantidas, ...info.grupoEmpatado];
+  }
+  const escolha = (state.elimRepescagemEscolha||[]).filter(n => info.grupoEmpatado.includes(n));
+  return [...info.jaGarantidas, ...escolha.slice(0, info.vagas)];
+}
 function elimRodadaAtual(){
   return state.elimRodadas[state.elimRodadas.length-1] || null;
 }
@@ -1529,10 +1597,11 @@ function proximaPotenciaDeDois(n){
 // tamanho "fechado" acima disso e a(s) vaga(s) que faltar(em) vira(m) folga — ver
 // primeiraRodadaTeams(), que já trata posições sem dupla (seed[i] undefined) como bye.
 function iniciarMataMataEliminacao(){
-  const vivas = shuffle(elimVivas());
+  const vivas = shuffle([...elimVivas(), ...elimRepescadasFinal()]);
   state.bracketSeed = vivas;
   state.bracket = criarBracketVazio(proximaPotenciaDeDois(Math.max(2, vivas.length)));
   state.terceiro = {pa:null, pb:null, finalizado:false, wo:null};
+  state.elimRepescagemEscolha = null;
   save();
 }
 function matamataPronto(){
@@ -3290,7 +3359,7 @@ function renderSituacaoEliminacaoLista(){
 function renderRodadasEliminacao(){
   let html = `
     <div class="section-title">Rodadas · Eliminação</div>
-    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. Os confrontos priorizam quem tem menos vitórias; em rodada com número ímpar, quem tem mais vitórias folga. As rodadas continuam até a quantidade de vivas chegar na meta de qualificados (ou menos) — se pular a meta numa única rodada, entra no mata-mata com quem sobrou, e a(s) vaga(s) que faltar(em) vira(m) folga.</div>`;
+    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. Os confrontos priorizam quem tem menos vitórias; em rodada com número ímpar, quem tem mais vitórias folga. As rodadas continuam até a quantidade de vivas chegar na meta de qualificados (ou menos) — se pular a meta numa única rodada, as vagas que faltarem são preenchidas por repescagem: as duplas eliminadas com melhor desempenho (mais vitórias, depois saldo de pontos, depois pontos pró) avançam pro mata-mata no lugar. Empate real nesses 3 critérios é decidido por você.</div>`;
 
   const pendentes = pendingElimMessages().filter(p=>String(p.key).startsWith("e"));
   if(pendentes.length){
@@ -3344,10 +3413,37 @@ function renderRodadasEliminacao(){
   } else if(!matamataPronto() && !elimProntoParaMataMata()){
     html += `<button class="btn" id="btn-sortear-proxima-rodada">Sortear rodada ${state.elimRodadas.length+1} 🏐</button>
       <div class="tiebreak-note" style="text-align:center;">${vivas.length} duplas seguem vivas · meta: ${meta} para o mata-mata. Continua sorteando até a quantidade de vivas chegar em ${meta} (ou menos).</div>`;
+  } else if(!matamataPronto() && elimRepescagemPrecisaEscolha()){
+    const repesc = elimRepescagemInfo();
+    const stats = elimEstatisticasPorDupla();
+    const escolha = state.elimRepescagemEscolha || [];
+    const escolhidas = escolha.filter(n=>repesc.grupoEmpatado.includes(n));
+    html += `<div class="card" style="border:1.5px solid var(--coral);">
+      <div style="font-weight:700;font-size:14px;color:var(--coral);margin-bottom:6px;">⚖️ Empate na repescagem</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;">
+        Faltaram duplas pra fechar a meta de ${meta} qualificados, e estas duplas eliminadas empataram em vitórias, saldo de pontos e pontos pró disputando ${repesc.vagas===1?"a vaga que sobrou":"as "+repesc.vagas+" vagas que sobraram"}. Escolha ${repesc.vagas===1?"quem avança":"quais avançam"} (${escolhidas.length}/${repesc.vagas}):
+      </div>`;
+    repesc.grupoEmpatado.forEach(nome=>{
+      const s = stats[nome] || {vitorias:0,pp:0,pc:0};
+      const saldo = s.pp - s.pc;
+      const marcado = escolhidas.includes(nome);
+      html += `<label style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--sand-dark);">
+        <input type="checkbox" data-repesc-nome="${escapeHtml(nome)}" ${marcado?"checked":""}>
+        <span style="flex:1;">${escapeHtml(nome)}</span>
+        <span style="font-size:11.5px;color:var(--muted);">${s.vitorias}V · saldo ${saldo>0?"+":""}${saldo} · ${s.pp} pontos pró</span>
+      </label>`;
+    });
+    html += `</div>`;
   } else if(!matamataPronto()){
+    const repesc = elimRepescagemInfo();
+    const resgatadas = elimRepescadasFinal();
+    const totalClassificadas = vivas.length + resgatadas.length;
+    if(resgatadas.length){
+      html += `<div class="tiebreak-note" style="text-align:center;">🎟️ ${resgatadas.map(escapeHtml).join(", ")} ${resgatadas.length>1?"entraram":"entrou"} de repescagem no mata-mata — melhor desempenho entre as eliminadas (mais vitórias, depois saldo de pontos, depois pontos pró) pra fechar a meta de ${meta}.</div>`;
+    }
     html += `<div class="champion-banner" style="background:linear-gradient(150deg,var(--grass),#2E6E42);">
         <div class="eyebrow">Fase de eliminação concluída</div>
-        <div class="name" style="font-size:22px;">${vivas.length} dupla${vivas.length>1?'s':''} classificada${vivas.length>1?'s':''}</div>
+        <div class="name" style="font-size:22px;">${totalClassificadas} dupla${totalClassificadas>1?'s':''} classificada${totalClassificadas>1?'s':''}</div>
       </div>
       <button class="btn" id="btn-iniciar-matamata-elim">Ir para o mata-mata 🏆</button>`;
   } else {
@@ -4063,6 +4159,27 @@ function bindEvents(){
     });
     inp.addEventListener("keydown", e=>{
       if(e.key==="Enter") e.target.blur();
+    });
+  });
+
+  main.querySelectorAll("input[data-repesc-nome]").forEach(cb=>{
+    cb.addEventListener("change", e=>{
+      const nome = e.target.dataset.repescNome;
+      const info = elimRepescagemInfo();
+      let escolha = (state.elimRepescagemEscolha||[]).filter(n=>info.grupoEmpatado.includes(n));
+      if(e.target.checked){
+        if(escolha.length >= info.vagas){
+          e.target.checked = false;
+          showToast(`Escolha só ${info.vagas} dupla${info.vagas>1?'s':''}.`);
+          return;
+        }
+        escolha = [...escolha, nome];
+      } else {
+        escolha = escolha.filter(n=>n!==nome);
+      }
+      state.elimRepescagemEscolha = escolha;
+      save();
+      render();
     });
   });
 
