@@ -2596,11 +2596,13 @@ function renderStory(canvas, H){
   } else if(state.formato==="eliminacao"){
     cursorY = drawBracket(ctx, W, headerH+60);
   } else {
-    // Mesmo com a fase de grupos ainda em andamento, mostra a classificação parcial e o
-    // chaveamento do mata-mata já montado — as vagas ainda não decididas aparecem como
-    // "A definir" (ver primeiraRodadaTeams), preenchendo sozinhas assim que forem resolvidas.
+    // Enquanto os grupos não terminam, o chaveamento do mata-mata ainda não tem ninguém
+    // definido — mostra os jogos da fase de grupos no lugar dele; depois de allGroupsFilled(),
+    // passa a mostrar o chaveamento de verdade.
     const groupsBottom = drawGroupsSection(ctx, W, headerH+60);
-    cursorY = drawBracket(ctx, W, groupsBottom+50);
+    cursorY = allGroupsFilled()
+      ? drawBracket(ctx, W, groupsBottom+50)
+      : drawGroupMatchesSection(ctx, W, groupsBottom+50);
   }
 
   return cursorY + 140;
@@ -2663,6 +2665,36 @@ function drawGroupsSection(ctx, W, startY){
   }
 
   return maxBottom - rowGap;
+}
+
+// Enquanto a fase de grupos não termina, o chaveamento do mata-mata ainda não tem ninguém
+// definido (tudo "A definir") — em vez disso, mostra os confrontos já sorteados dos grupos,
+// no mesmo estilo de pílula usado no chaveamento (ver drawMatchBox/drawTeamBar).
+function drawGroupMatchesSection(ctx, W, startY){
+  const WHITE = "#FFFFFF";
+  ctx.textAlign = "center";
+  ctx.fillStyle = WHITE;
+  ctx.font = "600 26px Arial, sans-serif";
+  ctx.fillText("JOGOS DA FASE DE GRUPOS", W/2, startY);
+
+  const boxW = 560, boxX = (W-boxW)/2, barH = 42;
+  let y = startY + 44;
+
+  groupLettersState().forEach(letter=>{
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = "600 22px Arial, sans-serif";
+    ctx.fillText("GRUPO " + letter, boxX, y+18);
+    y += 36;
+
+    state.groupMatches.filter(m=>m.group===letter).forEach(m=>{
+      const win = winnerFinal(m.a, m.b, m);
+      y = drawMatchBox(ctx, boxX, y, boxW, m.a, m.b, m, win, barH) + 20;
+    });
+    y += 14;
+  });
+
+  return y;
 }
 
 /* ---------- Chaveamento (bracket), estilo "TV de Copa do Mundo": pílulas com placar,
