@@ -2595,16 +2595,10 @@ function renderStory(canvas, H){
     cursorY = headerH+340;
   } else if(state.formato==="eliminacao"){
     cursorY = drawBracket(ctx, W, headerH+60);
-  } else if(!allGroupsFilled()){
-    // Fase de grupos ainda em andamento — o chaveamento do mata-mata nem foi definido ainda,
-    // então não faz sentido mostrar uma imagem cheia de "A definir".
-    const groupsBottom = drawGroupsSection(ctx, W, headerH+60);
-    ctx.textAlign = "center";
-    ctx.fillStyle = MUTED_ON_GREEN;
-    ctx.font = "600 26px Arial, sans-serif";
-    ctx.fillText("Fase de grupos em andamento", W/2, groupsBottom+50);
-    cursorY = groupsBottom + 70;
   } else {
+    // Mesmo com a fase de grupos ainda em andamento, mostra a classificação parcial e o
+    // chaveamento do mata-mata já montado — as vagas ainda não decididas aparecem como
+    // "A definir" (ver primeiraRodadaTeams), preenchendo sozinhas assim que forem resolvidas.
     const groupsBottom = drawGroupsSection(ctx, W, headerH+60);
     cursorY = drawBracket(ctx, W, groupsBottom+50);
   }
