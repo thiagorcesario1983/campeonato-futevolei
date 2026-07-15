@@ -1495,27 +1495,29 @@ function sortearRodadaEliminacao(){
 function ehPotenciaDeDois(n){
   return n>0 && (n & (n-1))===0;
 }
-// Só libera o mata-mata quando o nº de vivas já for uma potência de 2 exata (2, 4, 8...) —
-// assim ninguém entra no chaveamento de folga: todo mundo que chega lá, chegou vencendo.
-// Se uma rodada "passar direto" da meta (ex: de 5 vivas cair pra 3), continua sorteando mais
-// rodadas até estabilizar numa potência de 2, em vez de completar com folga.
+// Libera o mata-mata assim que o nº de vivas cair pra meta configurada (elimTarget) ou menos.
+// Como derrotas só fazem esse número diminuir (nunca aumentar), se uma rodada "passar direto"
+// da meta (ex: de 5 vivas cair pra 3, pulando o 4), não existe rodada nenhuma que "acerte" o
+// valor exato depois disso — então entra no mata-mata com quem sobrou, e iniciarMataMataEliminacao
+// preenche a(s) vaga(s) que faltar(em) com folga.
 function elimProntoParaMataMata(){
   const r = elimRodadaAtual();
   if(!r || !elimRodadaCompleta(r)) return false;
-  return ehPotenciaDeDois(elimVivas().length);
+  return elimVivas().length <= (state.elimTarget || 4);
 }
 function proximaPotenciaDeDois(n){
   let p = 1;
   while(p < n) p *= 2;
   return Math.max(1,p);
 }
-// Fecha a fase de eliminação e monta a 1ª rodada do mata-mata com quem sobrou vivo. Como
-// elimProntoParaMataMata só libera esse botão quando a quantidade já é uma potência de 2 exata,
-// o chaveamento sai sempre "cheio" — sem folga nenhuma, todo mundo precisa vencer pra avançar.
+// Fecha a fase de eliminação e monta a 1ª rodada do mata-mata com quem sobrou vivo. Se sobrou uma
+// quantidade que não é potência de 2 (ex: 3, quando a meta era 4), o chaveamento nasce no próximo
+// tamanho "fechado" acima disso e a(s) vaga(s) que faltar(em) vira(m) folga — ver
+// primeiraRodadaTeams(), que já trata posições sem dupla (seed[i] undefined) como bye.
 function iniciarMataMataEliminacao(){
   const vivas = shuffle(elimVivas());
   state.bracketSeed = vivas;
-  state.bracket = criarBracketVazio(Math.max(2, vivas.length));
+  state.bracket = criarBracketVazio(proximaPotenciaDeDois(Math.max(2, vivas.length)));
   state.terceiro = {pa:null, pb:null, finalizado:false, wo:null};
   save();
 }
@@ -3274,7 +3276,7 @@ function renderSituacaoEliminacaoLista(){
 function renderRodadasEliminacao(){
   let html = `
     <div class="section-title">Rodadas · Eliminação</div>
-    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. Os confrontos priorizam quem tem menos vitórias; em rodada com número ímpar, quem tem mais vitórias folga. As rodadas continuam até sobrar uma quantidade "fechada" (2, 4, 8...) — no mata-mata ninguém entra de folga, só avança quem vence.</div>`;
+    <div class="section-sub">Cada dupla que perde 2 jogos é eliminada. Os confrontos priorizam quem tem menos vitórias; em rodada com número ímpar, quem tem mais vitórias folga. As rodadas continuam até a quantidade de vivas chegar na meta de qualificados (ou menos) — se pular a meta numa única rodada, entra no mata-mata com quem sobrou, e a(s) vaga(s) que faltar(em) vira(m) folga.</div>`;
 
   const pendentes = pendingElimMessages().filter(p=>String(p.key).startsWith("e"));
   if(pendentes.length){
@@ -3325,9 +3327,9 @@ function renderRodadasEliminacao(){
 
   if(!completa){
     html += `<div class="card empty" style="padding:16px;">Registre os resultados de todos os jogos da rodada para liberar a próxima etapa.</div>`;
-  } else if(!matamataPronto() && !ehPotenciaDeDois(vivas.length)){
+  } else if(!matamataPronto() && !elimProntoParaMataMata()){
     html += `<button class="btn" id="btn-sortear-proxima-rodada">Sortear rodada ${state.elimRodadas.length+1} 🏐</button>
-      <div class="tiebreak-note" style="text-align:center;">${vivas.length} duplas seguem vivas · meta: ${meta} para o mata-mata. Continua sorteando até sobrar uma quantidade "fechada" (2, 4, 8...), pra ninguém entrar no mata-mata de folga.</div>`;
+      <div class="tiebreak-note" style="text-align:center;">${vivas.length} duplas seguem vivas · meta: ${meta} para o mata-mata. Continua sorteando até a quantidade de vivas chegar em ${meta} (ou menos).</div>`;
   } else if(!matamataPronto()){
     html += `<div class="champion-banner" style="background:linear-gradient(150deg,var(--grass),#2E6E42);">
         <div class="eyebrow">Fase de eliminação concluída</div>
