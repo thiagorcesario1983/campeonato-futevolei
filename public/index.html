@@ -2595,6 +2595,15 @@ function renderStory(canvas, H){
     cursorY = headerH+340;
   } else if(state.formato==="eliminacao"){
     cursorY = drawBracket(ctx, W, headerH+60);
+  } else if(!allGroupsFilled()){
+    // Fase de grupos ainda em andamento — o chaveamento do mata-mata nem foi definido ainda,
+    // então não faz sentido mostrar uma imagem cheia de "A definir".
+    const groupsBottom = drawGroupsSection(ctx, W, headerH+60);
+    ctx.textAlign = "center";
+    ctx.fillStyle = MUTED_ON_GREEN;
+    ctx.font = "600 26px Arial, sans-serif";
+    ctx.fillText("Fase de grupos em andamento", W/2, groupsBottom+50);
+    cursorY = groupsBottom + 70;
   } else {
     const groupsBottom = drawGroupsSection(ctx, W, headerH+60);
     cursorY = drawBracket(ctx, W, groupsBottom+50);
@@ -2691,10 +2700,15 @@ function drawTeamBar(ctx, x, y, w, h, text, destaque, score){
     textStartX = cx + raio + 14;
   }
 
+  const label = text || "A definir";
+  const maxTextW = x+w-16-textStartX;
+  const weight = destaque ? "bold" : "600";
+  const size = fitFontSize(ctx, label, maxTextW, Math.min(25, Math.round(h*0.52)), 13, weight);
+  ctx.font = `${weight} ${size}px Arial, sans-serif`;
+  const finalLabel = ctx.measureText(label).width <= maxTextW ? label : truncate(ctx, label, maxTextW);
   ctx.fillStyle = GREEN_DEEP;
-  ctx.font = (destaque ? "bold " : "600 ") + "25px Arial, sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText(truncate(ctx, text || "A definir", x+w-16-textStartX), textStartX, y+h/2+9);
+  ctx.fillText(finalLabel, textStartX, y+h/2+size*0.32);
 }
 function drawMatchBox(ctx, x, y, w, a, b, m, win, barH){
   barH = barH || 50;
@@ -2864,6 +2878,17 @@ function roundRect(ctx, x, y, w, h, r){
   ctx.arcTo(x, y+h, x, y, r);
   ctx.arcTo(x, y, x+w, y, r);
   ctx.closePath();
+}
+// Encolhe a fonte (até um mínimo) até o texto caber em maxWidth, em vez de truncar o nome —
+// só recorre a truncar (ver chamador) se nem no tamanho mínimo couber.
+function fitFontSize(ctx, text, maxWidth, baseSize, minSize, weight){
+  let size = baseSize;
+  while(size > minSize){
+    ctx.font = `${weight} ${size}px Arial, sans-serif`;
+    if(ctx.measureText(text).width <= maxWidth) break;
+    size -= 1;
+  }
+  return size;
 }
 function truncate(ctx, text, maxWidth){
   let t = text;
