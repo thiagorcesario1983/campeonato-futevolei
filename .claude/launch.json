@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "wrangler-dev",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\npx.cmd",
-      "runtimeArgs": ["wrangler", "dev"],
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["node_modules/wrangler/bin/wrangler.js", "dev"],
       "port": 8787
     }
   ]
