@@ -83,7 +83,14 @@
   }
   @media (min-width:481px){
     body{padding:24px 0;}
-    .app{min-height:calc(100vh - 48px); border-radius:28px; overflow:hidden;}
+    /* Sem overflow:hidden aqui: isso quebrava o "position:sticky" do menu inferior nessa
+       largura, porque vira um ancestral com scroll próprio (mesmo sem scrollbar) e o app
+       real rola no body/html, não dentro do .app. Os cantos arredondados agora são feitos
+       diretamente no header (topo) e no nav.tabbar (base), que são os únicos filhos com
+       fundo próprio que encostam nas bordas do card. */
+    .app{min-height:calc(100vh - 48px); border-radius:28px;}
+    header{border-radius:28px 28px 0 0;}
+    nav.tabbar{border-radius:0 0 28px 28px;}
   }
 
   /* ---------- Header ---------- */
