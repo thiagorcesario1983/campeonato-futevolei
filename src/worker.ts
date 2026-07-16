@@ -356,7 +356,15 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
       if (!arbCliente) {
         body.state.arbitragem[matchId] = arbServidor;
         const ref = getMatchRef(body.state, matchId);
-        if (ref) { ref.pa = arbServidor.placarA; ref.pb = arbServidor.placarB; ref.finalizado = arbServidor.status === "finalizada"; }
+        // Nunca REGRIDE finalizado pra false aqui — só avança pra true quando a arbitragem
+        // realmente diz "finalizada". Um jogo pode estar finalizado por outro caminho (placar
+        // digitado direto) sem que a arbitragem desse cliente saiba disso; sobrescrever com
+        // false reabriria um jogo que já tinha um resultado válido.
+        if (ref) {
+          ref.pa = arbServidor.placarA;
+          ref.pb = arbServidor.placarB;
+          if (arbServidor.status === "finalizada") ref.finalizado = true;
+        }
         continue;
       }
 
@@ -370,7 +378,12 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
       if (rankServidor > rankCliente || (rankServidor === rankCliente && somaServidor > somaCliente)) {
         body.state.arbitragem[matchId] = { ...arbServidor, tokenApito: arbServidor.tokenApito || arbCliente.tokenApito };
         const ref = getMatchRef(body.state, matchId);
-        if (ref) { ref.pa = arbServidor.placarA; ref.pb = arbServidor.placarB; ref.finalizado = arbServidor.status === "finalizada"; }
+        // Mesma regra: só avança finalizado pra true, nunca regride pra false por aqui.
+        if (ref) {
+          ref.pa = arbServidor.placarA;
+          ref.pb = arbServidor.placarB;
+          if (arbServidor.status === "finalizada") ref.finalizado = true;
+        }
       }
     }
   }
@@ -790,20 +803,37 @@ function checkTrocaLado(arb: any): boolean {
 }
 
 // Se a partida já tem placar definido direto (sem passar pelo apito), o registro nasce
-// refletindo esse placar real em vez de zerado — mesma regra do front (getArb no index.html).
+// refletindo esse placar e status real em vez de zerado/não iniciada — mesma regra do front
+// (getArb no index.html). Sem isso, um jogo já finalizado "renascia" como não iniciado ao
+// gerar o link de árbitro, e essa inconsistência fazia o jogo parecer reaberto.
 function defaultArb(m?: any): any {
   const temPlacar = m && m.pa !== null && m.pa !== undefined && m.pa !== "" && m.pb !== null && m.pb !== undefined && m.pb !== "";
+  const finalizado = !!(m && m.finalizado);
   return {
-    status: "nao_iniciada",
+    status: finalizado ? "finalizada" : "nao_iniciada",
     placarA: temPlacar ? Number(m.pa) : 0,
     placarB: temPlacar ? Number(m.pb) : 0,
     acumuladoMs: 0,
     inicioMs: null,
     ultimoMultiploTroca: 0,
-    duracaoFinalSegundos: null,
+    duracaoFinalSegundos: finalizado ? 0 : null,
     arbitroNome: null,
     tokenApito: null
   };
+}
+
+// Auto-corrige (em memória, mutando) um registro de arbitragem já existente que ficou
+// desalinhado com o jogo — jogo finalizado com arbitragem parada em "não iniciada" (bug
+// antigo já corrigido no código, mas pode ter deixado dados salvos assim antes do ajuste).
+function corrigirArb(arb: any, m: any): any {
+  if (m && m.finalizado && arb.status !== "finalizada") {
+    arb.status = "finalizada";
+    arb.placarA = Number(m.pa);
+    arb.placarB = Number(m.pb);
+    arb.inicioMs = null;
+    if (arb.duracaoFinalSegundos == null) arb.duracaoFinalSegundos = Math.floor((arb.acumuladoMs || 0) / 1000);
+  }
+  return arb;
 }
 
 // Autenticado (dono do torneio ou admin): gera (ou reaproveita) o token do link de árbitro
@@ -834,7 +864,7 @@ async function apitoCriarLink(request: Request, env: Env): Promise<Response> {
   if (!matchRef) return json({ error: "jogo não encontrado" }, 404);
 
   if (!dados.state.arbitragem) dados.state.arbitragem = {};
-  const arb = dados.state.arbitragem[matchId] || defaultArb(matchRef);
+  const arb = corrigirArb(dados.state.arbitragem[matchId] || defaultArb(matchRef), matchRef);
   if (!arb.tokenApito) arb.tokenApito = crypto.randomUUID();
   dados.state.arbitragem[matchId] = arb;
 
@@ -860,11 +890,12 @@ async function apitoGet(request: Request, env: Env): Promise<Response> {
   if (!raw) return json({ error: "não encontrado" }, 404);
   const dados = JSON.parse(raw);
 
-  if (!getMatchRef(dados.state, matchId)) return json({ error: "jogo não encontrado" }, 404);
+  const refPublico = getMatchRef(dados.state, matchId);
+  if (!refPublico) return json({ error: "jogo não encontrado" }, 404);
   const arb = dados.state?.arbitragem?.[matchId];
   if (!arb || !arb.tokenApito || arb.tokenApito !== token) return json({ error: "Link inválido ou expirado" }, 403);
 
-  return json({ ok: true, arb });
+  return json({ ok: true, arb: corrigirArb(arb, refPublico) });
 }
 
 // Público (com token): executa uma ação de arbitragem (iniciar, ponto, tempo técnico,
@@ -893,7 +924,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
   const m = getMatchRef(dados.state, matchId);
   if (!m) return json({ error: "jogo não encontrado" }, 404);
   if (!dados.state.arbitragem) dados.state.arbitragem = {};
-  const arb: any = dados.state.arbitragem[matchId] || defaultArb(m);
+  const arb: any = corrigirArb(dados.state.arbitragem[matchId] || defaultArb(m), m);
   if (!arb.tokenApito || arb.tokenApito !== token) return json({ error: "Link inválido ou expirado" }, 403);
 
   if (typeof body.arbitroNome === "string" && body.arbitroNome.trim()) {
