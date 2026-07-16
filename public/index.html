@@ -395,6 +395,13 @@
   .app.somente-leitura main a.btn-send{
     pointer-events:none;opacity:.5;
   }
+  /* Qualquer <label> (mesmo sem classe "btn") pode estar embrulhando um checkbox/radio — o
+     navegador ativa o input associado ao clicar no label inteiro, mesmo com o input tendo
+     pointer-events:none. Sem essa regra à parte, esses toggles (ex: "Disputar 3º/4º lugar")
+     continuavam mudando de estado clicando no texto ao lado da caixinha. */
+  .app.somente-leitura main label{
+    pointer-events:none;
+  }
 
   .toast{
     position:fixed;bottom:78px;left:50%;transform:translateX(-50%) translateY(10px);
