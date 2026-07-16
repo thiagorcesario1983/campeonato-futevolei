@@ -101,7 +101,7 @@ Webhook do Mercado Pago: painel Mercado Pago Developers → Webhooks → URL
 - `pagamento`: `{status:"pendente"|"pago"|"isento", valor, dias, paymentId, copiaCola,
   qrCodeBase64, criadoEm, pagoEm}`
 - `valorOverride`: valor do Pix definido manualmente pelo admin na aprovação (sobrescreve o
-  cálculo automático de dias × R$ 70)
+  cálculo automático de dias × valor da diária)
 - Campos de identidade/nuvem que **nunca** devem ser apagados por um reset de jogo: `cloudId`,
   `cloudNome`, `codigo`, `aprovacaoStatus`, `dataInicio`, `dataFim`, `pagamento`, `valorOverride`,
   `headerImage`, `telegramBot`.

@@ -416,7 +416,7 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     const adminEmail = await env.DB.get("config:admin_notification_email");
     if (adminEmail) {
       const diasEstim = calcularDias(meta.dataInicio, meta.dataFim);
-      const valorEstim = calcularValorComCupom(diasEstim, cupomAplicado);
+      const valorEstim = calcularValorComCupom(diasEstim, cupomAplicado, await getValorDiaria(env));
       await enviarEmail(
         env,
         adminEmail,
@@ -662,8 +662,10 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
   if (typeof body.dataInicio === "string") dados.dataInicio = body.dataInicio || null;
   if (typeof body.dataFim === "string") dados.dataFim = body.dataFim || null;
 
-  // Valor do Pix: o admin pode sobrescrever o cálculo automático (dias × R$ 70), por exemplo
-  // pra aplicar desconto. Se vier 0, o campeonato é liberado direto, sem precisar de Pix.
+  const valorDiariaAtual = await getValorDiaria(env);
+
+  // Valor do Pix: o admin pode sobrescrever o cálculo automático (dias × valor da diária), por
+  // exemplo pra aplicar desconto. Se vier 0, o campeonato é liberado direto, sem precisar de Pix.
   if (typeof body.valor === "number" && Number.isFinite(body.valor) && body.valor >= 0) {
     dados.valorOverride = body.valor;
     if (body.valor === 0) {
@@ -689,7 +691,7 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
   // deste mesmo torneio (só acontece uma vez).
   if (typeof body.valor === "number" && dados.cupomAplicado && !dados.cupomUsoRevertido) {
     const diasParaCupom = calcularDias(dados.dataInicio, dados.dataFim);
-    const valorEsperadoComCupom = calcularValorComCupom(diasParaCupom, dados.cupomAplicado);
+    const valorEsperadoComCupom = calcularValorComCupom(diasParaCupom, dados.cupomAplicado, valorDiariaAtual);
     const bateComEsperado = Math.round(body.valor * 100) === Math.round(valorEsperadoComCupom * 100);
     if (!bateComEsperado) {
       const listaCupons = await getCuponsIndex(env);
@@ -731,9 +733,23 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
   }
 
+  // Pix automático: assim que o torneio é aprovado com um valor a cobrar, já gera a cobrança na
+  // hora, sem esperar o organizador abrir o app e clicar em "Gerar Pix". Reaproveita a mesma
+  // função da rota manual (gerarCobrancaPix), que faz sua própria leitura/gravação no KV — por
+  // isso lê e grava de novo aqui em cima do que acabou de ser salvo, em vez de tentar economizar
+  // numa escrita só. Se falhar (Mercado Pago fora do ar, token ausente etc.), não derruba a
+  // aprovação: o organizador ainda consegue gerar manualmente pelo app, como antes.
+  if (decisao === "aprovado" && dados.pagamento?.status !== "pago" && dados.pagamento?.status !== "isento") {
+    const resultadoPix = await gerarCobrancaPix(env, id, new URL(request.url).origin);
+    if (resultadoPix.ok) {
+      dados.pagamento = resultadoPix.pagamento;
+      meta.pagamentoStatus = dados.pagamento?.status || meta.pagamentoStatus;
+    }
+  }
+
   if (dados.ownerEmail) {
     const diasCalc = calcularDias(dados.dataInicio, dados.dataFim);
-    const valorEfetivo = typeof dados.valorOverride === "number" ? dados.valorOverride : calcularValorComCupom(diasCalc, dados.cupomAplicado);
+    const valorEfetivo = typeof dados.valorOverride === "number" ? dados.valorOverride : calcularValorComCupom(diasCalc, dados.cupomAplicado, valorDiariaAtual);
     const rotulos: Record<string, string> = {
       aprovado: "aprovado ✅",
       recusado: "recusado ❌",
@@ -742,9 +758,15 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     const corpos: Record<string, string> = {
       aprovado: valorEfetivo === 0
         ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>Este campeonato foi liberado sem custo. Já está disponível para uso dentro desse período.</p>`
-        : `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p>
-           <p><b>Valor das diárias:</b> R$ ${valorEfetivo.toFixed(2).replace(".", ",")}${diasCalc ? ` (${diasCalc} diária${diasCalc > 1 ? "s" : ""})` : ""}</p>
-           <p>Falta só o pagamento via Pix para liberar o uso — entre no app para gerar o código.</p>`,
+        : dados.pagamento?.copiaCola
+          ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p>
+             <p><b>Valor das diárias:</b> R$ ${valorEfetivo.toFixed(2).replace(".", ",")}${diasCalc ? ` (${diasCalc} diária${diasCalc > 1 ? "s" : ""})` : ""}</p>
+             <p>Pague via Pix usando o código copia-e-cola abaixo (ou escaneie o QR direto no app):</p>
+             <p style="word-break:break-all;font-family:monospace;background:#f4f4f4;padding:8px;border-radius:6px;">${dados.pagamento.copiaCola}</p>
+             <p>Assim que o pagamento for identificado, o campeonato é liberado automaticamente.</p>`
+          : `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p>
+             <p><b>Valor das diárias:</b> R$ ${valorEfetivo.toFixed(2).replace(".", ",")}${diasCalc ? ` (${diasCalc} diária${diasCalc > 1 ? "s" : ""})` : ""}</p>
+             <p>Falta só o pagamento via Pix para liberar o uso — entre no app para gerar o código.</p>`,
       recusado: `<p>Se tiver dúvidas, entre em contato com o organizador do app.</p>`,
       bloqueado: `<p>Ele fica indisponível até ser liberado novamente pelo admin — as datas de validade (${dados.dataInicio || "não informado"} a ${dados.dataFim || "não informado"}) continuam guardadas e nada do que já foi feito se perde.</p>`
     };
@@ -758,7 +780,7 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  return json(meta);
+  return json({ ...meta, pagamento: dados.pagamento ?? null });
 }
 
 // Rota pública para o "Placar para TV": não exige login/e-mail, só o ID do torneio
@@ -1039,16 +1061,25 @@ async function torneiosDelete(request: Request, env: Env): Promise<Response> {
 
 /* ============================================================
    PIX (Mercado Pago) — cobrança das diárias de uso
-   Regra de valor: R$ 70,00 por diária, diária = cada dia dentro do período de validade
-   (dataInicio..dataFim) que o próprio admin define ao aprovar o torneio. Só é possível gerar
-   o Pix depois do torneio estar aprovado — os dados de validade precisam existir primeiro.
+   Regra de valor: R$ X,00 por diária (configurável pelo admin, padrão R$ 70,00), diária = cada
+   dia dentro do período de validade (dataInicio..dataFim) que o próprio admin define ao aprovar
+   o torneio. Só é possível gerar o Pix depois do torneio estar aprovado — os dados de validade
+   precisam existir primeiro.
 ============================================================ */
-const VALOR_DIARIA = 70;
+const VALOR_DIARIA_PADRAO = 70;
 
-// Desconto do cupom aplica sobre o subtotal automático (dias × R$ 70) — nunca sobre um
+// Valor da diária configurável pelo admin (aba Configurações do app); cai pro padrão se nunca
+// foi definido ou se o que estiver salvo não for um número válido.
+async function getValorDiaria(env: Env): Promise<number> {
+  const raw = await env.DB.get("config:valor_diaria");
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : VALOR_DIARIA_PADRAO;
+}
+
+// Desconto do cupom aplica sobre o subtotal automático (dias × valor da diária) — nunca sobre um
 // valorOverride definido manualmente pelo admin na aprovação, que é sempre a palavra final.
-function calcularValorComCupom(dias: number, cupomAplicado?: { percentual: number } | null): number {
-  const subtotal = dias * VALOR_DIARIA;
+function calcularValorComCupom(dias: number, cupomAplicado: { percentual: number } | null | undefined, valorDiaria: number): number {
+  const subtotal = dias * valorDiaria;
   const desconto = cupomAplicado?.percentual ? subtotal * (cupomAplicado.percentual / 100) : 0;
   return Math.max(0, subtotal - desconto);
 }
@@ -1061,35 +1092,27 @@ function calcularDias(dataInicio?: string | null, dataFim?: string | null): numb
   return Math.round((fim - ini) / 86400000) + 1;
 }
 
-async function pixCriar(request: Request, env: Env): Promise<Response> {
+// Núcleo da geração de cobrança Pix — reaproveitado tanto pela rota manual (pixCriar, botão
+// "Gerar Pix" no app) quanto pela geração automática logo na aprovação (torneiosAprovar). Lê e
+// grava o torneio direto do KV (não recebe `dados` pronto de fora) pra sempre operar em cima da
+// versão mais recente já persistida, evitando sobrescrever uma aprovação que acabou de ser salva.
+async function gerarCobrancaPix(env: Env, id: string, origin: string, solicitanteEmail?: string): Promise<
+  | { ok: true; pagamento: any; recuperadoPorBusca?: boolean }
+  | { ok: false; error: string; status: number }
+> {
   if (!env.MP_ACCESS_TOKEN) {
-    return json({ error: "Pagamento via Pix não configurado neste servidor (MP_ACCESS_TOKEN ausente)" }, 500);
+    return { ok: false, error: "Pagamento via Pix não configurado neste servidor (MP_ACCESS_TOKEN ausente)", status: 500 };
   }
-
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "JSON inválido" }, 400);
-  }
-
-  const id = body.id;
-  const solicitanteEmail = normEmail(body.email);
-  if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
 
   const raw = await env.DB.get(`torneio:${id}`);
-  if (!raw) return json({ error: "não encontrado" }, 404);
+  if (!raw) return { ok: false, error: "não encontrado", status: 404 };
   const dados = JSON.parse(raw);
 
-  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
-    return json({ error: "Sem permissão para gerar o Pix deste torneio" }, 403);
-  }
   if (dados.aprovacaoStatus !== "aprovado") {
-    return json({ error: "O torneio precisa estar aprovado antes de gerar o Pix" }, 400);
+    return { ok: false, error: "O torneio precisa estar aprovado antes de gerar o Pix", status: 400 };
   }
   if (dados.pagamento?.status === "pago") {
-    return json({ error: "Este torneio já está pago" }, 400);
+    return { ok: false, error: "Este torneio já está pago", status: 400 };
   }
 
   // Proteção extra: se o registro de pagamento tiver sido perdido por algum motivo, busca no
@@ -1098,21 +1121,22 @@ async function pixCriar(request: Request, env: Env): Promise<Response> {
   const jaAprovado = await buscarPagamentoPorReferencia(env, id);
   if (jaAprovado) {
     const atualizado = await confirmarPagamentoAprovado(env, id, jaAprovado);
-    return json({ ok: true, pagamento: atualizado?.pagamento || dados.pagamento, recuperadoPorBusca: true });
+    return { ok: true, pagamento: atualizado?.pagamento || dados.pagamento, recuperadoPorBusca: true };
   }
 
   const dias = calcularDias(dados.dataInicio, dados.dataFim);
   if (dias <= 0) {
-    return json({ error: "Datas de início/fim inválidas para calcular o valor da diária" }, 400);
+    return { ok: false, error: "Datas de início/fim inválidas para calcular o valor da diária", status: 400 };
   }
+  const valorDiaria = await getValorDiaria(env);
   const valor = (typeof dados.valorOverride === "number" && dados.valorOverride >= 0)
     ? dados.valorOverride
-    : calcularValorComCupom(dias, dados.cupomAplicado);
+    : calcularValorComCupom(dias, dados.cupomAplicado, valorDiaria);
   if (valor <= 0) {
-    return json({ error: "O valor está zerado — esse torneio já deveria ter sido liberado automaticamente na aprovação, sem precisar de Pix." }, 400);
+    return { ok: false, error: "O valor está zerado — esse torneio já deveria ter sido liberado automaticamente na aprovação, sem precisar de Pix.", status: 400 };
   }
 
-  const notificationUrl = `${new URL(request.url).origin}/api/pix-webhook`;
+  const notificationUrl = `${origin}/api/pix-webhook`;
 
   let mpResp: any;
   try {
@@ -1134,14 +1158,14 @@ async function pixCriar(request: Request, env: Env): Promise<Response> {
       })
     });
     mpResp = await res.json();
-    if (!res.ok) return json({ error: "Falha ao criar cobrança no Mercado Pago", detail: mpResp }, 502);
+    if (!res.ok) return { ok: false, error: "Falha ao criar cobrança no Mercado Pago", status: 502 };
   } catch (e: any) {
-    return json({ error: "Falha de rede ao falar com o Mercado Pago", detail: String(e?.message || e) }, 502);
+    return { ok: false, error: "Falha de rede ao falar com o Mercado Pago", status: 502 };
   }
 
   const txData = mpResp?.point_of_interaction?.transaction_data;
   if (!txData?.qr_code) {
-    return json({ error: "Mercado Pago não retornou o código Pix", detail: mpResp }, 502);
+    return { ok: false, error: "Mercado Pago não retornou o código Pix", status: 502 };
   }
 
   dados.pagamento = {
@@ -1164,10 +1188,36 @@ async function pixCriar(request: Request, env: Env): Promise<Response> {
       await env.DB.put("torneios:index", JSON.stringify(index));
     }
   } catch (e: any) {
-    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+    return { ok: false, error: "Falha ao salvar", status: 500 };
   }
 
-  return json({ ok: true, pagamento: dados.pagamento });
+  return { ok: true, pagamento: dados.pagamento };
+}
+
+async function pixCriar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const id = body.id;
+  const solicitanteEmail = normEmail(body.email);
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+
+  const raw = await env.DB.get(`torneio:${id}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para gerar o Pix deste torneio" }, 403);
+  }
+
+  const resultado = await gerarCobrancaPix(env, id, new URL(request.url).origin, solicitanteEmail);
+  if (!resultado.ok) return json({ error: resultado.error }, resultado.status);
+  return json({ ok: true, pagamento: resultado.pagamento, recuperadoPorBusca: resultado.recuperadoPorBusca });
 }
 
 // Valida o header x-signature do Mercado Pago (formato "ts=...,v1=..."), conforme a
@@ -1383,7 +1433,9 @@ async function configGet(request: Request, env: Env): Promise<Response> {
   const solicitanteEmail = normEmail(url.searchParams.get("email"));
   const googleClientId = (await env.DB.get("config:google_client_id")) || null;
   const isAdmin = solicitanteEmail ? ehAdmin(solicitanteEmail, env) : false;
-  const resposta: any = { googleClientId, isAdmin };
+  // valorDiaria é pública (não só pro admin) — qualquer um precisa dela pra mostrar o preview de
+  // preço na tela de criação de torneio.
+  const resposta: any = { googleClientId, isAdmin, valorDiaria: await getValorDiaria(env) };
   if (isAdmin) {
     resposta.adminNotificationEmail = (await env.DB.get("config:admin_notification_email")) || null;
   }
@@ -1408,6 +1460,9 @@ async function configSet(request: Request, env: Env): Promise<Response> {
   }
   if (typeof body.adminNotificationEmail === "string") {
     await env.DB.put("config:admin_notification_email", body.adminNotificationEmail.trim());
+  }
+  if (typeof body.valorDiaria === "number" && Number.isFinite(body.valorDiaria) && body.valorDiaria > 0) {
+    await env.DB.put("config:valor_diaria", String(body.valorDiaria));
   }
 
   return json({ ok: true });
