@@ -380,6 +380,21 @@
   }
   .nav-badge.show{display:flex;}
 
+  /* Campeonato expirado: mostra tudo normalmente, mas trava qualquer interação que altere
+     dados (botões/inputs do conteúdo). Fica de fora do menu inferior e da barra do torneio
+     de propósito, pra navegação entre abas e "Trocar torneio" continuarem funcionando. */
+  .readonly-banner{
+    background:var(--sand);color:var(--heading);border-top:1px solid var(--sand-dark);
+    font-size:12px;font-weight:600;text-align:center;padding:8px 14px;
+  }
+  .app.somente-leitura main button:not(#btn-story-download),
+  .app.somente-leitura main input,
+  .app.somente-leitura main select,
+  .app.somente-leitura main textarea,
+  .app.somente-leitura main label.btn{
+    pointer-events:none;opacity:.5;
+  }
+
   .toast{
     position:fixed;bottom:78px;left:50%;transform:translateX(-50%) translateY(10px);
     background:var(--ocean-deep);color:var(--white);padding:10px 16px;border-radius:10px;
@@ -709,7 +724,10 @@ let enviosPendentes = 0;
 function save(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   ultimoSaveLocalEm = Date.now();
-  if(auth) syncTorneio();
+  // Campeonato expirado (somente leitura): guarda só neste aparelho (ex: aba selecionada),
+  // mas não tenta sincronizar com o servidor — ele recusaria mesmo (ver worker.ts) e não
+  // deveria haver nenhuma alteração de dado real acontecendo enquanto isso é verdade.
+  if(auth && !somenteLeitura()) syncTorneio();
 }
 
 if(!state.tournamentId){
@@ -1346,6 +1364,16 @@ function torneioEstaAtivo(){
   if(state.dataInicio && hoje < state.dataInicio) return {ok:false, motivo:"antes"};
   if(state.dataFim && hoje > state.dataFim) return {ok:false, motivo:"depois"};
   return {ok:true, motivo:null};
+}
+
+// Campeonato expirado (passou da dataFim, mas já foi aprovado/pago normalmente): não fica mais
+// bloqueado como "aprovacao"/"pagamento"/"antes" ficam — continua totalmente visível, só que
+// somente leitura (ninguém além do admin do app pode mais alterar nenhum dado dele).
+function campeonatoExpirado(){
+  return torneioEstaAtivo().motivo==="depois";
+}
+function somenteLeitura(){
+  return !ehAdmin() && campeonatoExpirado();
 }
 
 // Busca a versão mais recente do torneio já aberto (usado ao carregar/recarregar a página,
@@ -3080,7 +3108,8 @@ function render(){
     return;
   }
 
-  if(!ehAdmin() && !torneioEstaAtivo().ok){
+  const ativo = torneioEstaAtivo();
+  if(!ehAdmin() && !ativo.ok && ativo.motivo!=="depois"){
     nav.style.display = "none";
     navAdmin.style.display = "none";
     torneioBar.innerHTML = `<div class="torneio-bar">
@@ -3091,6 +3120,8 @@ function render(){
     bindEvents();
     return;
   }
+
+  document.querySelector(".app").classList.toggle("somente-leitura", somenteLeitura());
 
   if(state.tab==="apito" && state.apitoMatchId){
     nav.style.display = "none";
@@ -3107,7 +3138,7 @@ function render(){
   torneioBar.innerHTML = `<div class="torneio-bar">
     <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}${state.codigo ? ` <span style="opacity:.6;font-family:'DM Mono',monospace;font-size:11px;">#${escapeHtml(state.codigo)}</span>` : ""}</span>
     <button class="voltar" id="btn-voltar-torneios">Trocar torneio</button>
-  </div>`;
+  </div>${somenteLeitura() ? `<div class="readonly-banner">🔒 Encerrado em ${formatarDataBR(state.dataFim)} — somente visualização, sem alterações.</div>` : ""}`;
 
   document.querySelectorAll("#nav-torneio button").forEach(b=>{
     b.classList.toggle("active", b.dataset.tab===state.tab);

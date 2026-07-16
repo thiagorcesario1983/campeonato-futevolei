@@ -267,6 +267,15 @@ function ehAdmin(email: string, env: Env): boolean {
   return !!email && lista.includes(email);
 }
 
+// Mesma regra de expiração do front-end (torneioEstaAtivo, motivo "depois"), só que aqui serve
+// de segunda trava: mesmo que alguém contorne a UI somente-leitura, o servidor recusa qualquer
+// escrita de dado de um torneio já expirado (exceto pelo admin do app).
+function torneioExpirado(dataFim: string | null | undefined): boolean {
+  if (!dataFim) return false;
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  return hojeISO > dataFim;
+}
+
 // Código sequencial de 10 posições: 6 dígitos de sequência (controlada pelo app, nunca reseta)
 // + 4 dígitos do ano de criação. Ex.: 0000012026, 0000022026... Serve como identificador
 // legível pra exibir em telas e nas comunicações — o "id" (UUID) continua sendo a chave interna.
@@ -304,6 +313,12 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   // Só o dono original (ou o admin) pode atualizar um torneio já existente.
   if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
     return json({ error: "Sem permissão para alterar este torneio" }, 403);
+  }
+
+  // Torneio expirado: só leitura pra todo mundo, exceto o admin do app (que pode reabrir
+  // ajustando as datas pela tela de Aprovações).
+  if (existing && torneioExpirado(existing.dataFim) && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Este campeonato está encerrado — somente leitura, não é possível salvar alterações." }, 403);
   }
 
   // Cupom de desconto: só é considerado na CRIAÇÃO (nunca muda depois, mesmo re-salvando o
@@ -894,6 +909,7 @@ async function apitoGet(request: Request, env: Env): Promise<Response> {
   if (!refPublico) return json({ error: "jogo não encontrado" }, 404);
   const arb = dados.state?.arbitragem?.[matchId];
   if (!arb || !arb.tokenApito || arb.tokenApito !== token) return json({ error: "Link inválido ou expirado" }, 403);
+  if (torneioExpirado(dados.dataFim)) return json({ error: "Esse campeonato já foi encerrado — não é mais possível apitar." }, 403);
 
   return json({ ok: true, arb: corrigirArb(arb, refPublico) });
 }
@@ -926,6 +942,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
   if (!dados.state.arbitragem) dados.state.arbitragem = {};
   const arb: any = corrigirArb(dados.state.arbitragem[matchId] || defaultArb(m), m);
   if (!arb.tokenApito || arb.tokenApito !== token) return json({ error: "Link inválido ou expirado" }, 403);
+  if (torneioExpirado(dados.dataFim)) return json({ error: "Esse campeonato já foi encerrado — não é mais possível apitar." }, 403);
 
   if (typeof body.arbitroNome === "string" && body.arbitroNome.trim()) {
     arb.arbitroNome = body.arbitroNome.trim().slice(0, 60);
