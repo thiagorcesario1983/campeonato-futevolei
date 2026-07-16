@@ -789,11 +789,14 @@ function checkTrocaLado(arb: any): boolean {
   return deveTrocar;
 }
 
-function defaultArb(): any {
+// Se a partida já tem placar definido direto (sem passar pelo apito), o registro nasce
+// refletindo esse placar real em vez de zerado — mesma regra do front (getArb no index.html).
+function defaultArb(m?: any): any {
+  const temPlacar = m && m.pa !== null && m.pa !== undefined && m.pa !== "" && m.pb !== null && m.pb !== undefined && m.pb !== "";
   return {
     status: "nao_iniciada",
-    placarA: 0,
-    placarB: 0,
+    placarA: temPlacar ? Number(m.pa) : 0,
+    placarB: temPlacar ? Number(m.pb) : 0,
     acumuladoMs: 0,
     inicioMs: null,
     ultimoMultiploTroca: 0,
@@ -827,10 +830,11 @@ async function apitoCriarLink(request: Request, env: Env): Promise<Response> {
     return json({ error: "Sem permissão para gerar link deste torneio" }, 403);
   }
 
-  if (!getMatchRef(dados.state, matchId)) return json({ error: "jogo não encontrado" }, 404);
+  const matchRef = getMatchRef(dados.state, matchId);
+  if (!matchRef) return json({ error: "jogo não encontrado" }, 404);
 
   if (!dados.state.arbitragem) dados.state.arbitragem = {};
-  const arb = dados.state.arbitragem[matchId] || defaultArb();
+  const arb = dados.state.arbitragem[matchId] || defaultArb(matchRef);
   if (!arb.tokenApito) arb.tokenApito = crypto.randomUUID();
   dados.state.arbitragem[matchId] = arb;
 
@@ -889,7 +893,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
   const m = getMatchRef(dados.state, matchId);
   if (!m) return json({ error: "jogo não encontrado" }, 404);
   if (!dados.state.arbitragem) dados.state.arbitragem = {};
-  const arb: any = dados.state.arbitragem[matchId] || defaultArb();
+  const arb: any = dados.state.arbitragem[matchId] || defaultArb(m);
   if (!arb.tokenApito || arb.tokenApito !== token) return json({ error: "Link inválido ou expirado" }, 403);
 
   if (typeof body.arbitroNome === "string" && body.arbitroNome.trim()) {
