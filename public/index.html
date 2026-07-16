@@ -2041,20 +2041,35 @@ function getArb(matchId){
   if(!state.arbitragem) state.arbitragem = {};
   if(!state.arbitragem[matchId]){
     // Se o placar já foi definido direto (sem passar pelo Apitar jogo), o registro de
-    // arbitragem nasce refletindo esse placar real em vez de zerado.
+    // arbitragem nasce refletindo esse placar e status real em vez de zerado/não iniciada —
+    // senão um jogo já finalizado "renascia" como não iniciado ao abrir o placar, e essa
+    // inconsistência (placar preenchido + status não_iniciada) fazia o jogo parecer reaberto.
     const m = getMatchObj(matchId);
     const temPlacar = m && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
+    const jaFinalizado = !!(m && m.finalizado);
     state.arbitragem[matchId] = {
-      status: "nao_iniciada", // nao_iniciada | andamento | tecnico | finalizada
+      status: jaFinalizado ? "finalizada" : "nao_iniciada", // nao_iniciada | andamento | tecnico | finalizada
       placarA: temPlacar ? Number(m.pa) : 0,
       placarB: temPlacar ? Number(m.pb) : 0,
       acumuladoMs: 0,
       inicioMs: null,
       ultimoMultiploTroca: 0,
-      duracaoFinalSegundos: null,
+      duracaoFinalSegundos: jaFinalizado ? 0 : null,
       arbitroNome: null, // nome de quem apitou (preenchido pelo link de árbitro convidado)
       tokenApito: null // token do link de árbitro convidado dessa partida, se já foi gerado
     };
+  } else {
+    // Auto-corrige um registro salvo antes desse ajuste (jogo finalizado com arbitragem
+    // desalinhada em "não iniciada") em vez de propagar o erro pra sempre.
+    const arb = state.arbitragem[matchId];
+    const m = getMatchObj(matchId);
+    if(m && m.finalizado && arb.status!=="finalizada"){
+      arb.status = "finalizada";
+      arb.placarA = Number(m.pa);
+      arb.placarB = Number(m.pb);
+      arb.inicioMs = null;
+      if(arb.duracaoFinalSegundos==null) arb.duracaoFinalSegundos = Math.floor((arb.acumuladoMs||0)/1000);
+    }
   }
   return state.arbitragem[matchId];
 }
