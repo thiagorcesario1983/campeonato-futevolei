@@ -2040,10 +2040,14 @@ function getMatchLabel(matchId){
 function getArb(matchId){
   if(!state.arbitragem) state.arbitragem = {};
   if(!state.arbitragem[matchId]){
+    // Se o placar já foi definido direto (sem passar pelo Apitar jogo), o registro de
+    // arbitragem nasce refletindo esse placar real em vez de zerado.
+    const m = getMatchObj(matchId);
+    const temPlacar = m && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
     state.arbitragem[matchId] = {
       status: "nao_iniciada", // nao_iniciada | andamento | tecnico | finalizada
-      placarA: 0,
-      placarB: 0,
+      placarA: temPlacar ? Number(m.pa) : 0,
+      placarB: temPlacar ? Number(m.pb) : 0,
       acumuladoMs: 0,
       inicioMs: null,
       ultimoMultiploTroca: 0,
@@ -3404,6 +3408,13 @@ function renderAprovacoesScreen(){
 
 function badgeCupom(c){
   if(c.status==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
+  // Mesmas regras de validade do worker (checarValidadeCupom) — o status salvo continua
+  // "ativo" mesmo vencido (só "bloqueado" é setado manualmente), então o badge precisa
+  // calcular a validade real na hora de exibir, senão parece utilizável quando não é.
+  const hoje = hojeLocalISO();
+  if(c.dataFim && hoje > c.dataFim) return `<span class="status-pill" style="background:#F5D9D9;color:#8A2E2E;">⏰ Expirado</span>`;
+  if(c.dataInicio && hoje < c.dataInicio) return `<span class="status-pill" style="background:#FCEBC9;color:#8A6D1D;">🕓 Ainda não começou</span>`;
+  if(typeof c.maxUsos==="number" && c.usos>=c.maxUsos) return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🎯 Limite atingido</span>`;
   return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativo</span>`;
 }
 
