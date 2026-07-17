@@ -872,6 +872,9 @@ let torneiosLoading = false;
 let torneiosFiltroStatus = "todos"; // "todos" | "pendente" | "aprovado" | "recusado" | "bloqueado" | "expirado"
 let torneiosPagina = 1;
 const TORNEIOS_POR_PAGINA = 5;
+let aprovacoesFiltroStatus = "todos"; // mesmas opções de torneiosFiltroStatus
+let aprovacoesPagina = 1;
+const APROVACOES_POR_PAGINA = 5;
 let syncTimer = null;
 let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" | "cupons" — só usada quando ehAdmin()
 let mostrarFormNovoTorneio = false;
@@ -879,6 +882,9 @@ let adminNotificationEmailCache = "";
 let valorDiariaCache = 70; // valor da diária configurável pelo admin — atualizado via /api/config-get
 let cuponsList = null;
 let cuponsLoading = false;
+let cuponsFiltroStatus = "todos"; // "todos" | "ativo" | "expirado" | "nao_comecou" | "limite_atingido" | "bloqueado"
+let cuponsPagina = 1;
+const CUPONS_POR_PAGINA = 5;
 let mostrarFormNovoCupom = false;
 let cupomValidacaoCache = {}; // {nomeDigitado: {valido, percentual, motivo}} — evita revalidar a cada tecla
 let placarSelecionados = new Set(); // matchIds escolhidos na aba Placar
@@ -3533,24 +3539,45 @@ function renderAprovacoesScreen(){
   let html = `<div class="section-title">Aprovações</div>
     <div class="section-sub">Revise, ajuste as datas e aprove ou recuse os campeonatos solicitados.</div>`;
 
-  const lista = (torneiosList||[]).slice().sort((a,b)=>{
+  if(torneiosList===null){
+    return html + `<div class="card empty">Carregando torneios...</div>`;
+  }
+  if(!torneiosList.length){
+    return html + `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum torneio solicitado ainda.</div>`;
+  }
+
+  const opcoesFiltro = Object.keys(ROTULO_STATUS_GERAL).map(key=>
+    `<option value="${key}" ${aprovacoesFiltroStatus===key ? "selected" : ""}>${ROTULO_STATUS_GERAL[key]}</option>`
+  ).join("");
+  html += `<div style="margin-bottom:14px;">
+    <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Filtrar por status</label>
+    <select id="select-filtro-status-aprovacoes" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">${opcoesFiltro}</select>
+  </div>`;
+
+  const listaOrdenada = torneiosList.slice().sort((a,b)=>{
     const pesoA = a.aprovacaoStatus==="pendente" ? 0 : 1;
     const pesoB = b.aprovacaoStatus==="pendente" ? 0 : 1;
     return pesoA-pesoB || (b.updatedAt||"").localeCompare(a.updatedAt||"");
   });
+  const listaFiltrada = aprovacoesFiltroStatus==="todos" ? listaOrdenada : listaOrdenada.filter(t=> statusGeralTorneio(t)===aprovacoesFiltroStatus);
 
-  if(torneiosList===null){
-    return html + `<div class="card empty">Carregando torneios...</div>`;
-  }
-  if(!lista.length){
-    return html + `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum torneio solicitado ainda.</div>`;
+  if(!listaFiltrada.length){
+    return html + `<div class="card empty">Nenhum torneio com o status "${ROTULO_STATUS_GERAL[aprovacoesFiltroStatus]}".</div>`;
   }
 
-  lista.forEach(t=>{
+  const totalPaginas = Math.max(1, Math.ceil(listaFiltrada.length / APROVACOES_POR_PAGINA));
+  if(aprovacoesPagina > totalPaginas) aprovacoesPagina = totalPaginas;
+  if(aprovacoesPagina < 1) aprovacoesPagina = 1;
+  const inicio = (aprovacoesPagina-1) * APROVACOES_POR_PAGINA;
+  const listaPagina = listaFiltrada.slice(inicio, inicio + APROVACOES_POR_PAGINA);
+
+  html += `<div class="sub" style="margin-bottom:10px;">${listaFiltrada.length} torneio${listaFiltrada.length!==1?"s":""}</div>`;
+
+  listaPagina.forEach(t=>{
     html += `<div class="card" style="margin-bottom:14px;">
       <div class="row" style="margin-bottom:2px;">
         <span class="nome" style="font-weight:700;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
-        ${badgeAprovacao(t)}
+        ${badgeStatusGeral(t)}
         ${badgePagamento(t)}
       </div>
       <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:6px;">#${escapeHtml(t.codigo||"—")}</div>
@@ -3574,18 +3601,35 @@ function renderAprovacoesScreen(){
       </div>
     </div>`;
   });
+
+  if(totalPaginas > 1){
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;">
+      <button class="btn ghost" id="btn-aprovacoes-pagina-anterior" style="width:auto;padding:8px 16px;${aprovacoesPagina<=1 ? "opacity:.45;cursor:not-allowed;" : ""}" ${aprovacoesPagina<=1 ? "disabled" : ""}>← Anterior</button>
+      <span class="sub">Página ${aprovacoesPagina} de ${totalPaginas}</span>
+      <button class="btn ghost" id="btn-aprovacoes-pagina-proxima" style="width:auto;padding:8px 16px;${aprovacoesPagina>=totalPaginas ? "opacity:.45;cursor:not-allowed;" : ""}" ${aprovacoesPagina>=totalPaginas ? "disabled" : ""}>Próxima →</button>
+    </div>`;
+  }
   return html;
 }
 
-function badgeCupom(c){
-  if(c.status==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
-  // Mesmas regras de validade do worker (checarValidadeCupom) — o status salvo continua
-  // "ativo" mesmo vencido (só "bloqueado" é setado manualmente), então o badge precisa
-  // calcular a validade real na hora de exibir, senão parece utilizável quando não é.
+// Mesmas regras de validade do worker (checarValidadeCupom) — o status salvo continua "ativo"
+// mesmo vencido (só "bloqueado" é setado manualmente), então precisa calcular a validade real
+// na hora de exibir/filtrar, senão parece utilizável quando não é.
+function statusGeralCupom(c){
+  if(c.status==="bloqueado") return "bloqueado";
   const hoje = hojeLocalISO();
-  if(c.dataFim && hoje > c.dataFim) return `<span class="status-pill" style="background:#F5D9D9;color:#8A2E2E;">⏰ Expirado</span>`;
-  if(c.dataInicio && hoje < c.dataInicio) return `<span class="status-pill" style="background:#FCEBC9;color:#8A6D1D;">🕓 Ainda não começou</span>`;
-  if(typeof c.maxUsos==="number" && c.usos>=c.maxUsos) return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🎯 Limite atingido</span>`;
+  if(c.dataFim && hoje > c.dataFim) return "expirado";
+  if(c.dataInicio && hoje < c.dataInicio) return "nao_comecou";
+  if(typeof c.maxUsos==="number" && c.usos>=c.maxUsos) return "limite_atingido";
+  return "ativo";
+}
+const ROTULO_STATUS_CUPOM = { todos:"Todos", ativo:"Ativo", expirado:"Expirado", nao_comecou:"Ainda não começou", limite_atingido:"Limite atingido", bloqueado:"Bloqueado" };
+function badgeCupom(c){
+  const st = statusGeralCupom(c);
+  if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
+  if(st==="expirado") return `<span class="status-pill" style="background:#F5D9D9;color:#8A2E2E;">⏰ Expirado</span>`;
+  if(st==="nao_comecou") return `<span class="status-pill" style="background:#FCEBC9;color:#8A6D1D;">🕓 Ainda não começou</span>`;
+  if(st==="limite_atingido") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🎯 Limite atingido</span>`;
   return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativo</span>`;
 }
 
@@ -3623,24 +3667,55 @@ function renderCuponsAdminScreen(){
   } else if(!cuponsList.length){
     html += `<div class="card empty"><span class="ball-icon">🎟️</span>Nenhum cupom cadastrado ainda.</div>`;
   } else {
-    cuponsList.slice().sort((a,b)=> a.nome.localeCompare(b.nome)).forEach(c=>{
-      const usoTexto = typeof c.maxUsos==="number" ? `${c.usos} / ${c.maxUsos} usos` : `${c.usos} uso${c.usos===1?"":"s"} (ilimitado)`;
-      html += `<div class="card" style="margin-bottom:14px;">
-        <div class="row" style="margin-bottom:2px;">
-          <span class="nome" style="font-weight:700;font-family:'DM Mono',monospace;">${escapeHtml(c.nome)}</span>
-          ${badgeCupom(c)}
-        </div>
-        <div class="sub" style="margin-bottom:4px;">${c.percentual}% de desconto · ${usoTexto}</div>
-        <div class="sub" style="margin-bottom:10px;">Válido de ${formatarDataBR(c.dataInicio)} até ${formatarDataBR(c.dataFim)}</div>
-        <div style="display:flex;gap:8px;">
-          ${c.status==="bloqueado"
-            ? `<button class="btn" data-cupom-desbloquear="${escapeHtml(c.nome)}" style="flex:1;background:var(--grass);box-shadow:none;">🔓 Desbloquear</button>`
-            : `<button class="btn ghost" data-cupom-bloquear="${escapeHtml(c.nome)}" style="flex:1;border-color:var(--muted);color:var(--muted);">🔒 Bloquear</button>`
-          }
-          <button class="btn ghost" data-cupom-remover="${escapeHtml(c.nome)}" style="flex:1;border-color:var(--coral);color:var(--coral);">🗑️ Remover</button>
-        </div>
-      </div>`;
-    });
+    const opcoesFiltroCupom = Object.keys(ROTULO_STATUS_CUPOM).map(key=>
+      `<option value="${key}" ${cuponsFiltroStatus===key ? "selected" : ""}>${ROTULO_STATUS_CUPOM[key]}</option>`
+    ).join("");
+    html += `<div style="margin-bottom:14px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Filtrar por status</label>
+      <select id="select-filtro-status-cupons" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">${opcoesFiltroCupom}</select>
+    </div>`;
+
+    const listaOrdenada = cuponsList.slice().sort((a,b)=> a.nome.localeCompare(b.nome));
+    const listaFiltrada = cuponsFiltroStatus==="todos" ? listaOrdenada : listaOrdenada.filter(c=> statusGeralCupom(c)===cuponsFiltroStatus);
+
+    if(!listaFiltrada.length){
+      html += `<div class="card empty">Nenhum cupom com o status "${ROTULO_STATUS_CUPOM[cuponsFiltroStatus]}".</div>`;
+    } else {
+      const totalPaginas = Math.max(1, Math.ceil(listaFiltrada.length / CUPONS_POR_PAGINA));
+      if(cuponsPagina > totalPaginas) cuponsPagina = totalPaginas;
+      if(cuponsPagina < 1) cuponsPagina = 1;
+      const inicio = (cuponsPagina-1) * CUPONS_POR_PAGINA;
+      const listaPagina = listaFiltrada.slice(inicio, inicio + CUPONS_POR_PAGINA);
+
+      html += `<div class="sub" style="margin-bottom:10px;">${listaFiltrada.length} ${listaFiltrada.length===1 ? "cupom" : "cupons"}</div>`;
+
+      listaPagina.forEach(c=>{
+        const usoTexto = typeof c.maxUsos==="number" ? `${c.usos} / ${c.maxUsos} usos` : `${c.usos} uso${c.usos===1?"":"s"} (ilimitado)`;
+        html += `<div class="card" style="margin-bottom:14px;">
+          <div class="row" style="margin-bottom:2px;">
+            <span class="nome" style="font-weight:700;font-family:'DM Mono',monospace;">${escapeHtml(c.nome)}</span>
+            ${badgeCupom(c)}
+          </div>
+          <div class="sub" style="margin-bottom:4px;">${c.percentual}% de desconto · ${usoTexto}</div>
+          <div class="sub" style="margin-bottom:10px;">Válido de ${formatarDataBR(c.dataInicio)} até ${formatarDataBR(c.dataFim)}</div>
+          <div style="display:flex;gap:8px;">
+            ${c.status==="bloqueado"
+              ? `<button class="btn" data-cupom-desbloquear="${escapeHtml(c.nome)}" style="flex:1;background:var(--grass);box-shadow:none;">🔓 Desbloquear</button>`
+              : `<button class="btn ghost" data-cupom-bloquear="${escapeHtml(c.nome)}" style="flex:1;border-color:var(--muted);color:var(--muted);">🔒 Bloquear</button>`
+            }
+            <button class="btn ghost" data-cupom-remover="${escapeHtml(c.nome)}" style="flex:1;border-color:var(--coral);color:var(--coral);">🗑️ Remover</button>
+          </div>
+        </div>`;
+      });
+
+      if(totalPaginas > 1){
+        html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;">
+          <button class="btn ghost" id="btn-cupons-pagina-anterior" style="width:auto;padding:8px 16px;${cuponsPagina<=1 ? "opacity:.45;cursor:not-allowed;" : ""}" ${cuponsPagina<=1 ? "disabled" : ""}>← Anterior</button>
+          <span class="sub">Página ${cuponsPagina} de ${totalPaginas}</span>
+          <button class="btn ghost" id="btn-cupons-pagina-proxima" style="width:auto;padding:8px 16px;${cuponsPagina>=totalPaginas ? "opacity:.45;cursor:not-allowed;" : ""}" ${cuponsPagina>=totalPaginas ? "disabled" : ""}>Próxima →</button>
+        </div>`;
+      }
+    }
   }
   return html;
 }
@@ -4624,6 +4699,38 @@ function bindEvents(){
   const btnPaginaProxima = document.getElementById("btn-torneios-pagina-proxima");
   if(btnPaginaProxima) btnPaginaProxima.addEventListener("click", ()=>{
     torneiosPagina++;
+    render();
+  });
+  const selectFiltroStatusAprovacoes = document.getElementById("select-filtro-status-aprovacoes");
+  if(selectFiltroStatusAprovacoes) selectFiltroStatusAprovacoes.addEventListener("change", e=>{
+    aprovacoesFiltroStatus = e.target.value;
+    aprovacoesPagina = 1;
+    render();
+  });
+  const btnAprovacoesPaginaAnterior = document.getElementById("btn-aprovacoes-pagina-anterior");
+  if(btnAprovacoesPaginaAnterior) btnAprovacoesPaginaAnterior.addEventListener("click", ()=>{
+    aprovacoesPagina--;
+    render();
+  });
+  const btnAprovacoesPaginaProxima = document.getElementById("btn-aprovacoes-pagina-proxima");
+  if(btnAprovacoesPaginaProxima) btnAprovacoesPaginaProxima.addEventListener("click", ()=>{
+    aprovacoesPagina++;
+    render();
+  });
+  const selectFiltroStatusCupons = document.getElementById("select-filtro-status-cupons");
+  if(selectFiltroStatusCupons) selectFiltroStatusCupons.addEventListener("change", e=>{
+    cuponsFiltroStatus = e.target.value;
+    cuponsPagina = 1;
+    render();
+  });
+  const btnCuponsPaginaAnterior = document.getElementById("btn-cupons-pagina-anterior");
+  if(btnCuponsPaginaAnterior) btnCuponsPaginaAnterior.addEventListener("click", ()=>{
+    cuponsPagina--;
+    render();
+  });
+  const btnCuponsPaginaProxima = document.getElementById("btn-cupons-pagina-proxima");
+  if(btnCuponsPaginaProxima) btnCuponsPaginaProxima.addEventListener("click", ()=>{
+    cuponsPagina++;
     render();
   });
 
