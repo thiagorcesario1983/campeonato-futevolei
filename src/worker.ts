@@ -422,27 +422,35 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   const valorEstim = calcularValorComCupom(diasNovo, cupomAplicado, valorDiariaNovo);
   if (ehNovo && diasNovo > 0) {
     if (valorEstim <= 0) {
+      // Cupom de 100% (ou outro caso de valor zerado) equivale a um pagamento já resolvido —
+      // libera na hora, sem precisar de uma aprovação manual separada do admin.
       pagamentoResultante = {
         status: "isento", valor: 0, dias: diasNovo, paymentId: null, copiaCola: null, qrCodeBase64: null,
         criadoEm: new Date().toISOString(), pagoEm: new Date().toISOString()
       };
+      meta.aprovacaoStatus = "aprovado";
       try {
         const rawAtual = await env.DB.get(`torneio:${id}`);
         if (rawAtual) {
           const dadosAtual = JSON.parse(rawAtual);
           dadosAtual.pagamento = pagamentoResultante;
+          dadosAtual.aprovacaoStatus = "aprovado";
           await env.DB.put(`torneio:${id}`, JSON.stringify(dadosAtual));
           const idxAtual = await getIndex(env);
           const pos = idxAtual.findIndex((t: any) => t.id === id);
           if (pos >= 0) {
             idxAtual[pos].pagamentoStatus = "isento";
+            idxAtual[pos].aprovacaoStatus = "aprovado";
             await env.DB.put("torneios:index", JSON.stringify(idxAtual));
           }
         }
       } catch {}
     } else {
       const resultadoPix = await gerarCobrancaPix(env, id, new URL(request.url).origin, solicitanteEmail);
-      if (resultadoPix.ok) pagamentoResultante = resultadoPix.pagamento;
+      if (resultadoPix.ok) {
+        pagamentoResultante = resultadoPix.pagamento;
+        meta.aprovacaoStatus = resultadoPix.aprovacaoStatus || meta.aprovacaoStatus;
+      }
     }
     meta.pagamentoStatus = pagamentoResultante?.status || meta.pagamentoStatus;
   }
@@ -784,7 +792,9 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     const resultadoPix = await gerarCobrancaPix(env, id, new URL(request.url).origin);
     if (resultadoPix.ok) {
       dados.pagamento = resultadoPix.pagamento;
+      dados.aprovacaoStatus = resultadoPix.aprovacaoStatus || dados.aprovacaoStatus;
       meta.pagamentoStatus = dados.pagamento?.status || meta.pagamentoStatus;
+      meta.aprovacaoStatus = dados.aprovacaoStatus;
     }
   }
 
@@ -796,18 +806,23 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
       recusado: "recusado ❌",
       bloqueado: "bloqueado 🔒"
     };
+    // Se o pagamento já estiver confirmado (ex: o organizador pagou entre a criação e essa
+    // aprovação), não faz sentido reenviar o código Pix — só confirma que já está tudo certo.
+    const jaPago = valorEfetivo !== 0 && dados.pagamento?.status === "pago";
     const corpos: Record<string, string> = {
       aprovado: valorEfetivo === 0
         ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>Este campeonato foi liberado sem custo. Já está disponível para uso dentro desse período.</p>`
-        : dados.pagamento?.copiaCola
-          ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p>
-             <p><b>Valor das diárias:</b> R$ ${valorEfetivo.toFixed(2).replace(".", ",")}${diasCalc ? ` (${diasCalc} diária${diasCalc > 1 ? "s" : ""})` : ""}</p>
-             <p>Pague via Pix usando o código copia-e-cola abaixo (ou escaneie o QR direto no app):</p>
-             <p style="word-break:break-all;font-family:monospace;background:#f4f4f4;padding:8px;border-radius:6px;">${dados.pagamento.copiaCola}</p>
-             <p>Assim que o pagamento for identificado, o campeonato é liberado automaticamente.</p>`
-          : `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p>
-             <p><b>Valor das diárias:</b> R$ ${valorEfetivo.toFixed(2).replace(".", ",")}${diasCalc ? ` (${diasCalc} diária${diasCalc > 1 ? "s" : ""})` : ""}</p>
-             <p>Falta só o pagamento via Pix para liberar o uso — entre no app para gerar o código.</p>`,
+        : jaPago
+          ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p><p>O pagamento das diárias já tinha sido confirmado. Este campeonato já está disponível para uso dentro desse período.</p>`
+          : dados.pagamento?.status === "pendente" && dados.pagamento?.copiaCola
+            ? `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p>
+               <p><b>Valor das diárias:</b> R$ ${valorEfetivo.toFixed(2).replace(".", ",")}${diasCalc ? ` (${diasCalc} diária${diasCalc > 1 ? "s" : ""})` : ""}</p>
+               <p>Pague via Pix usando o código copia-e-cola abaixo (ou escaneie o QR direto no app):</p>
+               <p style="word-break:break-all;font-family:monospace;background:#f4f4f4;padding:8px;border-radius:6px;">${dados.pagamento.copiaCola}</p>
+               <p>Assim que o pagamento for identificado, o campeonato é liberado automaticamente.</p>`
+            : `<p><b>Início:</b> ${dados.dataInicio || "não informado"}<br><b>Fim:</b> ${dados.dataFim || "não informado"}</p>
+               <p><b>Valor das diárias:</b> R$ ${valorEfetivo.toFixed(2).replace(".", ",")}${diasCalc ? ` (${diasCalc} diária${diasCalc > 1 ? "s" : ""})` : ""}</p>
+               <p>Falta só o pagamento via Pix para liberar o uso — entre no app para gerar o código.</p>`,
       recusado: `<p>Se tiver dúvidas, entre em contato com o organizador do app.</p>`,
       bloqueado: `<p>Ele fica indisponível até ser liberado novamente pelo admin — as datas de validade (${dados.dataInicio || "não informado"} a ${dados.dataFim || "não informado"}) continuam guardadas e nada do que já foi feito se perde.</p>`
     };
@@ -1141,7 +1156,7 @@ function calcularDias(dataInicio?: string | null, dataFim?: string | null): numb
 // recebe `dados` pronto de fora) pra sempre operar em cima da versão mais recente já persistida,
 // evitando sobrescrever uma aprovação que acabou de ser salva.
 async function gerarCobrancaPix(env: Env, id: string, origin: string, solicitanteEmail?: string): Promise<
-  | { ok: true; pagamento: any; recuperadoPorBusca?: boolean }
+  | { ok: true; pagamento: any; aprovacaoStatus: string; recuperadoPorBusca?: boolean }
   | { ok: false; error: string; status: number }
 > {
   if (!env.MP_ACCESS_TOKEN) {
@@ -1168,7 +1183,12 @@ async function gerarCobrancaPix(env: Env, id: string, origin: string, solicitant
   const jaAprovado = await buscarPagamentoPorReferencia(env, id);
   if (jaAprovado) {
     const atualizado = await confirmarPagamentoAprovado(env, id, jaAprovado);
-    return { ok: true, pagamento: atualizado?.pagamento || dados.pagamento, recuperadoPorBusca: true };
+    return {
+      ok: true,
+      pagamento: atualizado?.pagamento || dados.pagamento,
+      aprovacaoStatus: atualizado?.aprovacaoStatus || dados.aprovacaoStatus,
+      recuperadoPorBusca: true
+    };
   }
 
   const dias = calcularDias(dados.dataInicio, dados.dataFim);
@@ -1238,7 +1258,7 @@ async function gerarCobrancaPix(env: Env, id: string, origin: string, solicitant
     return { ok: false, error: "Falha ao salvar", status: 500 };
   }
 
-  return { ok: true, pagamento: dados.pagamento };
+  return { ok: true, pagamento: dados.pagamento, aprovacaoStatus: dados.aprovacaoStatus };
 }
 
 async function pixCriar(request: Request, env: Env): Promise<Response> {
@@ -1264,7 +1284,7 @@ async function pixCriar(request: Request, env: Env): Promise<Response> {
 
   const resultado = await gerarCobrancaPix(env, id, new URL(request.url).origin, solicitanteEmail);
   if (!resultado.ok) return json({ error: resultado.error }, resultado.status);
-  return json({ ok: true, pagamento: resultado.pagamento, recuperadoPorBusca: resultado.recuperadoPorBusca });
+  return json({ ok: true, pagamento: resultado.pagamento, aprovacaoStatus: resultado.aprovacaoStatus, recuperadoPorBusca: resultado.recuperadoPorBusca });
 }
 
 // Valida o header x-signature do Mercado Pago (formato "ts=...,v1=..."), conforme a
@@ -1315,6 +1335,13 @@ async function confirmarPagamentoAprovado(env: Env, torneioId: string, pagamento
   if (dados.pagamento?.status === "pago") return dados;
 
   dados.pagamento = { ...(dados.pagamento || {}), status: "pago", paymentId: pagamentoMP.id, pagoEm: new Date().toISOString() };
+  // Pagamento confirmado libera o torneio na hora — não precisa mais esperar uma aprovação manual
+  // separada do admin (que continua podendo recusar/bloquear depois, se precisar; só não é mais
+  // um pré-requisito pro uso). Só avança de "pendente" pra "aprovado" — nunca mexe se já tiver
+  // sido explicitamente recusado ou bloqueado.
+  if (dados.aprovacaoStatus === "pendente") {
+    dados.aprovacaoStatus = "aprovado";
+  }
   dados.updatedAt = new Date().toISOString();
 
   try {
@@ -1323,6 +1350,7 @@ async function confirmarPagamentoAprovado(env: Env, torneioId: string, pagamento
     const idx = index.findIndex((t: any) => t.id === torneioId);
     if (idx >= 0) {
       index[idx].pagamentoStatus = "pago";
+      index[idx].aprovacaoStatus = dados.aprovacaoStatus;
       await env.DB.put("torneios:index", JSON.stringify(index));
     }
   } catch {}
@@ -1440,7 +1468,7 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
   }
 
   if (dados.pagamento?.status === "pago" || dados.pagamento?.status === "isento") {
-    return json({ ok: true, pagamento: dados.pagamento });
+    return json({ ok: true, pagamento: dados.pagamento, aprovacaoStatus: dados.aprovacaoStatus });
   }
 
   const paymentId = dados.pagamento?.paymentId;
@@ -1450,23 +1478,32 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
     const encontrado = await buscarPagamentoPorReferencia(env, id);
     if (encontrado) {
       const atualizado = await confirmarPagamentoAprovado(env, id, encontrado);
-      return json({ ok: true, pagamento: atualizado?.pagamento || dados.pagamento, recuperadoPorBusca: true });
+      return json({
+        ok: true,
+        pagamento: atualizado?.pagamento || dados.pagamento,
+        aprovacaoStatus: atualizado?.aprovacaoStatus || dados.aprovacaoStatus,
+        recuperadoPorBusca: true
+      });
     }
-    return json({ ok: true, pagamento: dados.pagamento || null });
+    return json({ ok: true, pagamento: dados.pagamento || null, aprovacaoStatus: dados.aprovacaoStatus });
   }
 
   try {
     const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
       headers: { Authorization: `Bearer ${env.MP_ACCESS_TOKEN}` }
     });
-    if (!res.ok) return json({ ok: true, pagamento: dados.pagamento, statusMercadoPago: null });
+    if (!res.ok) return json({ ok: true, pagamento: dados.pagamento, aprovacaoStatus: dados.aprovacaoStatus, statusMercadoPago: null });
     const pagamentoMP = await res.json();
 
     if (pagamentoMP?.status === "approved") {
       const atualizado = await confirmarPagamentoAprovado(env, id, pagamentoMP);
-      return json({ ok: true, pagamento: atualizado?.pagamento || dados.pagamento });
+      return json({
+        ok: true,
+        pagamento: atualizado?.pagamento || dados.pagamento,
+        aprovacaoStatus: atualizado?.aprovacaoStatus || dados.aprovacaoStatus
+      });
     }
-    return json({ ok: true, pagamento: dados.pagamento, statusMercadoPago: pagamentoMP?.status || null });
+    return json({ ok: true, pagamento: dados.pagamento, aprovacaoStatus: dados.aprovacaoStatus, statusMercadoPago: pagamentoMP?.status || null });
   } catch (e: any) {
     return json({ error: "Falha de rede ao falar com o Mercado Pago", detail: String(e?.message || e) }, 502);
   }

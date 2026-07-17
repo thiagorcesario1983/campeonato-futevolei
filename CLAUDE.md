@@ -157,11 +157,18 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
    torneio com Pix pendente e em background a cada 20s enquanto ficar pendente). Se não tiver
    `paymentId` salvo, cai pra busca por `external_reference` (`buscarPagamentoPorReferencia`)
    antes de desistir — cobre casos em que o registro se perdeu por algum bug de save.
-   **O pagamento não depende da aprovação do admin** — o Pix é gerado automaticamente assim que o
-   torneio é criado (`torneiosSave`), já que datas e cupom são escolhidos pelo próprio organizador
-   nesse momento (`gerarCobrancaPix`, reaproveitada também como rede de segurança dentro de
-   `torneiosAprovar` e pelo botão manual "Gerar Pix"). A aprovação só bloqueia Pix se o torneio for
-   recusado ou bloqueado depois — não exigir mais "aprovado" como pré-requisito.
+   **O pagamento não depende da aprovação do admin, e vice-versa** — o Pix é gerado
+   automaticamente assim que o torneio é criado (`torneiosSave`), já que datas e cupom são
+   escolhidos pelo próprio organizador nesse momento (`gerarCobrancaPix`, reaproveitada também
+   como rede de segurança dentro de `torneiosAprovar` e pelo botão manual "Gerar Pix"). A
+   aprovação só bloqueia Pix se o torneio for recusado ou bloqueado depois — não exigir mais
+   "aprovado" como pré-requisito. **E o inverso também vale**: assim que o pagamento é confirmado
+   (`confirmarPagamentoAprovado`, chamada pelo webhook, pela verificação em background e pela
+   manual), `aprovacaoStatus` avança sozinho de "pendente" pra "aprovado" — o torneio fica liberado
+   pra uso sem precisar de um clique manual do admin na aba Aprovações. Por isso o e-mail de
+   "pagamento confirmado" nunca deve reenviar o código Pix (o pagamento já aconteceu) — e o e-mail
+   de aprovação (`torneiosAprovar`) só mostra o código Pix se `pagamento.status==="pendente"`,
+   nunca se já estiver `"pago"`.
 6. **Link de árbitro convidado ("Apitar jogo")**: rota pública, mas protegida por um token
    aleatório por partida (`tokenApito`), gerado só sob demanda pelo dono/admin. Devolve e aceita
    só dados daquela UMA partida — nunca o torneio inteiro. A troca de lado (múltiplos de 6 pontos)
