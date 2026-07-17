@@ -3124,7 +3124,7 @@ async function gerarStoryComIA(){
       body: JSON.stringify({ id: state.cloudId, email: auth.email, resumo })
     });
     const data = await res.json();
-    if(!res.ok){ showToast(data.error || "Não foi possível gerar a imagem com IA."); return; }
+    if(!res.ok){ showToast((data.error || "Não foi possível gerar a imagem com IA.") + (data.detail ? ` — ${data.detail}` : "")); return; }
     const img = new Image();
     img.onload = ()=>{
       canvas.height = 1920;
@@ -3192,7 +3192,7 @@ async function gerarBannerComIA(){
       body: JSON.stringify({ id: state.cloudId, email: auth.email })
     });
     const data = await res.json();
-    if(!res.ok){ showToast(data.error || "Não foi possível gerar o banner com IA."); return; }
+    if(!res.ok){ showToast((data.error || "Não foi possível gerar o banner com IA.") + (data.detail ? ` — ${data.detail}` : "")); return; }
     const img = new Image();
     img.onload = ()=>{
       const ctx = canvas.getContext("2d");

@@ -1521,7 +1521,7 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
 // nomes de modelo/endpoint), este é o único lugar que precisa de ajuste.
 async function gerarImagemGemini(env: Env, prompt: string, aspectRatio: string): Promise<
   | { ok: true; base64: string; mimeType: string }
-  | { ok: false; error: string; status: number }
+  | { ok: false; error: string; detail?: string; status: number }
 > {
   if (!env.GEMINI_API_KEY) {
     return { ok: false, error: "Geração de imagem via IA não configurada neste servidor (GEMINI_API_KEY ausente)", status: 500 };
@@ -1541,15 +1541,20 @@ async function gerarImagemGemini(env: Env, prompt: string, aspectRatio: string):
       }
     );
     resp = await res.json();
-    if (!res.ok) return { ok: false, error: "Falha ao gerar imagem com o Gemini", status: 502 };
+    if (!res.ok) {
+      // Repassa o erro real do Gemini (ex: chave inválida, modelo não encontrado, cota
+      // excedida) em vez de só "falhou" — é a única forma de diagnosticar sem acesso aos logs
+      // do Worker.
+      return { ok: false, error: "Falha ao gerar imagem com o Gemini", detail: resp?.error?.message || JSON.stringify(resp).slice(0, 300), status: 502 };
+    }
   } catch (e: any) {
-    return { ok: false, error: "Falha de rede ao falar com o Gemini", status: 502 };
+    return { ok: false, error: "Falha de rede ao falar com o Gemini", detail: String(e?.message || e), status: 502 };
   }
 
   const parts: any[] = resp?.candidates?.[0]?.content?.parts || [];
   const imagePart = parts.find((p: any) => p?.inlineData?.data);
   if (!imagePart) {
-    return { ok: false, error: "O Gemini não retornou nenhuma imagem", status: 502 };
+    return { ok: false, error: "O Gemini não retornou nenhuma imagem", detail: JSON.stringify(resp).slice(0, 300), status: 502 };
   }
 
   return { ok: true, base64: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType || "image/png" };
@@ -1595,7 +1600,7 @@ ${resumo}
 Não adicione nenhuma outra dupla, placar ou informação além do que foi passado acima.`;
 
   const resultado = await gerarImagemGemini(env, prompt, "9:16");
-  if (!resultado.ok) return json({ error: resultado.error }, resultado.status);
+  if (!resultado.ok) return json({ error: resultado.error, detail: resultado.detail }, resultado.status);
   return json({ ok: true, base64: resultado.base64, mimeType: resultado.mimeType });
 }
 
@@ -1630,7 +1635,7 @@ com pouco detalhe no terço inferior da imagem, para que texto seja sobreposto d
 desta geração.`;
 
   const resultado = await gerarImagemGemini(env, prompt, "4:5");
-  if (!resultado.ok) return json({ error: resultado.error }, resultado.status);
+  if (!resultado.ok) return json({ error: resultado.error, detail: resultado.detail }, resultado.status);
   return json({ ok: true, base64: resultado.base64, mimeType: resultado.mimeType });
 }
 
