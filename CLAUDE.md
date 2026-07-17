@@ -2,9 +2,8 @@
 
 PWA para organizar campeonatos de futevôlei: sorteio de duplas, fase de grupos ou eliminação
 simples, mata-mata, notificações por WhatsApp/Telegram, cobrança das diárias via Pix (Mercado
-Pago), aprovação de torneios por um admin, link de árbitro convidado, modo claro/escuro,
-geração de imagem pra Stories do Instagram (com uma versão opcional via IA) e banner de
-divulgação do torneio gerado por IA.
+Pago), aprovação de torneios por um admin, link de árbitro convidado, modo claro/escuro, e
+geração de imagem pra Stories do Instagram.
 
 - **Site:** `https://campeonato-futevolei.thiagobaptistella.workers.dev`
 - **Hospedagem:** Cloudflare Workers (com Cloudflare Workers Builds — deploy automático a cada
@@ -76,7 +75,6 @@ campeonato-futevolei/
 | `TELEGRAM_BOT_TOKEN` | token do bot criado via `@BotFather` |
 | `MP_ACCESS_TOKEN` | Access Token de produção do Mercado Pago |
 | `MP_WEBHOOK_SECRET` | opcional; chave do webhook configurado no painel do Mercado Pago |
-| `GEMINI_API_KEY` | chave de API do Gemini (Google AI Studio → aistudio.google.com/apikey), usada pra gerar a imagem de Story via IA e o banner de divulgação ("Nano Banana" / `gemini-2.5-flash-image`) |
 
 ⚠️ **`wrangler.jsonc` precisa ter `"keep_vars": true`** no nível raiz. Sem isso, o Wrangler trata
 "nenhuma variável declarada no arquivo" como a configuração correta e apaga tudo que só existe no
@@ -184,15 +182,6 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
    boot inteiro do app (tela em branco). **Sempre revisar se o `old_str` inclui exatamente as
    linhas de abertura/fechamento necessárias**, e rodar `node --check` depois de qualquer edição
    nesse arquivo.
-9. **Geração de imagem via IA (Gemini "Nano Banana")**: `gerarImagemGemini` (worker.ts) é o único
-   ponto que fala com a API do Gemini (`generateContent` do modelo `gemini-2.5-flash-image`) —
-   se o Google mudar o formato do endpoint/modelo, o ajuste é só ali. A Story via IA (rota
-   `/api/gerar-story-ia`) manda a imagem **inteira** pro modelo gerar, incluindo texto/placar —
-   diferente do banner de divulgação (`/api/gerar-banner-ia`), onde a IA gera só o cenário (o
-   prompt pede explicitamente **sem texto nenhum**) e nome do campeonato + período são desenhados
-   por cima no client via canvas, com precisão garantida. Isso é proposital: texto/placar gerado
-   por IA pode sair errado, então só é aceito onde o usuário já foi avisado disso (Story) — nunca
-   pra dado que precisa ser exato.
 
 ## Convenções
 

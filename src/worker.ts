@@ -19,10 +19,6 @@ export interface Env {
   // mais cedo — o status do pagamento em si é sempre reconferido direto na API deles, então
   // o sistema continua seguro mesmo sem essa variável configurada.
   MP_WEBHOOK_SECRET?: string;
-  // Chave de API do Gemini (Google AI Studio → aistudio.google.com/apikey), usada pra gerar a
-  // imagem de Story via IA e o banner de divulgação do torneio ("Nano Banana"). Como as demais,
-  // configurada como secret no painel Cloudflare — nunca pela tela do app.
-  GEMINI_API_KEY?: string;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -1514,132 +1510,6 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
 }
 
 /* ============================================================
-   GERAÇÃO DE IMAGEM VIA IA (Gemini "Nano Banana") — Story e banner de divulgação
-============================================================ */
-// Núcleo compartilhado das duas rotas abaixo. Chama o modelo de imagem do Gemini e devolve o
-// primeiro resultado em base64. Se o formato exato da API mudar (o Google às vezes reorganiza
-// nomes de modelo/endpoint), este é o único lugar que precisa de ajuste.
-async function gerarImagemGemini(env: Env, prompt: string, aspectRatio: string): Promise<
-  | { ok: true; base64: string; mimeType: string }
-  | { ok: false; error: string; detail?: string; status: number }
-> {
-  if (!env.GEMINI_API_KEY) {
-    return { ok: false, error: "Geração de imagem via IA não configurada neste servidor (GEMINI_API_KEY ausente)", status: 500 };
-  }
-
-  let resp: any;
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio } }
-        })
-      }
-    );
-    resp = await res.json();
-    if (!res.ok) {
-      // Repassa o erro real do Gemini (ex: chave inválida, modelo não encontrado, cota
-      // excedida) em vez de só "falhou" — é a única forma de diagnosticar sem acesso aos logs
-      // do Worker.
-      return { ok: false, error: "Falha ao gerar imagem com o Gemini", detail: resp?.error?.message || JSON.stringify(resp).slice(0, 300), status: 502 };
-    }
-  } catch (e: any) {
-    return { ok: false, error: "Falha de rede ao falar com o Gemini", detail: String(e?.message || e), status: 502 };
-  }
-
-  const parts: any[] = resp?.candidates?.[0]?.content?.parts || [];
-  const imagePart = parts.find((p: any) => p?.inlineData?.data);
-  if (!imagePart) {
-    return { ok: false, error: "O Gemini não retornou nenhuma imagem", detail: JSON.stringify(resp).slice(0, 300), status: 502 };
-  }
-
-  return { ok: true, base64: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType || "image/png" };
-}
-
-// Story via IA: a imagem inteira (fundo + texto + dados do torneio) é gerada pelo modelo — o
-// resumo textual (fase atual, classificação/chaveamento, campeão) é montado no front
-// (montarResumoTextualTorneio) e mandado pronto aqui, porque calcular isso a partir do state
-// bruto já existe implementado lá.
-async function gerarStoryIA(request: Request, env: Env): Promise<Response> {
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "JSON inválido" }, 400);
-  }
-
-  const id = body.id;
-  const solicitanteEmail = normEmail(body.email);
-  const resumo = typeof body.resumo === "string" ? body.resumo.trim() : "";
-  if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
-  if (!resumo) return json({ error: "resumo obrigatório" }, 400);
-
-  const raw = await env.DB.get(`torneio:${id}`);
-  if (!raw) return json({ error: "não encontrado" }, 404);
-  const dados = JSON.parse(raw);
-  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
-    return json({ error: "Sem permissão para gerar imagens deste torneio" }, 403);
-  }
-
-  const prompt = `Crie um cartaz de resultados de campeonato de futevôlei, formato vertical para
-Instagram Stories (9:16), nas cores verde e coral do app (verde escuro tipo #008200 dominante,
-detalhes em laranja-coral tipo #FF2B00), tipografia grande e bem legível, estilo pôster esportivo
-moderno.
-
-Nome do campeonato: "${dados.nome || "Campeonato de Futevôlei"}".
-
-Informações que devem aparecer escritas com precisão na imagem (copie os nomes e números
-exatamente como estão aqui, sem inventar outros):
-${resumo}
-
-Não adicione nenhuma outra dupla, placar ou informação além do que foi passado acima.`;
-
-  const resultado = await gerarImagemGemini(env, prompt, "9:16");
-  if (!resultado.ok) return json({ error: resultado.error, detail: resultado.detail }, resultado.status);
-  return json({ ok: true, base64: resultado.base64, mimeType: resultado.mimeType });
-}
-
-// Banner de torneio criado: a IA gera só o cenário/ilustração — nome e data são sobrepostos com
-// precisão no cliente via canvas (por isso o prompt pede explicitamente pra não incluir texto).
-async function gerarBannerIA(request: Request, env: Env): Promise<Response> {
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "JSON inválido" }, 400);
-  }
-
-  const id = body.id;
-  const solicitanteEmail = normEmail(body.email);
-  if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
-
-  const raw = await env.DB.get(`torneio:${id}`);
-  if (!raw) return json({ error: "não encontrado" }, 404);
-  const dados = JSON.parse(raw);
-  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
-    return json({ error: "Sem permissão para gerar imagens deste torneio" }, 403);
-  }
-
-  const prompt = `Fotografia/ilustração de uma quadra de futevôlei na praia, com um atleta em ação
-dinâmica (um ataque ou salto), luz de fim de tarde (golden hour), cores vibrantes em verde e
-laranja-coral, estilo pôster de campanha esportiva, formato vertical 4:5.
-
-Não inclua nenhum texto, letra, número ou logotipo na imagem. Deixe uma faixa horizontal limpa e
-com pouco detalhe no terço inferior da imagem, para que texto seja sobreposto depois por fora
-desta geração.`;
-
-  const resultado = await gerarImagemGemini(env, prompt, "4:5");
-  if (!resultado.ok) return json({ error: resultado.error, detail: resultado.detail }, resultado.status);
-  return json({ ok: true, base64: resultado.base64, mimeType: resultado.mimeType });
-}
-
-/* ============================================================
    CONFIGURAÇÕES GLOBAIS DO APP (só o admin pode alterar)
 ============================================================ */
 async function configGet(request: Request, env: Env): Promise<Response> {
@@ -1736,12 +1606,6 @@ export default {
     }
     if (path === "/api/pix-verificar") {
       return method === "POST" ? pixVerificar(request, env) : new Response("Method not allowed", { status: 405 });
-    }
-    if (path === "/api/gerar-story-ia") {
-      return method === "POST" ? gerarStoryIA(request, env) : new Response("Method not allowed", { status: 405 });
-    }
-    if (path === "/api/gerar-banner-ia") {
-      return method === "POST" ? gerarBannerIA(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path === "/api/cupons-list") {
       return cuponsList(request, env);
