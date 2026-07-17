@@ -2052,10 +2052,14 @@ function mensagemWhatsApp(nome){
     const oponente = m.a===nome ? m.b : m.a;
     return `Jogo ${idx+1}: vs ${oponente}`;
   });
-  return `Olá, dupla ${nome}! 🏐\n\nVocê está no Grupo ${letter} do Campeonato de Futevôlei.\n\nSeus jogos da fase de grupos:\n${linhas.join("\n")}\n\nBoa sorte! 🏆`;
+  // "do torneio "X"" em vez de "do X" — evita erro de concordância de gênero quando o nome
+  // escolhido pelo organizador não é uma palavra masculina (ex: "Copa Verão").
+  const nomeTorneio = state.cloudNome || "Campeonato de Futevôlei";
+  return `Olá, dupla ${nome}! 🏐\n\nVocê está no Grupo ${letter} do torneio "${nomeTorneio}".\n\nSeus jogos da fase de grupos:\n${linhas.join("\n")}\n\nBoa sorte! 🏆`;
 }
 function mensagemMataMata(faseLabel, nome, oponente){
-  return `Olá, dupla ${nome}! 🏐\n\nSeu próximo jogo (${faseLabel}) já está definido:\nvs ${oponente}\n\nBoa sorte! 🏆`;
+  const nomeTorneio = state.cloudNome || "Campeonato de Futevôlei";
+  return `Olá, dupla ${nome}! 🏐\n\nSeu próximo jogo do torneio "${nomeTorneio}" (${faseLabel}) já está definido:\nvs ${oponente}\n\nBoa sorte! 🏆`;
 }
 function duplaIndexByName(nome){
   return state.duplas.findIndex(d => ((d.nome||"").trim() || "Dupla sem nome") === nome);
