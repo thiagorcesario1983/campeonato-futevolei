@@ -869,6 +869,9 @@ function statusTorneio(){
 
 let torneiosList = null;
 let torneiosLoading = false;
+let torneiosFiltroStatus = "todos"; // "todos" | "pendente" | "aprovado" | "recusado" | "bloqueado" | "expirado"
+let torneiosPagina = 1;
+const TORNEIOS_POR_PAGINA = 5;
 let syncTimer = null;
 let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" | "cupons" — só usada quando ehAdmin()
 let mostrarFormNovoTorneio = false;
@@ -3347,6 +3350,27 @@ function badgePagamento(t){
   if(st==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">💳 Pix pendente</span>`;
   return "";
 }
+// Status "geral" do torneio pra tela de Torneios (lista) — igual à prioridade usada em
+// torneioEstaAtivo()/renderTorneioBloqueado(), mas independente de qual torneio está aberto:
+// recusado/bloqueado são decisões explícitas do admin e vêm primeiro; senão, se o período já
+// passou, mostra "Expirado" mesmo que nunca tenha sido revisado (uma solicitação parada há
+// meses não deveria continuar aparecendo como "Pendente"); só depois aprovado/pendente.
+function statusGeralTorneio(t){
+  if(t.aprovacaoStatus==="recusado") return "recusado";
+  if(t.aprovacaoStatus==="bloqueado") return "bloqueado";
+  if(t.dataFim && hojeLocalISO() > t.dataFim) return "expirado";
+  if(t.aprovacaoStatus==="aprovado") return "aprovado";
+  return "pendente";
+}
+function badgeStatusGeral(t){
+  const st = statusGeralTorneio(t);
+  if(st==="aprovado") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Aprovado</span>`;
+  if(st==="recusado") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">❌ Recusado</span>`;
+  if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
+  if(st==="expirado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">⏱️ Expirado</span>`;
+  return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente</span>`;
+}
+const ROTULO_STATUS_GERAL = { todos:"Todos", pendente:"Pendente", aprovado:"Aprovado", recusado:"Recusado", bloqueado:"Bloqueado", expirado:"Expirado" };
 function formatarDataBR(iso){
   if(!iso) return "—";
   const [y,m,d] = iso.split("-");
@@ -3421,25 +3445,56 @@ function renderTorneiosScreen(){
   } else if(!torneiosList.length){
     html += `<div class="card empty"><span class="ball-icon">🏐</span>Nenhum torneio criado ainda.<br>Toque em "Criar novo torneio" para começar.</div>`;
   } else {
-    torneiosList.slice().sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")).forEach(t=>{
-      const statusClass = t.status==="Finalizado" ? "finalizado" : (t.status==="Em andamento" ? "andamento" : "criado");
-      html += `<div class="torneio-item" data-open-torneio="${t.id}">
-        <div class="row">
-          <span class="nome">${escapeHtml(t.nome||"Torneio sem nome")}</span>
-          <span class="status-pill ${statusClass}">${escapeHtml(t.status||"Criado")}</span>
-        </div>
-        <div class="sub" style="font-family:'DM Mono',monospace;margin-top:2px;">#${escapeHtml(t.codigo||"—")}</div>
-        <div class="row" style="margin-top:4px;">
-          ${badgeAprovacao(t)}
-          ${badgePagamento(t)}
-          <span class="sub" style="margin-left:8px;">${formatarDataBR(t.dataInicio)} – ${formatarDataBR(t.dataFim)}</span>
-        </div>
-        <div class="row" style="margin-top:6px;align-items:center;">
-          <div class="sub">Organizador: ${escapeHtml(t.ownerName||"—")}</div>
-          <button class="btn-excluir" data-del-torneio="${t.id}" data-del-nome="${escapeHtml(t.nome||"Torneio sem nome")}">🗑️ Excluir</button>
-        </div>
-      </div>`;
-    });
+    const opcoesFiltro = Object.keys(ROTULO_STATUS_GERAL).map(key=>
+      `<option value="${key}" ${torneiosFiltroStatus===key ? "selected" : ""}>${ROTULO_STATUS_GERAL[key]}</option>`
+    ).join("");
+    html += `<div style="margin-bottom:14px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Filtrar por status</label>
+      <select id="select-filtro-status" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">${opcoesFiltro}</select>
+    </div>`;
+
+    const listaOrdenada = torneiosList.slice().sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||""));
+    const listaFiltrada = torneiosFiltroStatus==="todos" ? listaOrdenada : listaOrdenada.filter(t=> statusGeralTorneio(t)===torneiosFiltroStatus);
+
+    if(!listaFiltrada.length){
+      html += `<div class="card empty">Nenhum torneio com o status "${ROTULO_STATUS_GERAL[torneiosFiltroStatus]}".</div>`;
+    } else {
+      const totalPaginas = Math.max(1, Math.ceil(listaFiltrada.length / TORNEIOS_POR_PAGINA));
+      if(torneiosPagina > totalPaginas) torneiosPagina = totalPaginas;
+      if(torneiosPagina < 1) torneiosPagina = 1;
+      const inicio = (torneiosPagina-1) * TORNEIOS_POR_PAGINA;
+      const listaPagina = listaFiltrada.slice(inicio, inicio + TORNEIOS_POR_PAGINA);
+
+      html += `<div class="sub" style="margin-bottom:10px;">${listaFiltrada.length} torneio${listaFiltrada.length!==1?"s":""}</div>`;
+
+      listaPagina.forEach(t=>{
+        const statusClass = t.status==="Finalizado" ? "finalizado" : (t.status==="Em andamento" ? "andamento" : "criado");
+        html += `<div class="torneio-item" data-open-torneio="${t.id}">
+          <div class="row">
+            <span class="nome">${escapeHtml(t.nome||"Torneio sem nome")}</span>
+            <span class="status-pill ${statusClass}">${escapeHtml(t.status||"Criado")}</span>
+          </div>
+          <div class="sub" style="font-family:'DM Mono',monospace;margin-top:2px;">#${escapeHtml(t.codigo||"—")}</div>
+          <div class="row" style="margin-top:4px;">
+            ${badgeStatusGeral(t)}
+            ${badgePagamento(t)}
+            <span class="sub" style="margin-left:8px;">${formatarDataBR(t.dataInicio)} – ${formatarDataBR(t.dataFim)}</span>
+          </div>
+          <div class="row" style="margin-top:6px;align-items:center;">
+            <div class="sub">Organizador: ${escapeHtml(t.ownerName||"—")}</div>
+            <button class="btn-excluir" data-del-torneio="${t.id}" data-del-nome="${escapeHtml(t.nome||"Torneio sem nome")}">🗑️ Excluir</button>
+          </div>
+        </div>`;
+      });
+
+      if(totalPaginas > 1){
+        html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;">
+          <button class="btn ghost" id="btn-torneios-pagina-anterior" style="width:auto;padding:8px 16px;${torneiosPagina<=1 ? "opacity:.45;cursor:not-allowed;" : ""}" ${torneiosPagina<=1 ? "disabled" : ""}>← Anterior</button>
+          <span class="sub">Página ${torneiosPagina} de ${totalPaginas}</span>
+          <button class="btn ghost" id="btn-torneios-pagina-proxima" style="width:auto;padding:8px 16px;${torneiosPagina>=totalPaginas ? "opacity:.45;cursor:not-allowed;" : ""}" ${torneiosPagina>=totalPaginas ? "disabled" : ""}>Próxima →</button>
+        </div>`;
+      }
+    }
   }
   return html;
 }
@@ -4555,6 +4610,22 @@ function bindEvents(){
   });
   const btnVoltar = document.getElementById("btn-voltar-torneios");
   if(btnVoltar) btnVoltar.addEventListener("click", voltarParaTorneios);
+  const selectFiltroStatus = document.getElementById("select-filtro-status");
+  if(selectFiltroStatus) selectFiltroStatus.addEventListener("change", e=>{
+    torneiosFiltroStatus = e.target.value;
+    torneiosPagina = 1;
+    render();
+  });
+  const btnPaginaAnterior = document.getElementById("btn-torneios-pagina-anterior");
+  if(btnPaginaAnterior) btnPaginaAnterior.addEventListener("click", ()=>{
+    torneiosPagina--;
+    render();
+  });
+  const btnPaginaProxima = document.getElementById("btn-torneios-pagina-proxima");
+  if(btnPaginaProxima) btnPaginaProxima.addEventListener("click", ()=>{
+    torneiosPagina++;
+    render();
+  });
 
   main.querySelectorAll("input[data-dupla]").forEach(inp=>{
     inp.addEventListener("input", e=>{
