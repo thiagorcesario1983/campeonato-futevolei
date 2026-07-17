@@ -138,9 +138,17 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
    isso apagava o campo `pagamento` (objeto completo do Pix) a cada salvamento normal do torneio,
    mesmo sem ninguém mexer nele. Corrigido: `torneiosSave` busca o registro completo existente e
    preserva `pagamento`, e faz um merge defensivo de `state.arbitragem` (preservando sempre o
-   `tokenApito` do link de árbitro, e mantendo a versão "mais avançada" entre servidor e cliente
-   pra não perder pontuação feita por um árbitro remoto). **Qualquer rota nova que salve o torneio
-   inteiro de uma vez precisa considerar esse mesmo risco.**
+   `tokenApito` do link de árbitro). **Qualquer rota nova que salve o torneio inteiro de uma vez
+   precisa considerar esse mesmo risco.** Esse merge decide qual lado (servidor ou cliente) é
+   "mais recente" comparando `arbitragem[matchId].atualizadoEm` (timestamp `Date.now()`, gravado
+   em toda mutação — `arbIniciar`/`arbTempoTecnico`/`arbPonto`/`arbFinalizar`/`arbReabrir` no
+   front e as mesmas ações em `apitoPost` no worker) — quem tem o timestamp maior vence, podendo
+   inclusive regredir `finalizado` de volta pra `false`. **Não volte a comparar só pelo "rank" do
+   status** (nao_iniciada < andamento/tecnico < finalizada, sem timestamp): foi assim que um
+   "Reabrir jogo" acabava revertendo sozinho de volta pra "concluído" pouco depois — o merge via
+   o "finalizada" antigo salvo no servidor como sempre mais avançado que o "reaberto" do cliente,
+   mesmo o reabrir sendo a ação mais recente de verdade. Só cai de volta pro rank antigo (sem
+   poder regredir `finalizado`) quando nenhum dos dois lados tem `atualizadoEm` (dado legado).
 2. **Bracket "bye" era resolvido cedo demais.** `winnerFinal`/`winner` tratavam "adversário nulo"
    como vitória automática (bye) em qualquer rodada — isso fazia o vencedor de uma semifinal ser
    declarado campeão na hora, antes da outra semifinal ou da final acontecerem. Corrigido: bye só

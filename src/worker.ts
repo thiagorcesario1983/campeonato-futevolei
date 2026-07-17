@@ -386,18 +386,44 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
       // Preserva sempre o token do link de árbitro convidado, mesmo que o cliente não o conheça.
       if (arbServidor.tokenApito && !arbCliente.tokenApito) arbCliente.tokenApito = arbServidor.tokenApito;
 
-      const rankServidor = STATUS_RANK[arbServidor.status] ?? 0;
-      const rankCliente = STATUS_RANK[arbCliente.status] ?? 0;
-      const somaServidor = (arbServidor.placarA || 0) + (arbServidor.placarB || 0);
-      const somaCliente = (arbCliente.placarA || 0) + (arbCliente.placarB || 0);
-      if (rankServidor > rankCliente || (rankServidor === rankCliente && somaServidor > somaCliente)) {
+      // Prioridade 1: quem tem o "atualizadoEm" mais recente é quem realmente sabe o estado
+      // mais novo — isso é o que permite reabrir uma partida de verdade. Antes disso, o merge só
+      // olhava pra "rank" do status (nao_iniciada < andamento/tecnico < finalizada), então um
+      // reabrir (que baixa o rank) sempre perdia pro "finalizada" antigo salvo no servidor: o
+      // jogo reabria na tela por um instante e voltava sozinho pra "concluído" assim que o
+      // próximo refresh buscava de novo o estado (revertido) salvo no KV.
+      // Prioridade 2 (fallback): só usada em dados antigos sem esse campo, ou empate exato —
+      // mantém o comportamento conservador de nunca regredir "finalizado" pra false, já que aí
+      // não dá pra saber com certeza qual lado é realmente mais novo.
+      const atualizadoServidor = arbServidor.atualizadoEm || 0;
+      const atualizadoCliente = arbCliente.atualizadoEm || 0;
+      let servidorVence: boolean;
+      let comparacaoConfiavel: boolean;
+      if (atualizadoServidor !== atualizadoCliente) {
+        servidorVence = atualizadoServidor > atualizadoCliente;
+        comparacaoConfiavel = true;
+      } else {
+        const rankServidor = STATUS_RANK[arbServidor.status] ?? 0;
+        const rankCliente = STATUS_RANK[arbCliente.status] ?? 0;
+        const somaServidor = (arbServidor.placarA || 0) + (arbServidor.placarB || 0);
+        const somaCliente = (arbCliente.placarA || 0) + (arbCliente.placarB || 0);
+        servidorVence = rankServidor > rankCliente || (rankServidor === rankCliente && somaServidor > somaCliente);
+        comparacaoConfiavel = false;
+      }
+
+      if (servidorVence) {
         body.state.arbitragem[matchId] = { ...arbServidor, tokenApito: arbServidor.tokenApito || arbCliente.tokenApito };
         const ref = getMatchRef(body.state, matchId);
-        // Mesma regra: só avança finalizado pra true, nunca regride pra false por aqui.
         if (ref) {
           ref.pa = arbServidor.placarA;
           ref.pb = arbServidor.placarB;
-          if (arbServidor.status === "finalizada") ref.finalizado = true;
+          if (comparacaoConfiavel) {
+            // Comparação por timestamp é confiável — pode regredir "finalizado" pra false
+            // também (ex: reabertura que chegou ao servidor por outro caminho).
+            ref.finalizado = arbServidor.status === "finalizada";
+          } else if (arbServidor.status === "finalizada") {
+            ref.finalizado = true;
+          }
         }
       }
     }
@@ -911,7 +937,8 @@ function defaultArb(m?: any): any {
     ultimoMultiploTroca: 0,
     duracaoFinalSegundos: finalizado ? 0 : null,
     arbitroNome: null,
-    tokenApito: null
+    tokenApito: null,
+    atualizadoEm: Date.now() // usado pelo merge em torneiosSave pra saber qual lado é mais recente
   };
 }
 
@@ -925,6 +952,7 @@ function corrigirArb(arb: any, m: any): any {
     arb.placarB = Number(m.pb);
     arb.inicioMs = null;
     if (arb.duracaoFinalSegundos == null) arb.duracaoFinalSegundos = Math.floor((arb.acumuladoMs || 0) / 1000);
+    arb.atualizadoEm = Date.now();
   }
   return arb;
 }
@@ -1031,15 +1059,18 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
     if (arb.status === "nao_iniciada") {
       arb.inicioMs = Date.now();
       arb.status = "andamento";
+      arb.atualizadoEm = Date.now();
     }
   } else if (action === "tempoTecnico") {
     if (arb.status === "andamento") {
       arb.acumuladoMs += Date.now() - (arb.inicioMs || Date.now());
       arb.inicioMs = null;
       arb.status = "tecnico";
+      arb.atualizadoEm = Date.now();
     } else if (arb.status === "tecnico") {
       arb.inicioMs = Date.now();
       arb.status = "andamento";
+      arb.atualizadoEm = Date.now();
     }
   } else if (action === "ponto") {
     if (arb.status !== "finalizada") {
@@ -1047,6 +1078,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
       const delta = body.delta === -1 ? -1 : 1;
       const campo = lado === "a" ? "placarA" : "placarB";
       arb[campo] = Math.max(0, (arb[campo] || 0) + delta);
+      arb.atualizadoEm = Date.now();
       trocarLado = checkTrocaLado(arb);
       m.pa = arb.placarA;
       m.pb = arb.placarB;
@@ -1059,6 +1091,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
       }
       arb.status = "finalizada";
       arb.duracaoFinalSegundos = Math.floor(arb.acumuladoMs / 1000);
+      arb.atualizadoEm = Date.now();
       m.pa = arb.placarA;
       m.pb = arb.placarB;
       m.finalizado = true;
@@ -1066,6 +1099,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
   } else if (action === "reabrir") {
     if (arb.status === "finalizada") {
       arb.status = "tecnico";
+      arb.atualizadoEm = Date.now();
       m.finalizado = false;
     }
   } else {

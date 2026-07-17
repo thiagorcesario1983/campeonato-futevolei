@@ -2164,7 +2164,8 @@ function getArb(matchId){
       ultimoMultiploTroca: 0,
       duracaoFinalSegundos: jaFinalizado ? 0 : null,
       arbitroNome: null, // nome de quem apitou (preenchido pelo link de árbitro convidado)
-      tokenApito: null // token do link de árbitro convidado dessa partida, se já foi gerado
+      tokenApito: null, // token do link de árbitro convidado dessa partida, se já foi gerado
+      atualizadoEm: Date.now() // usado pelo merge no worker pra saber qual lado é mais recente
     };
   } else {
     // Auto-corrige um registro salvo antes desse ajuste (jogo finalizado com arbitragem
@@ -2177,6 +2178,7 @@ function getArb(matchId){
       arb.placarB = Number(m.pb);
       arb.inicioMs = null;
       if(arb.duracaoFinalSegundos==null) arb.duracaoFinalSegundos = Math.floor((arb.acumuladoMs||0)/1000);
+      arb.atualizadoEm = Date.now();
     }
   }
   return state.arbitragem[matchId];
@@ -2258,6 +2260,7 @@ function arbIniciar(matchId){
   if(arb.status!=="nao_iniciada") return;
   arb.inicioMs = Date.now();
   arb.status = "andamento";
+  arb.atualizadoEm = Date.now();
   arbSalvarAgora();
   render();
 }
@@ -2273,6 +2276,7 @@ function arbTempoTecnico(matchId){
   } else {
     return;
   }
+  arb.atualizadoEm = Date.now();
   arbSalvarAgora();
   render();
 }
@@ -2285,6 +2289,7 @@ async function arbFinalizar(matchId){
   }
   arb.status = "finalizada";
   arb.duracaoFinalSegundos = Math.floor(arb.acumuladoMs/1000);
+  arb.atualizadoEm = Date.now();
   const m = getMatchObj(matchId);
   if(m){ m.pa = arb.placarA; m.pb = arb.placarB; m.finalizado = true; }
   save();
@@ -2298,6 +2303,7 @@ function arbReabrir(matchId){
   const arb = getArb(matchId);
   if(arb.status!=="finalizada") return;
   arb.status = "tecnico";
+  arb.atualizadoEm = Date.now();
   const m = getMatchObj(matchId);
   if(m) m.finalizado = false; // volta a valer só depois de finalizar de novo
   arbSalvarAgora();
@@ -2308,6 +2314,7 @@ function arbPonto(matchId, lado, delta){
   if(arb.status==="finalizada") return;
   const campo = lado==="a" ? "placarA" : "placarB";
   arb[campo] = Math.max(0, arb[campo]+delta);
+  arb.atualizadoEm = Date.now();
   const trocar = checkTrocaLado(arb);
   // placar oficial acompanha em tempo real (pra aparecer na aba Jogos/mata-mata/placar de TV),
   // mas como a partida ainda não está "finalizada", nada de classificação/chaveamento é recalculado.
@@ -2365,6 +2372,7 @@ async function reabrirJogoManual(matchId){
     // liberar a edição direta pelos campos, sem precisar passar pelo Apitar jogo de novo.
     state.arbitragem[matchId].status = "nao_iniciada";
     state.arbitragem[matchId].inicioMs = null;
+    state.arbitragem[matchId].atualizadoEm = Date.now();
   }
   save();
   render();
