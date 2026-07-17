@@ -2238,6 +2238,12 @@ function checkTrocaLado(arb){
   }
   return deveTrocar;
 }
+// Regra de fim de partida: 18 pontos com pelo menos 2 de vantagem — se passar de 18 (ex: 18x17),
+// só conta como "atingiu o fim" quando a vantagem chegar a 2 (19x17, 20x18, 21x19...), igual ao
+// vôlei. Só sinaliza a condição — quem realmente finaliza é sempre uma confirmação do usuário.
+function partidaAtingiuFim(pa, pb){
+  return (pa>=18 && pa-pb>=2) || (pb>=18 && pb-pa>=2);
+}
 function arbSalvarAgora(){
   save();
   flushSyncTorneio();
@@ -2305,6 +2311,11 @@ function arbPonto(matchId, lado, delta){
   arbSalvarAgora();
   render();
   if(trocar) mostrarPopupTroca();
+  // Só verifica em quem soma ponto (delta>0) — uma correção pra baixo nunca deve disparar o
+  // convite pra finalizar. A finalização em si só acontece se o usuário confirmar aqui.
+  if(delta>0 && partidaAtingiuFim(arb.placarA, arb.placarB)){
+    if(confirm(`Placar ${arb.placarA} x ${arb.placarB}. Finalizar a partida?`)) arbFinalizar(matchId);
+  }
 }
 // Permite finalizar uma partida direto pela lista de jogos (sem precisar abrir o Apitar jogo),
 // pra quem preferir só digitar o placar nos campos e confirmar.
@@ -5382,6 +5393,10 @@ async function apitoPublicoAcao(action, payload){
       __apitoPublicoArb = data.arb;
       renderApitoPublicoTela();
       if(data.trocarLado) mostrarPopupTroca();
+      // Mesma regra do app: só verifica em quem soma ponto, e só finaliza se confirmado aqui.
+      if(action==="ponto" && (payload?.delta||0)>0 && partidaAtingiuFim(data.arb.placarA, data.arb.placarB)){
+        if(confirm(`Placar ${data.arb.placarA} x ${data.arb.placarB}. Finalizar a partida?`)) apitoPublicoAcao("finalizar");
+      }
     }
   }catch(e){
     if(action) alert("Sem conexão — tente de novo.");

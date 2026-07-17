@@ -176,7 +176,15 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
    (`checkTrocaLado`) e `worker.ts` (mesma lógica duplicada lá), já que o app público não carrega
    o app inteiro.
 7. **W.O. registra 18 a 0** pra equipe vencedora (não 1 a 0).
-8. **Editando `index.html` com find-and-replace**: esse arquivo é enorme (~4500 linhas) e várias
+8. **Fim de partida (18 pontos, vantagem de 2)**: `partidaAtingiuFim(pa, pb)` (`index.html`)
+   sinaliza quando alguém chega a 18 pontos com pelo menos 2 de vantagem — se passar de 18 (ex:
+   18x17), só considera "fim" quando a vantagem chegar a 2 (19x17, 20x18...), igual ao vôlei.
+   Usada dentro do "Apitar jogo", tanto na versão completa do app (`arbPonto`) quanto no link
+   público de árbitro convidado (`apitoPublicoAcao`). Só sinaliza a condição — nunca finaliza
+   sozinha: sempre pede confirmação (`confirm()`) antes, e só chama `arbFinalizar`/ação
+   `"finalizar"` se o usuário aceitar. Só verifica em quem *soma* ponto (delta > 0); uma correção
+   pra baixo nunca dispara o convite.
+9. **Editando `index.html` com find-and-replace**: esse arquivo é enorme (~4500 linhas) e várias
    vezes uma edição com `old_str` curto (uma linha de declaração de variável, um `});` de
    fechamento) acabou "engolindo" essa linha porque o `new_str` não a reincluía — quebrando o
    boot inteiro do app (tela em branco). **Sempre revisar se o `old_str` inclui exatamente as
