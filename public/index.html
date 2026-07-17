@@ -2647,8 +2647,6 @@ function getStoryHeaderImage(){
   img.src = state.headerImage;
   return null;
 }
-// Desenha "cobrindo" o retângulo de destino (mesmo efeito do CSS background-size:cover),
-// cortando o excesso da imagem em vez de distorcer.
 // Desenha a imagem inteira dentro do retângulo, sem cortar nada (equivalente a
 // background-size:contain) — encaixa e centraliza, deixando sobra dos lados ou de
 // cima/baixo quando a proporção da imagem não bate com a do retângulo.
@@ -2658,6 +2656,16 @@ function drawImageContain(ctx, img, dx, dy, dw, dh){
   if(ir > dr){ w = dw; h = w/ir; } else { h = dh; w = h*ir; }
   const x = dx + (dw-w)/2, y = dy + (dh-h)/2;
   ctx.drawImage(img, 0, 0, img.width, img.height, x, y, w, h);
+}
+// Desenha "cobrindo" o retângulo de destino (mesmo efeito do CSS background-size:cover),
+// cortando o excesso da imagem em vez de deixar sobra — usado pro fundo do banner de IA, que
+// deve preencher o canvas inteiro mesmo se a proporção devolvida não bater exatamente com 4:5.
+function drawImageCover(ctx, img, dx, dy, dw, dh){
+  const ir = img.width/img.height, dr = dw/dh;
+  let sx, sy, sw, sh;
+  if(ir > dr){ sh = img.height; sw = sh*dr; sy = 0; sx = (img.width-sw)/2; }
+  else { sw = img.width; sh = sw/dr; sx = 0; sy = (img.height-sh)/2; }
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
 }
 
 function drawStoryCanvas(){
@@ -3099,6 +3107,126 @@ function downloadStoryImage(){
     }
     setTimeout(()=>URL.revokeObjectURL(url), 30000);
   }, "image/png");
+}
+
+// Gera a imagem de Story inteira via IA (Gemini), substituindo o desenho padrão no mesmo
+// #story-canvas — assim os botões Compartilhar/Baixar acima continuam funcionando sem mudança
+// nenhuma. "↩️ Versão padrão" volta a chamar drawStoryCanvas() pra desfazer.
+async function gerarStoryComIA(){
+  if(!state.cloudId){ showToast("Abra um torneio salvo na nuvem para gerar com IA."); return; }
+  const canvas = document.getElementById("story-canvas");
+  if(!canvas) return;
+  showLoading("Gerando Story com IA...");
+  try{
+    const resumo = montarResumoTextualTorneio();
+    const res = await fetch("/api/gerar-story-ia", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, email: auth.email, resumo })
+    });
+    const data = await res.json();
+    if(!res.ok){ showToast(data.error || "Não foi possível gerar a imagem com IA."); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      canvas.height = 1920;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      drawImageCover(ctx, img, 0, 0, canvas.width, canvas.height);
+      showToast("Story gerado com IA! Confira nomes e placares antes de postar.");
+    };
+    img.src = `data:${data.mimeType};base64,${data.base64}`;
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível gerar com IA.");
+  }finally{
+    hideLoading();
+  }
+}
+
+function shareBannerImage(){
+  const canvas = document.getElementById("banner-canvas");
+  if(!canvas) return;
+  canvas.toBlob(async (blob)=>{
+    if(!blob) return;
+    const file = new File([blob], "banner-campeonato-futevolei.png", {type:"image/png"});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{
+        await navigator.share({files:[file], title:"Campeonato de Futevôlei"});
+      }catch(e){ /* usuário cancelou o compartilhamento */ }
+    } else {
+      showToast("Compartilhamento direto não é suportado aqui — usando download.");
+      downloadBannerImage();
+    }
+  }, "image/png");
+}
+function downloadBannerImage(){
+  const canvas = document.getElementById("banner-canvas");
+  if(!canvas) return;
+  canvas.toBlob((blob)=>{
+    if(!blob) return;
+    const url = URL.createObjectURL(blob);
+    if(isIOS()){
+      window.open(url, "_blank");
+      showToast("Toque e segure a imagem que abriu e escolha 'Salvar imagem'.");
+    } else {
+      const link = document.createElement("a");
+      link.download = "banner-campeonato-futevolei.png";
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast("Imagem baixada!");
+    }
+    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  }, "image/png");
+}
+
+// Banner de divulgação: a IA gera só o cenário (sem texto nenhum, por instrução do prompt no
+// worker) — nome do campeonato e período são desenhados por cima aqui, com precisão garantida.
+async function gerarBannerComIA(){
+  if(!state.cloudId){ showToast("Abra um torneio salvo na nuvem para gerar o banner."); return; }
+  const canvas = document.getElementById("banner-canvas");
+  if(!canvas) return;
+  showLoading("Gerando banner com IA...");
+  try{
+    const res = await fetch("/api/gerar-banner-ia", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, email: auth.email })
+    });
+    const data = await res.json();
+    if(!res.ok){ showToast(data.error || "Não foi possível gerar o banner com IA."); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0,0,W,H);
+      drawImageCover(ctx, img, 0, 0, W, H);
+
+      const faixaH = 260;
+      const faixa = ctx.createLinearGradient(0, H-faixaH, 0, H);
+      faixa.addColorStop(0, "rgba(0,0,0,0)");
+      faixa.addColorStop(1, "rgba(0,0,0,.72)");
+      ctx.fillStyle = faixa;
+      ctx.fillRect(0, H-faixaH, W, faixaH);
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "bold 56px Arial, sans-serif";
+      ctx.fillText(truncate(ctx, state.cloudNome || "Campeonato de Futevôlei", W-100), W/2, H-140);
+
+      ctx.font = "600 34px Arial, sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,.9)";
+      const periodo = (state.dataInicio || state.dataFim)
+        ? `${formatarDataBR(state.dataInicio)} – ${formatarDataBR(state.dataFim)}`
+        : "";
+      if(periodo) ctx.fillText(periodo, W/2, H-80);
+
+      showToast("Banner gerado!");
+    };
+    img.src = `data:${data.mimeType};base64,${data.base64}`;
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível gerar o banner com IA.");
+  }finally{
+    hideLoading();
+  }
 }
 
 function pendingElimMessages(){
@@ -3756,6 +3884,35 @@ function listaProximosJogos(){
   return itens;
 }
 
+// Resumo em texto puro do estado atual do torneio — mandado pro backend como parte do prompt da
+// Story via IA (a IA gera a imagem inteira, então precisa receber os dados certos por escrito).
+function montarResumoTextualTorneio(){
+  const linhas = [];
+  const camp = champion();
+  if(camp){
+    linhas.push(`Campeão: ${camp}.`);
+  } else if(!state.drawn){
+    linhas.push("Sorteio das duplas ainda não foi realizado.");
+  } else {
+    linhas.push(`Fase atual: ${faseAtual()}.`);
+    if(state.formato==="grupos" && !allGroupsFilled()){
+      groupLettersState().forEach(letter=>{
+        const rows = standingsFor(letter);
+        if(rows.length){
+          const texto = rows.map((r,i)=>`${i+1}º ${r.nome} (${r.pts} pts)`).join(", ");
+          linhas.push(`Classificação do Grupo ${letter}: ${texto}.`);
+        }
+      });
+    }
+    const proximos = listaProximosJogos();
+    if(proximos.length){
+      const texto = proximos.slice(0,6).map(j=>`${j.a} vs ${j.b}${j.tag ? ` (${j.tag})` : ""}`).join("; ");
+      linhas.push(`Próximos jogos: ${texto}.`);
+    }
+  }
+  return linhas.join("\n");
+}
+
 function renderResumo(){
   const elimTotal = state.bracket.reduce((acc,round)=>acc.concat(round), []);
   const elimFeitos = elimTotal.filter(m=>partidaFinalizada(m)).length;
@@ -3822,7 +3979,24 @@ function renderResumo(){
         <button class="btn" id="btn-story-share" style="flex:1;">📤 Compartilhar</button>
         <button class="btn secondary" id="btn-story-download" style="flex:1;">⬇️ Baixar</button>
       </div>
-      <div class="section-sub" style="margin-top:8px;margin-bottom:0;text-align:left;">Gera uma imagem no formato Stories com os próximos jogos (ou o campeão, se já definido). Toque em Compartilhar para escolher o Instagram no menu do celular.</div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn ghost" id="btn-story-gerar-ia" style="flex:1;">🤖 Gerar com IA</button>
+        <button class="btn ghost" id="btn-story-versao-padrao" style="flex:1;">↩️ Versão padrão</button>
+      </div>
+      <div class="section-sub" style="margin-top:8px;margin-bottom:0;text-align:left;">Gera uma imagem no formato Stories com os próximos jogos (ou o campeão, se já definido). Toque em Compartilhar para escolher o Instagram no menu do celular. A versão "Gerar com IA" cria uma peça mais elaborada, mas o modelo pode ocasionalmente errar nomes ou placares — confira antes de postar.</div>
+    </div>`;
+
+  html += `<div class="section-title" style="margin-top:14px;">Banner de divulgação (IA)</div>
+    <div class="card" style="text-align:center;">
+      <canvas id="banner-canvas" width="1080" height="1350" style="width:100%;height:auto;max-width:260px;border-radius:14px;box-shadow:var(--shadow);background:#EDE3CC;"></canvas>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn" id="btn-banner-gerar-ia" style="flex:1;">🎨 Gerar banner</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn secondary" id="btn-banner-share" style="flex:1;">📤 Compartilhar</button>
+        <button class="btn secondary" id="btn-banner-download" style="flex:1;">⬇️ Baixar</button>
+      </div>
+      <div class="section-sub" style="margin-top:8px;margin-bottom:0;text-align:left;">Gera um cenário ilustrado por IA com o nome do campeonato e o período sobrepostos — bom pra divulgar antes do torneio começar.</div>
     </div>`;
   return html;
 }
@@ -4953,6 +5127,16 @@ function bindEvents(){
   if(btnStoryShare) btnStoryShare.addEventListener("click", shareStoryImage);
   const btnStoryDownload = document.getElementById("btn-story-download");
   if(btnStoryDownload) btnStoryDownload.addEventListener("click", downloadStoryImage);
+  const btnStoryGerarIA = document.getElementById("btn-story-gerar-ia");
+  if(btnStoryGerarIA) btnStoryGerarIA.addEventListener("click", gerarStoryComIA);
+  const btnStoryVersaoPadrao = document.getElementById("btn-story-versao-padrao");
+  if(btnStoryVersaoPadrao) btnStoryVersaoPadrao.addEventListener("click", drawStoryCanvas);
+  const btnBannerGerarIA = document.getElementById("btn-banner-gerar-ia");
+  if(btnBannerGerarIA) btnBannerGerarIA.addEventListener("click", gerarBannerComIA);
+  const btnBannerShare = document.getElementById("btn-banner-share");
+  if(btnBannerShare) btnBannerShare.addEventListener("click", shareBannerImage);
+  const btnBannerDownload = document.getElementById("btn-banner-download");
+  if(btnBannerDownload) btnBannerDownload.addEventListener("click", downloadBannerImage);
 
   const chkTerceiro = document.getElementById("chk-terceiro");
   if(chkTerceiro) chkTerceiro.addEventListener("change", e=>{
