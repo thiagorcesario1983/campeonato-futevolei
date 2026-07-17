@@ -412,26 +412,67 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
   }
 
+  // Pix automático na criação: as datas e o cupom já foram escolhidos pelo organizador no
+  // formulário, então o valor já está totalmente determinado — não precisa mais esperar a
+  // aprovação do admin (que agora é só uma revisão em paralelo). Se o desconto zerar o valor
+  // (ex: cupom de 100%), libera direto como isento em vez de tentar gerar um Pix de R$ 0.
+  let pagamentoResultante: any = existingFull?.pagamento ?? null;
+  const diasNovo = calcularDias(meta.dataInicio, meta.dataFim);
+  const valorDiariaNovo = await getValorDiaria(env);
+  const valorEstim = calcularValorComCupom(diasNovo, cupomAplicado, valorDiariaNovo);
+  if (ehNovo && diasNovo > 0) {
+    if (valorEstim <= 0) {
+      pagamentoResultante = {
+        status: "isento", valor: 0, dias: diasNovo, paymentId: null, copiaCola: null, qrCodeBase64: null,
+        criadoEm: new Date().toISOString(), pagoEm: new Date().toISOString()
+      };
+      try {
+        const rawAtual = await env.DB.get(`torneio:${id}`);
+        if (rawAtual) {
+          const dadosAtual = JSON.parse(rawAtual);
+          dadosAtual.pagamento = pagamentoResultante;
+          await env.DB.put(`torneio:${id}`, JSON.stringify(dadosAtual));
+          const idxAtual = await getIndex(env);
+          const pos = idxAtual.findIndex((t: any) => t.id === id);
+          if (pos >= 0) {
+            idxAtual[pos].pagamentoStatus = "isento";
+            await env.DB.put("torneios:index", JSON.stringify(idxAtual));
+          }
+        }
+      } catch {}
+    } else {
+      const resultadoPix = await gerarCobrancaPix(env, id, new URL(request.url).origin, solicitanteEmail);
+      if (resultadoPix.ok) pagamentoResultante = resultadoPix.pagamento;
+    }
+    meta.pagamentoStatus = pagamentoResultante?.status || meta.pagamentoStatus;
+  }
+
   if (ehNovo) {
     const adminEmail = await env.DB.get("config:admin_notification_email");
     if (adminEmail) {
-      const diasEstim = calcularDias(meta.dataInicio, meta.dataFim);
-      const valorEstim = calcularValorComCupom(diasEstim, cupomAplicado, await getValorDiaria(env));
       await enviarEmail(
         env,
         adminEmail,
         `Novo campeonato solicitado [${meta.codigo}]: ${meta.nome}`,
-        `<p>Um novo campeonato foi criado e está aguardando aprovação.</p>
+        `<p>Um novo campeonato foi criado${pagamentoResultante?.status === "pendente" ? " e o Pix já foi gerado automaticamente" : ""}.</p>
          <p><b>Código:</b> ${meta.codigo}<br>
          <b>Nome:</b> ${meta.nome}<br>
          <b>Organizador:</b> ${meta.ownerName || "-"} (${meta.ownerEmail || "-"})<br>
          <b>Início:</b> ${meta.dataInicio || "não informado"}<br>
          <b>Fim:</b> ${meta.dataFim || "não informado"}<br>
-         <b>Valor estimado:</b> ${diasEstim ? `R$ ${valorEstim.toFixed(2).replace(".", ",")} (${diasEstim} diária${diasEstim > 1 ? "s" : ""} × R$ 70,00${cupomAplicado ? `, cupom ${cupomAplicado.nome} -${cupomAplicado.percentual}%` : ""})` : "não foi possível calcular"}</p>
+         <b>Valor estimado:</b> ${diasNovo ? `R$ ${valorEstim.toFixed(2).replace(".", ",")} (${diasNovo} diária${diasNovo > 1 ? "s" : ""} × R$ ${valorDiariaNovo.toFixed(2).replace(".", ",")}${cupomAplicado ? `, cupom ${cupomAplicado.nome} -${cupomAplicado.percentual}%` : ""})` : "não foi possível calcular"}</p>
          <p>Entre no app com a conta admin, aba Aprovações, pra revisar (o valor pode ser ajustado por lá).</p>`
       );
     }
     if (meta.ownerEmail) {
+      const corpoPagamento = pagamentoResultante?.status === "isento"
+        ? `<p>Esse campeonato foi liberado automaticamente, sem custo.</p>`
+        : pagamentoResultante?.copiaCola
+          ? `<p><b>Valor das diárias:</b> R$ ${valorEstim.toFixed(2).replace(".", ",")}${diasNovo ? ` (${diasNovo} diária${diasNovo > 1 ? "s" : ""})` : ""}</p>
+             <p>Pague via Pix usando o código copia-e-cola abaixo (ou escaneie o QR direto no app) para liberar o uso:</p>
+             <p style="word-break:break-all;font-family:monospace;background:#f4f4f4;padding:8px;border-radius:6px;">${pagamentoResultante.copiaCola}</p>
+             <p>Assim que o pagamento for identificado, o campeonato é liberado automaticamente — a aprovação do admin acontece em paralelo, sem afetar o pagamento.</p>`
+          : `<p>⏳ Ainda não foi possível gerar o Pix automaticamente — abra o app pra gerar o código manualmente. Você também recebe um novo e-mail assim que o admin revisar a solicitação.</p>`;
       await enviarEmail(
         env,
         meta.ownerEmail,
@@ -442,12 +483,12 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
          <b>Nome:</b> ${meta.nome}<br>
          <b>Início:</b> ${meta.dataInicio || "não informado"}<br>
          <b>Fim:</b> ${meta.dataFim || "não informado"}</p>
-         <p>⏳ Ele está <b>aguardando aprovação</b> do admin do sistema. Você recebe um novo e-mail assim que a decisão for tomada.</p>`
+         ${corpoPagamento}`
       );
     }
   }
 
-  return json(meta);
+  return json({ ...meta, pagamento: pagamentoResultante });
 }
 
 async function torneiosList(request: Request, env: Env): Promise<Response> {
@@ -1062,9 +1103,10 @@ async function torneiosDelete(request: Request, env: Env): Promise<Response> {
 /* ============================================================
    PIX (Mercado Pago) — cobrança das diárias de uso
    Regra de valor: R$ X,00 por diária (configurável pelo admin, padrão R$ 70,00), diária = cada
-   dia dentro do período de validade (dataInicio..dataFim) que o próprio admin define ao aprovar
-   o torneio. Só é possível gerar o Pix depois do torneio estar aprovado — os dados de validade
-   precisam existir primeiro.
+   dia dentro do período de validade (dataInicio..dataFim) que o próprio organizador escolhe ao
+   criar o torneio. O Pix é gerado automaticamente nesse momento (torneiosSave), sem esperar a
+   aprovação do admin — a aprovação passou a ser uma revisão em paralelo, não um pré-requisito
+   pro pagamento. Só fica bloqueado se o torneio for recusado ou bloqueado depois.
 ============================================================ */
 const VALOR_DIARIA_PADRAO = 70;
 
@@ -1092,10 +1134,12 @@ function calcularDias(dataInicio?: string | null, dataFim?: string | null): numb
   return Math.round((fim - ini) / 86400000) + 1;
 }
 
-// Núcleo da geração de cobrança Pix — reaproveitado tanto pela rota manual (pixCriar, botão
-// "Gerar Pix" no app) quanto pela geração automática logo na aprovação (torneiosAprovar). Lê e
-// grava o torneio direto do KV (não recebe `dados` pronto de fora) pra sempre operar em cima da
-// versão mais recente já persistida, evitando sobrescrever uma aprovação que acabou de ser salva.
+// Núcleo da geração de cobrança Pix — reaproveitado pela geração automática na criação
+// (torneiosSave), pela geração automática na aprovação como rede de segurança caso a primeira
+// tentativa tenha falhado (torneiosAprovar), e pela rota manual (pixCriar, botão "Gerar Pix" no
+// app, usado só se as duas automáticas não derem certo). Lê e grava o torneio direto do KV (não
+// recebe `dados` pronto de fora) pra sempre operar em cima da versão mais recente já persistida,
+// evitando sobrescrever uma aprovação que acabou de ser salva.
 async function gerarCobrancaPix(env: Env, id: string, origin: string, solicitanteEmail?: string): Promise<
   | { ok: true; pagamento: any; recuperadoPorBusca?: boolean }
   | { ok: false; error: string; status: number }
@@ -1108,8 +1152,11 @@ async function gerarCobrancaPix(env: Env, id: string, origin: string, solicitant
   if (!raw) return { ok: false, error: "não encontrado", status: 404 };
   const dados = JSON.parse(raw);
 
-  if (dados.aprovacaoStatus !== "aprovado") {
-    return { ok: false, error: "O torneio precisa estar aprovado antes de gerar o Pix", status: 400 };
+  // O pagamento não depende mais da aprovação — é gerado assim que o torneio é criado, com as
+  // datas e o cupom que o próprio organizador já escolheu no formulário. A aprovação do admin
+  // acontece em paralelo. Só bloqueia Pix pra torneio recusado ou bloqueado.
+  if (dados.aprovacaoStatus === "recusado" || dados.aprovacaoStatus === "bloqueado") {
+    return { ok: false, error: "Este torneio foi recusado ou está bloqueado — não é possível gerar Pix", status: 400 };
   }
   if (dados.pagamento?.status === "pago") {
     return { ok: false, error: "Este torneio já está pago", status: 400 };

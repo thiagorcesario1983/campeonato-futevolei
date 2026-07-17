@@ -1191,9 +1191,18 @@ async function criarNovoTorneio(nome, dataInicio, dataFim, cupomNome){
       state.cloudId = data.id;
       state.codigo = data.codigo || null;
       state.cupomAplicado = data.cupomAplicado || null;
+      // O Pix já vem gerado automaticamente (ou o campeonato já sai isento, se o cupom zerar o
+      // valor) — não precisa esperar a aprovação do admin pra mostrar a tela de pagamento.
+      state.pagamento = data.pagamento || null;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
-    showToast("Torneio solicitado! Aguardando aprovação do admin.");
+    if(state.pagamento?.status==="isento"){
+      showToast("Torneio criado e liberado sem custo! Aguardando aprovação do admin.");
+    } else if(state.pagamento?.status==="pendente" && state.pagamento?.copiaCola){
+      showToast("Torneio criado! Pix gerado — finalize o pagamento para liberar o uso.");
+    } else {
+      showToast("Torneio solicitado! Aguardando aprovação do admin.");
+    }
   }catch(e){
     const meta = saveTorneioLocalFallback({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, dataInicio, dataFim, state });
     state.cloudId = meta.id;
@@ -1375,13 +1384,18 @@ function hojeLocalISO(){
   return `${ano}-${mes}-${dia}`;
 }
 
-// Um torneio só fica liberado pra uso (fora do modo admin) depois de aprovado, PAGO e dentro
+// Um torneio só fica liberado pra uso (fora do modo admin) depois de PAGO, aprovado e dentro
 // do período de validade definido — antes ou depois disso, o app mostra uma tela de status em
-// vez das abas normais. O período vale o dia inteiro, de 00:00:00 do início até 23:59:59 do
-// fim (comparação por data, no fuso local, não por hora exata).
+// vez das abas normais. O pagamento não depende mais da aprovação (o Pix já é gerado sozinho na
+// criação, com as datas e o cupom que o organizador escolheu no formulário) — por isso a
+// checagem de pagamento vem antes da de aprovação, pra mostrar a tela de Pix assim que o
+// campeonato é criado, mesmo ainda "pendente". Recusado/bloqueado sempre tem prioridade. O
+// período vale o dia inteiro, de 00:00:00 do início até 23:59:59 do fim (comparação por data,
+// no fuso local, não por hora exata).
 function torneioEstaAtivo(){
-  if(state.aprovacaoStatus!=="aprovado") return {ok:false, motivo:"aprovacao"};
+  if(state.aprovacaoStatus==="recusado" || state.aprovacaoStatus==="bloqueado") return {ok:false, motivo:"aprovacao"};
   if(state.pagamento?.status!=="pago" && state.pagamento?.status!=="isento") return {ok:false, motivo:"pagamento"};
+  if(state.aprovacaoStatus!=="aprovado") return {ok:false, motivo:"aprovacao"};
   const hoje = hojeLocalISO();
   if(state.dataInicio && hoje < state.dataInicio) return {ok:false, motivo:"antes"};
   if(state.dataFim && hoje > state.dataFim) return {ok:false, motivo:"depois"};
@@ -3199,7 +3213,7 @@ function render(){
 function renderTorneioBloqueado(){
   const motivo = torneioEstaAtivo().motivo;
 
-  if(state.aprovacaoStatus==="aprovado" && motivo==="pagamento"){
+  if(motivo==="pagamento"){
     return renderTelaPix();
   }
 
@@ -3230,24 +3244,25 @@ function renderTorneioBloqueado(){
   </div>`;
 }
 
-// Tela de pagamento: aparece pra quem já foi aprovado, mas ainda não pagou as diárias.
-// Sem Pix gerado ainda: mostra um botão pra gerar. Com Pix gerado: mostra QR + copia-e-cola
-// e um botão pra checar manualmente (o pagamento também é liberado sozinho, via webhook,
-// assim que o Mercado Pago confirma — o botão é só pra não depender de esperar o e-mail).
+// Tela de pagamento: aparece assim que o campeonato é criado (o Pix já é gerado automaticamente
+// na hora, sem depender da aprovação do admin), até as diárias serem pagas. Sem Pix gerado ainda
+// (ex: falha pontual ao falar com o Mercado Pago na criação): mostra um botão pra gerar na mão.
+// Com Pix gerado: mostra QR + copia-e-cola e um botão pra checar manualmente (o pagamento também
+// é liberado sozinho, via webhook e verificação em background, sem precisar desse botão).
 function renderTelaPix(){
   const pg = state.pagamento;
   const dias = pg?.dias || calcularDiasLocal(state.dataInicio, state.dataFim);
   const temOverride = typeof state.valorOverride === "number";
-  const valorEstimado = temOverride ? state.valorOverride : dias * 70;
+  const valorEstimado = temOverride ? state.valorOverride : dias * valorDiariaCache;
 
   if(!pg || pg.status!=="pendente"){
     return `<div class="card empty" style="margin-top:20px;">
       <span class="ball-icon">🏐</span>
-      <div style="font-weight:700;font-size:16px;color:var(--heading);margin:10px 0 8px;">✅ Aprovado — falta o pagamento</div>
+      <div style="font-weight:700;font-size:16px;color:var(--heading);margin:10px 0 8px;">💳 Falta o pagamento</div>
       <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:8px;">#${escapeHtml(state.codigo||"—")}</div>
       <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:14px;">
         Período de ${formatarDataBR(state.dataInicio)} a ${formatarDataBR(state.dataFim)}
-        ${dias ? ` (${dias} diária${dias>1?"s":""}${temOverride ? "" : " × R$ 70,00"} = <b>R$ ${valorEstimado.toFixed(2).replace(".", ",")}</b>)` : ""}.
+        ${dias ? ` (${dias} diária${dias>1?"s":""}${temOverride ? "" : ` × R$ ${valorDiariaCache.toFixed(2).replace(".", ",")}`} = <b>R$ ${valorEstimado.toFixed(2).replace(".", ",")}</b>)` : ""}.
         Gere o Pix abaixo para liberar o uso.
       </div>
       <button class="btn primary" id="btn-gerar-pix" style="max-width:260px;margin:0 auto;">Gerar Pix</button>
