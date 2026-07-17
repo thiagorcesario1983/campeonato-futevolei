@@ -578,16 +578,21 @@
     background:rgba(255,255,255,.06);border-radius:14px;min-width:0;min-height:0;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     padding:6px;overflow:hidden;
+    /* Cada célula vira seu próprio "container" de medida — assim as unidades cq* abaixo
+       escalam com o tamanho REAL da célula (largura e altura, já divididas pela grade),
+       em vez de um px fixo calculado só a partir do nº de colunas (que ignorava as linhas
+       e não aproveitava a altura sobrando quando há poucas linhas). */
+    container-type:size;
   }
-  .tv-multi-label{font-family:'Bebas Neue',sans-serif;opacity:.85;letter-spacing:.02em;text-align:center;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .tv-multi-label{font-family:'Bebas Neue',sans-serif;opacity:.85;letter-spacing:.02em;text-align:center;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;font-size:clamp(10px,9cqmin,32px);}
   .tv-multi-board{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-width:0;}
   .tv-multi-team{flex:1;text-align:center;min-width:0;}
-  .tv-multi-nome{font-family:'Bebas Neue',sans-serif;letter-spacing:.02em;word-break:break-word;margin-bottom:2px;}
-  .tv-multi-score{font-family:'DM Mono',monospace;font-weight:700;line-height:1;}
-  .tv-multi-x{opacity:.5;font-family:'Bebas Neue',sans-serif;flex-shrink:0;}
+  .tv-multi-nome{font-family:'Bebas Neue',sans-serif;letter-spacing:.02em;word-break:break-word;margin-bottom:2px;font-size:clamp(10px,9cqmin,34px);}
+  .tv-multi-score{font-family:'DM Mono',monospace;font-weight:700;line-height:1;font-size:clamp(28px,32cqmin,160px);}
+  .tv-multi-x{opacity:.5;font-family:'Bebas Neue',sans-serif;flex-shrink:0;font-size:clamp(14px,10cqmin,40px);}
   .tv-multi-footer{margin-top:4px;text-align:center;}
-  .tv-multi-timer{font-family:'DM Mono',monospace;font-weight:600;display:block;}
-  .tv-multi-status{text-transform:uppercase;letter-spacing:.06em;opacity:.75;display:block;margin-top:2px;}
+  .tv-multi-timer{font-family:'DM Mono',monospace;font-weight:600;display:block;font-size:clamp(12px,8cqmin,32px);}
+  .tv-multi-status{text-transform:uppercase;letter-spacing:.06em;opacity:.75;display:block;margin-top:2px;font-size:clamp(9px,4cqmin,16px);}
 
   /* ---------- Loading (spinner) ---------- */
   @keyframes girar{to{transform:rotate(360deg);}}
@@ -5173,7 +5178,6 @@ function renderTVMulti(matchIds){
   const n = matchIds.length;
   const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
   const rows = Math.ceil(n/cols);
-  const escala = 1/cols;
   screen.dataset.loaded = "1";
 
   const statusLabelMap = {
@@ -5191,21 +5195,21 @@ function renderTVMulti(matchIds){
     const tempoMs = tempoDecorridoMs(arb);
     const statusLabel = statusLabelMap[arb.status] || "";
     html += `<div class="tv-multi-cell">
-      <div class="tv-multi-label" style="font-size:${Math.max(11, 26*escala)}px;">${escapeHtml(label)}</div>
+      <div class="tv-multi-label">${escapeHtml(label)}</div>
       <div class="tv-multi-board">
         <div class="tv-multi-team">
-          <div class="tv-multi-nome" style="font-size:${Math.max(10, 28*escala)}px;">${escapeHtml(a||"—")}</div>
-          <div class="tv-multi-score" style="font-size:${Math.max(28, 100*escala)}px;">${arb.placarA}</div>
+          <div class="tv-multi-nome">${escapeHtml(a||"—")}</div>
+          <div class="tv-multi-score">${arb.placarA}</div>
         </div>
-        <div class="tv-multi-x" style="font-size:${Math.max(14, 32*escala)}px;">×</div>
+        <div class="tv-multi-x">×</div>
         <div class="tv-multi-team">
-          <div class="tv-multi-nome" style="font-size:${Math.max(10, 28*escala)}px;">${escapeHtml(b||"—")}</div>
-          <div class="tv-multi-score" style="font-size:${Math.max(28, 100*escala)}px;">${arb.placarB}</div>
+          <div class="tv-multi-nome">${escapeHtml(b||"—")}</div>
+          <div class="tv-multi-score">${arb.placarB}</div>
         </div>
       </div>
       <div class="tv-multi-footer">
-        <span class="tv-multi-timer" data-tv-timer="${matchId}" style="font-size:${Math.max(12, 24*escala)}px;">${formatTempo(tempoMs)}</span>
-        <span class="tv-multi-status" style="font-size:${Math.max(9, 14*escala)}px;">${statusLabel}</span>
+        <span class="tv-multi-timer" data-tv-timer="${matchId}">${formatTempo(tempoMs)}</span>
+        <span class="tv-multi-status">${statusLabel}</span>
       </div>
     </div>`;
   });
