@@ -1182,14 +1182,22 @@ function linhasRelatorioCupons(){
     .sort((a,b)=> (b.t.createdAt||"").localeCompare(a.t.createdAt||""));
 }
 
+// Só existe comissão "a repassar" de verdade quando o cupom tem % de comissão configurado E o
+// torneio pagou algo (cupom de 100%/torneio grátis dá comissaoValor 0 mesmo com % configurado —
+// não faz sentido pedir repasse de R$0). Usada tanto pra decidir o que mostrar/filtrar no
+// relatório quanto pra travar o botão "Marcar como repassada" nesses casos.
+function temComissaoARepassar(comissaoValor){
+  return comissaoValor!=null && comissaoValor > 0;
+}
+
 // Aplica os filtros atuais (cupom + status de repasse) sobre linhasRelatorioCupons() — usada
 // tanto pra desenhar a tela (com paginação por cima) quanto pela exportação CSV, que precisa do
 // mesmo recorte só que sem paginar, pra não exportar página por página.
 function linhasRelatorioCuponsFiltradas(){
   let linhas = linhasRelatorioCupons();
   if(relatorioFiltroCupom!=="todos") linhas = linhas.filter(l=> l.t.cupomAplicado.nome===relatorioFiltroCupom);
-  if(relatorioFiltroRepasse==="pendente") linhas = linhas.filter(l=> !l.t.comissaoRepassada);
-  if(relatorioFiltroRepasse==="repassado") linhas = linhas.filter(l=> l.t.comissaoRepassada);
+  if(relatorioFiltroRepasse==="pendente") linhas = linhas.filter(l=> temComissaoARepassar(l.comissaoValor) && !l.t.comissaoRepassada);
+  if(relatorioFiltroRepasse==="repassado") linhas = linhas.filter(l=> temComissaoARepassar(l.comissaoValor) && l.t.comissaoRepassada);
   return linhas;
 }
 
@@ -3954,13 +3962,14 @@ function renderRelatorioCuponsScreen(){
       <div class="sub" style="margin-bottom:6px;">🎟️ Cupom: <b>${escapeHtml(t.cupomAplicado.nome)}</b> (-${t.cupomAplicado.percentual}%) · criado em ${formatarDataBR((t.createdAt||"").slice(0,10))}</div>
       <div class="sub" style="margin-bottom:10px;">💰 Valor: <b>R$ ${valorFinal.toFixed(2).replace(".",",")}</b>${comissaoPercentual!=null ? ` · Comissão (${comissaoPercentual}%): <b>R$ ${comissaoValor.toFixed(2).replace(".",",")}</b>` : ` · comissão não configurada pra este cupom`}</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        ${t.comissaoRepassada
-          ? `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Comissão repassada</span>`
-          : `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Comissão pendente</span>`
+        ${!temComissaoARepassar(comissaoValor)
+          ? `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">— Sem comissão</span>`
+          : t.comissaoRepassada
+            ? `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Comissão repassada</span>
+               <button class="btn ghost" data-comissao-alternar="${t.id}" data-comissao-nova="0" style="flex:1;width:auto;padding:7px 12px;font-size:12px;">Marcar como pendente</button>`
+            : `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Comissão pendente</span>
+               <button class="btn ghost" data-comissao-alternar="${t.id}" data-comissao-nova="1" style="flex:1;width:auto;padding:7px 12px;font-size:12px;">Marcar como repassada</button>`
         }
-        <button class="btn ghost" data-comissao-alternar="${t.id}" data-comissao-nova="${t.comissaoRepassada ? "0" : "1"}" style="flex:1;width:auto;padding:7px 12px;font-size:12px;">
-          ${t.comissaoRepassada ? "Marcar como pendente" : "Marcar como repassada"}
-        </button>
       </div>
     </div>`;
   });
