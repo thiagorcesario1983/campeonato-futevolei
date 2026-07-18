@@ -198,6 +198,18 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
    boot inteiro do app (tela em branco). **Sempre revisar se o `old_str` inclui exatamente as
    linhas de abertura/fechamento necessárias**, e rodar `node --check` depois de qualquer edição
    nesse arquivo.
+10. **`torneiosAprovar` reconstruía o `meta` do índice sem incluir `cupomAplicado`** — mesma
+    categoria de bug do item 1 (meta reconstruído do zero em vez de partir do registro completo),
+    só que aqui ninguém tinha notado: assim que um torneio com cupom era aprovado/recusado/
+    bloqueado, o `cupomAplicado` sumia do `torneios:index` pra sempre (o registro completo em
+    `torneio:{id}` continuava com o campo certo, só o resumo é que perdia). Isso fazia o badge de
+    cupom sumir da aba Aprovações depois da primeira decisão, e faria o relatório de uso de
+    cupons (aba Cupons → Relatório de uso) parar de listar esses torneios. Corrigido incluindo
+    `cupomAplicado` (e os novos `comissaoRepassada`/`comissaoRepassadaEm`, usados nesse mesmo
+    relatório) explicitamente no `meta` de `torneiosAprovar`. **Reforça o aviso do item 1**: toda
+    vez que uma rota reconstrói o objeto `meta` do índice em vez de fazer um update cirúrgico de
+    campo, precisa copiar TODOS os campos que existem no registro completo, não só os que aquela
+    rota especificamente usa.
 
 ## Convenções
 

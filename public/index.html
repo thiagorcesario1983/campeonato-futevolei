@@ -891,6 +891,11 @@ let cuponsFiltroStatus = "todos"; // "todos" | "ativo" | "expirado" | "nao_comec
 let cuponsPagina = 1;
 const CUPONS_POR_PAGINA = 5;
 let mostrarFormNovoCupom = false;
+let cuponsSubTab = "cupons"; // "cupons" | "relatorio" — sub-menu dentro da aba Cupons
+let relatorioFiltroCupom = "todos"; // "todos" ou o nome exato de um cupom
+let relatorioFiltroRepasse = "todos"; // "todos" | "pendente" | "repassado"
+let relatorioPagina = 1;
+const RELATORIO_POR_PAGINA = 8;
 let cupomValidacaoCache = {}; // {nomeDigitado: {valido, percentual, motivo}} — evita revalidar a cada tecla
 let placarSelecionados = new Set(); // matchIds escolhidos na aba Placar
 
@@ -1089,6 +1094,113 @@ async function alternarBloqueioCupom(nome, bloquear){
   }finally{
     hideLoading();
   }
+}
+
+async function editarComissaoCupom(nome, comissaoAtual){
+  const digitado = prompt(`% de comissão a repassar por uso do cupom "${nome}" (deixe em branco para remover):`, comissaoAtual==null ? "" : String(comissaoAtual));
+  if(digitado===null) return; // cancelou
+  const texto = digitado.trim();
+  const comissaoPercentual = texto==="" ? null : Number(texto.replace(",", "."));
+  if(texto!=="" && (!Number.isFinite(comissaoPercentual) || comissaoPercentual<0 || comissaoPercentual>100)){
+    showToast("Percentual de comissão precisa ser entre 0 e 100.");
+    return;
+  }
+  showLoading("Salvando comissão...");
+  try{
+    const res = await fetch("/api/cupons-editar-comissao", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ email: auth.email, nome, comissaoPercentual })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao salvar comissão");
+    showToast("Comissão atualizada.");
+    await fetchCuponsList();
+  }catch(e){
+    showToast(e.message || "Falha ao salvar comissão.");
+  }finally{
+    hideLoading();
+  }
+}
+
+/* ---------- Relatório de uso de cupons (admin) ---------- */
+// Reaproveita as listas já usadas em outras telas admin (torneiosList com cupomAplicado de cada
+// torneio, cuponsList com a % de comissão configurada em cada cupom) em vez de criar uma rota
+// nova só pra isso — os dois já trazem tudo que o relatório precisa.
+async function garantirDadosRelatorioCupons(){
+  const jobs = [];
+  if(torneiosList===null && !torneiosLoading) jobs.push(fetchTorneiosList());
+  if(cuponsList===null && !cuponsLoading) jobs.push(fetchCuponsList());
+  if(jobs.length) await Promise.all(jobs);
+}
+
+async function alternarComissaoRepassada(id, repassada){
+  showLoading(repassada ? "Marcando como repassada..." : "Marcando como pendente...");
+  try{
+    const res = await fetch("/api/torneios-comissao", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ email: auth.email, id, repassada })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao atualizar comissão");
+    const t = torneiosList && torneiosList.find(x=>x.id===id);
+    if(t){ t.comissaoRepassada = data.comissaoRepassada; t.comissaoRepassadaEm = data.comissaoRepassadaEm; }
+    showToast(repassada ? "Comissão marcada como repassada." : "Comissão marcada como pendente.");
+    render();
+  }catch(e){
+    showToast(e.message || "Falha ao atualizar comissão.");
+  }finally{
+    hideLoading();
+  }
+}
+
+function linhasRelatorioCupons(){
+  const cupons = cuponsList || [];
+  const cupomPorNome = {};
+  cupons.forEach(c=> cupomPorNome[c.nomeNormalizado] = c);
+  return (torneiosList || [])
+    .filter(t=> !!t.cupomAplicado)
+    .map(t=>{
+      const cupomAtual = cupomPorNome[(t.cupomAplicado.nome||"").trim().toUpperCase()] || null;
+      const dias = calcularDiasLocal(t.dataInicio, t.dataFim);
+      const valorFinal = typeof t.valorOverride==="number" ? t.valorOverride : calcularValorComCupomLocal(dias, t.cupomAplicado);
+      const comissaoPercentual = cupomAtual ? (cupomAtual.comissaoPercentual ?? null) : null;
+      const comissaoValor = comissaoPercentual!=null ? valorFinal*(comissaoPercentual/100) : null;
+      return { t, valorFinal, comissaoPercentual, comissaoValor };
+    })
+    .sort((a,b)=> (b.t.createdAt||"").localeCompare(a.t.createdAt||""));
+}
+
+// Aplica os filtros atuais (cupom + status de repasse) sobre linhasRelatorioCupons() — usada
+// tanto pra desenhar a tela (com paginação por cima) quanto pela exportação CSV, que precisa do
+// mesmo recorte só que sem paginar, pra não exportar página por página.
+function linhasRelatorioCuponsFiltradas(){
+  let linhas = linhasRelatorioCupons();
+  if(relatorioFiltroCupom!=="todos") linhas = linhas.filter(l=> l.t.cupomAplicado.nome===relatorioFiltroCupom);
+  if(relatorioFiltroRepasse==="pendente") linhas = linhas.filter(l=> !l.t.comissaoRepassada);
+  if(relatorioFiltroRepasse==="repassado") linhas = linhas.filter(l=> l.t.comissaoRepassada);
+  return linhas;
+}
+
+function baixarArquivo(nome, conteudo, tipo){
+  const blob = new Blob([conteudo], { type: tipo });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nome;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportarRelatorioCuponsCSV(linhas){
+  const cab = ["Código","Torneio","Cupom","Desconto (%)","Organizador","E-mail","Criado em","Status pagamento","Valor (R$)","Comissão (%)","Comissão (R$)","Repassada"];
+  const linhasCSV = linhas.map(({t, valorFinal, comissaoPercentual, comissaoValor})=> [
+    t.codigo||"", t.nome||"", t.cupomAplicado.nome||"", t.cupomAplicado.percentual,
+    t.ownerName||"", t.ownerEmail||"", formatarDataBR((t.createdAt||"").slice(0,10)),
+    t.pagamentoStatus||"", valorFinal.toFixed(2).replace(".",","),
+    comissaoPercentual!=null ? comissaoPercentual : "", comissaoValor!=null ? comissaoValor.toFixed(2).replace(".",",") : "",
+    t.comissaoRepassada ? "sim" : "não"
+  ]);
+  const csv = [cab, ...linhasCSV].map(linha=> linha.map(v=> `"${String(v).replace(/"/g,'""')}"`).join(";")).join("\r\n");
+  baixarArquivo(`relatorio-cupons-${hojeLocalISO()}.csv`, "﻿"+csv, "text/csv;charset=utf-8");
 }
 
 // Checagem "ao vivo" do cupom digitado na criação de um torneio — cacheada por nome digitado
@@ -3662,10 +3774,19 @@ function badgeCupom(c){
 }
 
 function renderCuponsAdminScreen(){
+  let html = `<div class="section-title">Cupons</div>
+    <div style="display:flex;gap:8px;margin-bottom:18px;">
+      <button class="btn ${cuponsSubTab==="cupons"?"":"ghost"}" data-cupons-subtab="cupons" style="flex:1;">🎟️ Cupons</button>
+      <button class="btn ${cuponsSubTab==="relatorio"?"":"ghost"}" data-cupons-subtab="relatorio" style="flex:1;">📊 Relatório de uso</button>
+    </div>`;
+  html += cuponsSubTab==="relatorio" ? renderRelatorioCuponsScreen() : renderCuponsGerenciarScreen();
+  return html;
+}
+
+function renderCuponsGerenciarScreen(){
   if(cuponsList===null && !cuponsLoading) fetchCuponsList();
 
-  let html = `<div class="section-title">Cupons de desconto</div>
-    <div class="section-sub">Cadastre cupons pra dar desconto no valor das diárias na hora de criar um torneio. O nome do cupom é único (sem diferenciar maiúsculas/minúsculas) e não pode se repetir.</div>`;
+  let html = `<div class="section-sub">Cadastre cupons pra dar desconto no valor das diárias na hora de criar um torneio. O nome do cupom é único (sem diferenciar maiúsculas/minúsculas) e não pode se repetir.</div>`;
 
   if(mostrarFormNovoCupom){
     const hoje = hojeLocalISO();
@@ -3679,8 +3800,10 @@ function renderCuponsAdminScreen(){
       <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Fim da validade</label>
       <input type="date" id="input-novo-cupom-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
       <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Máximo de usos (opcional)</label>
-      <input type="number" id="input-novo-cupom-max-usos" min="1" step="1" placeholder="deixe em branco para ilimitado" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:6px;">
-      <div class="hint" style="margin-bottom:14px;">O cupom nasce ativo. Ele vale só dentro do período informado acima e enquanto não atingir o máximo de usos (se definido).</div>
+      <input type="number" id="input-novo-cupom-max-usos" min="1" step="1" placeholder="deixe em branco para ilimitado" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">% de comissão a repassar por uso (opcional)</label>
+      <input type="number" id="input-novo-cupom-comissao" min="0" max="100" step="0.1" placeholder="deixe em branco se não houver comissão" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:6px;">
+      <div class="hint" style="margin-bottom:14px;">Percentual do valor pago do torneio a repassar pra quem indicou o cupom (ex: parceiro/influenciador) — separado do desconto dado ao cliente. Aparece no Relatório de uso e pode ser ajustado depois.</div>
       <div style="display:flex;gap:8px;">
         <button class="btn secondary" id="btn-cancelar-novo-cupom" style="flex:1;">Cancelar</button>
         <button class="btn" id="btn-confirmar-novo-cupom" style="flex:1;">Cadastrar</button>
@@ -3725,7 +3848,10 @@ function renderCuponsAdminScreen(){
             ${badgeCupom(c)}
           </div>
           <div class="sub" style="margin-bottom:4px;">${c.percentual}% de desconto · ${usoTexto}</div>
-          <div class="sub" style="margin-bottom:10px;">Válido de ${formatarDataBR(c.dataInicio)} até ${formatarDataBR(c.dataFim)}</div>
+          <div class="sub" style="margin-bottom:4px;">Válido de ${formatarDataBR(c.dataInicio)} até ${formatarDataBR(c.dataFim)}</div>
+          <div class="sub" style="margin-bottom:10px;">💼 Comissão: ${c.comissaoPercentual!=null ? `<b>${c.comissaoPercentual}%</b> por uso` : "não configurada"}
+            <button class="btn ghost" data-cupom-editar-comissao="${escapeHtml(c.nome)}" data-comissao-atual="${c.comissaoPercentual??""}" style="width:auto;padding:2px 9px;font-size:11px;margin-left:6px;border-color:var(--muted);color:var(--muted);">✏️ editar</button>
+          </div>
           <div style="display:flex;gap:8px;">
             ${c.status==="bloqueado"
               ? `<button class="btn" data-cupom-desbloquear="${escapeHtml(c.nome)}" style="flex:1;background:var(--grass);box-shadow:none;">🔓 Desbloquear</button>`
@@ -3745,6 +3871,96 @@ function renderCuponsAdminScreen(){
       }
     }
   }
+  return html;
+}
+
+function renderRelatorioCuponsScreen(){
+  garantirDadosRelatorioCupons();
+  if(torneiosList===null || cuponsList===null){
+    return `<div class="card empty">Carregando relatório...</div>`;
+  }
+
+  const todasLinhas = linhasRelatorioCupons();
+  if(!todasLinhas.length){
+    return `<div class="card empty"><span class="ball-icon">📊</span>Nenhum torneio usou cupom ainda.</div>`;
+  }
+
+  const nomesCupons = Array.from(new Set(todasLinhas.map(l=> l.t.cupomAplicado.nome))).sort((a,b)=>a.localeCompare(b));
+  const linhas = linhasRelatorioCuponsFiltradas();
+
+  const totalValor = linhas.reduce((s,l)=> s+l.valorFinal, 0);
+  const totalComissaoPendente = linhas.filter(l=>!l.t.comissaoRepassada).reduce((s,l)=> s+(l.comissaoValor||0), 0);
+  const totalComissaoRepassada = linhas.filter(l=>l.t.comissaoRepassada).reduce((s,l)=> s+(l.comissaoValor||0), 0);
+
+  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+    <div class="card" style="margin:0;"><div class="sub">Torneios com cupom</div><div style="font-size:22px;font-weight:700;">${linhas.length}</div></div>
+    <div class="card" style="margin:0;"><div class="sub">Valor gerado</div><div style="font-size:22px;font-weight:700;">R$ ${totalValor.toFixed(2).replace(".",",")}</div></div>
+    <div class="card" style="margin:0;"><div class="sub">Comissão pendente</div><div style="font-size:22px;font-weight:700;color:var(--coral);">R$ ${totalComissaoPendente.toFixed(2).replace(".",",")}</div></div>
+    <div class="card" style="margin:0;"><div class="sub">Comissão repassada</div><div style="font-size:22px;font-weight:700;color:#2E6E42;">R$ ${totalComissaoRepassada.toFixed(2).replace(".",",")}</div></div>
+  </div>`;
+
+  html += `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:140px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Filtrar por cupom</label>
+      <select id="select-relatorio-filtro-cupom" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">
+        <option value="todos" ${relatorioFiltroCupom==="todos"?"selected":""}>Todos os cupons</option>
+        ${nomesCupons.map(n=> `<option value="${escapeHtml(n)}" ${relatorioFiltroCupom===n?"selected":""}>${escapeHtml(n)}</option>`).join("")}
+      </select>
+    </div>
+    <div style="flex:1;min-width:140px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Repasse</label>
+      <select id="select-relatorio-filtro-repasse" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">
+        <option value="todos" ${relatorioFiltroRepasse==="todos"?"selected":""}>Todos</option>
+        <option value="pendente" ${relatorioFiltroRepasse==="pendente"?"selected":""}>Pendente</option>
+        <option value="repassado" ${relatorioFiltroRepasse==="repassado"?"selected":""}>Repassado</option>
+      </select>
+    </div>
+  </div>`;
+
+  html += `<button class="btn ghost" id="btn-exportar-relatorio-cupons" style="margin-bottom:16px;">⬇️ Exportar CSV</button>`;
+
+  if(!linhas.length){
+    return html + `<div class="card empty">Nenhum uso de cupom com esses filtros.</div>`;
+  }
+
+  const totalPaginas = Math.max(1, Math.ceil(linhas.length / RELATORIO_POR_PAGINA));
+  if(relatorioPagina > totalPaginas) relatorioPagina = totalPaginas;
+  if(relatorioPagina < 1) relatorioPagina = 1;
+  const inicio = (relatorioPagina-1) * RELATORIO_POR_PAGINA;
+  const linhasPagina = linhas.slice(inicio, inicio + RELATORIO_POR_PAGINA);
+
+  html += `<div class="sub" style="margin-bottom:10px;">${linhas.length} uso${linhas.length===1?"":"s"} de cupom</div>`;
+
+  linhasPagina.forEach(({t, valorFinal, comissaoPercentual, comissaoValor})=>{
+    html += `<div class="card" style="margin-bottom:14px;">
+      <div class="row" style="margin-bottom:2px;">
+        <span class="nome" style="font-weight:700;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
+        ${badgePagamento(t)}
+      </div>
+      <div class="sub" style="font-family:'DM Mono',monospace;margin-bottom:6px;">#${escapeHtml(t.codigo||"—")}</div>
+      <div class="sub" style="margin-bottom:6px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
+      <div class="sub" style="margin-bottom:6px;">🎟️ Cupom: <b>${escapeHtml(t.cupomAplicado.nome)}</b> (-${t.cupomAplicado.percentual}%) · criado em ${formatarDataBR((t.createdAt||"").slice(0,10))}</div>
+      <div class="sub" style="margin-bottom:10px;">💰 Valor: <b>R$ ${valorFinal.toFixed(2).replace(".",",")}</b>${comissaoPercentual!=null ? ` · Comissão (${comissaoPercentual}%): <b>R$ ${comissaoValor.toFixed(2).replace(".",",")}</b>` : ` · comissão não configurada pra este cupom`}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        ${t.comissaoRepassada
+          ? `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Comissão repassada</span>`
+          : `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Comissão pendente</span>`
+        }
+        <button class="btn ghost" data-comissao-alternar="${t.id}" data-comissao-nova="${t.comissaoRepassada ? "0" : "1"}" style="flex:1;width:auto;padding:7px 12px;font-size:12px;">
+          ${t.comissaoRepassada ? "Marcar como pendente" : "Marcar como repassada"}
+        </button>
+      </div>
+    </div>`;
+  });
+
+  if(totalPaginas > 1){
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;">
+      <button class="btn ghost" id="btn-relatorio-pagina-anterior" style="width:auto;padding:8px 16px;${relatorioPagina<=1 ? "opacity:.45;cursor:not-allowed;" : ""}" ${relatorioPagina<=1 ? "disabled" : ""}>← Anterior</button>
+      <span class="sub">Página ${relatorioPagina} de ${totalPaginas}</span>
+      <button class="btn ghost" id="btn-relatorio-pagina-proxima" style="width:auto;padding:8px 16px;${relatorioPagina>=totalPaginas ? "opacity:.45;cursor:not-allowed;" : ""}" ${relatorioPagina>=totalPaginas ? "disabled" : ""}>Próxima →</button>
+    </div>`;
+  }
+
   return html;
 }
 
@@ -4689,7 +4905,10 @@ function bindEvents(){
     if(dataFim < dataInicio){ showToast("A data de fim não pode ser antes da data de início."); return; }
     const maxUsos = maxUsosTexto ? Number(maxUsosTexto) : null;
     if(maxUsosTexto && (!maxUsos || maxUsos<1)){ showToast("Máximo de usos precisa ser maior que 0, ou deixe em branco."); return; }
-    criarCupom({ nome, percentual, dataInicio, dataFim, maxUsos });
+    const comissaoTexto = document.getElementById("input-novo-cupom-comissao").value.trim();
+    const comissaoPercentual = comissaoTexto ? Number(comissaoTexto.replace(",", ".")) : null;
+    if(comissaoTexto && (!Number.isFinite(comissaoPercentual) || comissaoPercentual<0 || comissaoPercentual>100)){ showToast("Percentual de comissão precisa ser entre 0 e 100, ou deixe em branco."); return; }
+    criarCupom({ nome, percentual, dataInicio, dataFim, maxUsos, comissaoPercentual });
   });
   main.querySelectorAll("[data-cupom-bloquear]").forEach(btn=>{
     btn.addEventListener("click", ()=> alternarBloqueioCupom(btn.dataset.cupomBloquear, true));
@@ -4699,6 +4918,47 @@ function bindEvents(){
   });
   main.querySelectorAll("[data-cupom-remover]").forEach(btn=>{
     btn.addEventListener("click", ()=> removerCupom(btn.dataset.cupomRemover));
+  });
+  main.querySelectorAll("[data-cupom-editar-comissao]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const atual = btn.dataset.comissaoAtual;
+      editarComissaoCupom(btn.dataset.cupomEditarComissao, atual==="" ? null : Number(atual));
+    });
+  });
+  main.querySelectorAll("[data-cupons-subtab]").forEach(chip=>{
+    chip.addEventListener("click", ()=>{
+      cuponsSubTab = chip.dataset.cuponsSubtab;
+      render();
+    });
+  });
+  const selectRelatorioFiltroCupom = document.getElementById("select-relatorio-filtro-cupom");
+  if(selectRelatorioFiltroCupom) selectRelatorioFiltroCupom.addEventListener("change", e=>{
+    relatorioFiltroCupom = e.target.value;
+    relatorioPagina = 1;
+    render();
+  });
+  const selectRelatorioFiltroRepasse = document.getElementById("select-relatorio-filtro-repasse");
+  if(selectRelatorioFiltroRepasse) selectRelatorioFiltroRepasse.addEventListener("change", e=>{
+    relatorioFiltroRepasse = e.target.value;
+    relatorioPagina = 1;
+    render();
+  });
+  const btnRelatorioPaginaAnterior = document.getElementById("btn-relatorio-pagina-anterior");
+  if(btnRelatorioPaginaAnterior) btnRelatorioPaginaAnterior.addEventListener("click", ()=>{
+    relatorioPagina--;
+    render();
+  });
+  const btnRelatorioPaginaProxima = document.getElementById("btn-relatorio-pagina-proxima");
+  if(btnRelatorioPaginaProxima) btnRelatorioPaginaProxima.addEventListener("click", ()=>{
+    relatorioPagina++;
+    render();
+  });
+  main.querySelectorAll("[data-comissao-alternar]").forEach(btn=>{
+    btn.addEventListener("click", ()=> alternarComissaoRepassada(btn.dataset.comissaoAlternar, btn.dataset.comissaoNova==="1"));
+  });
+  const btnExportarRelatorioCupons = document.getElementById("btn-exportar-relatorio-cupons");
+  if(btnExportarRelatorioCupons) btnExportarRelatorioCupons.addEventListener("click", ()=>{
+    exportarRelatorioCuponsCSV(linhasRelatorioCuponsFiltradas());
   });
   const btnMigrar = document.getElementById("btn-migrar-local");
   if(btnMigrar) btnMigrar.addEventListener("click", migrarTorneioLocal);
