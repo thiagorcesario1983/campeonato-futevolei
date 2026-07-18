@@ -47,6 +47,7 @@ campeonato-futevolei/
 │   ├── index.html          ← TODO o front-end: HTML + CSS + JS num arquivo só (sem build step)
 │   ├── manifest.json
 │   ├── service-worker.js   ← cache offline, estratégia network-first
+│   ├── _headers            ← força Cache-Control: no-store em /, /index.html e /service-worker.js
 │   └── icons/
 ├── src/
 │   └── worker.ts           ← TODA a API/backend num Worker só
@@ -210,6 +211,21 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     vez que uma rota reconstrói o objeto `meta` do índice em vez de fazer um update cirúrgico de
     campo, precisa copiar TODOS os campos que existem no registro completo, não só os que aquela
     rota especificamente usa.
+11. **Deploy novo às vezes não aparecia pro usuário sem aba anônima/limpar cache.** Requisições pra
+    `/`, `/index.html` e `/service-worker.js` batiam em `CF-Cache-Status: HIT` — a Cloudflare serve
+    arquivo estático direto da borda quando o caminho combina com um asset, **sem passar pelo
+    `fetch()` do Worker** (isso só muda com `run_worker_first: true`, que este projeto não usa).
+    Por isso, tentar forçar `Cache-Control` de dentro de `src/worker.ts` (ex: interceptando o
+    `return env.ASSETS.fetch(request)` final e reescrevendo o header) **não tem efeito nenhum** —
+    esse código nunca roda pra essas rotas. Testado localmente com `wrangler dev`: sem `_headers`,
+    `/` saía com `Cache-Control: public, max-age=0, must-revalidate` (cacheável, só revalida por
+    ETag — na prática, span de propagação entre bordas da Cloudflare logo após um deploy podia
+    devolver uma versão velha por alguns minutos). Corrigido com `public/_headers` (convenção
+    herdada do Cloudflare Pages, suportada pelo binding `assets` do Workers), que a própria
+    Cloudflare aplica na borda antes de decidir servir do cache — força `no-store` só no "shell"
+    do PWA (HTML + Service Worker), mantendo o cache padrão pra `manifest.json`/ícones (mudam
+    raramente). **Se precisar mexer em cache de assets estáticos de novo, mexa em `public/_headers`
+    ou em `wrangler.jsonc` (`run_worker_first`), nunca no `fetch()` do Worker.**
 
 ## Convenções
 
