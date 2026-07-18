@@ -1690,6 +1690,71 @@ async function configSet(request: Request, env: Env): Promise<Response> {
 }
 
 /* ============================================================
+   LOGIN GOOGLE — FLUXO REDIRECT
+   Alternativa ao popup padrão do Google Identity Services (ux_mode:"redirect" em vez de
+   "popup"), mais confiável em navegadores com Intelligent Tracking Prevention (Safari é o
+   caso clássico) — lá o popup às vezes trava ao tentar "Usar outra conta", já que a troca de
+   conta acontece dentro do próprio popup isolado pelo ITP. No modo redirect, o Google navega a
+   aba inteira pra accounts.google.com e depois faz um POST de volta aqui com o credential.
+============================================================ */
+async function googleLoginCallback(request: Request, env: Env): Promise<Response> {
+  // Proteção contra CSRF documentada pelo Google pra esse fluxo: o próprio Google Identity
+  // Services já seta um cookie "g_csrf_token" no domínio do app antes de redirecionar pro
+  // login — o valor que vier de volta no corpo do POST precisa bater com esse cookie. Sem essa
+  // checagem, qualquer site poderia forjar um POST pra essa rota fingindo ser um login legítimo.
+  const cookieHeader = request.headers.get("Cookie") || "";
+  const cookieMatch = cookieHeader.match(/(?:^|;\s*)g_csrf_token=([^;]+)/);
+  const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : null;
+
+  let credential = "";
+  let bodyToken = "";
+  try {
+    const form = await request.formData();
+    credential = String(form.get("credential") || "");
+    bodyToken = String(form.get("g_csrf_token") || "");
+  } catch {
+    return new Response("Requisição de login inválida.", { status: 400 });
+  }
+
+  if (!cookieToken || !bodyToken || cookieToken !== bodyToken) {
+    return new Response("Falha na verificação de segurança do login. Tente novamente.", { status: 400 });
+  }
+  if (!credential) {
+    return new Response("Credencial do Google ausente.", { status: 400 });
+  }
+
+  // Só decodifica o JWT (não verifica assinatura) — igual ao fluxo popup já fazia no front
+  // (decodeJwt em index.html). A autorização de verdade continua sendo feita pelo servidor em
+  // cada rota protegida, comparando o e-mail com ADMIN_EMAILS — esse login em si nunca foi o
+  // limite de segurança do app.
+  let payload: any;
+  try {
+    const parte = credential.split(".")[1];
+    const b64 = parte.replace(/-/g, "+").replace(/_/g, "/");
+    payload = JSON.parse(atob(b64));
+  } catch {
+    return new Response("Não foi possível ler a credencial do Google.", { status: 400 });
+  }
+  if (!payload?.email) {
+    return new Response("Credencial do Google sem e-mail.", { status: 400 });
+  }
+
+  const auth = { email: payload.email, name: payload.name || "", picture: payload.picture || "" };
+  // JSON.stringify duas vezes: a primeira serializa o objeto auth, a segunda transforma esse
+  // JSON num literal de string JS seguro pra colocar dentro do <script> abaixo. Escapa "<" à
+  // parte porque nada impede alguém de nomear a própria conta Google com algo tipo
+  // "</script><script>...", o que fecharia a tag cedo e injetaria HTML/JS na página.
+  const authLiteral = JSON.stringify(JSON.stringify(auth)).replace(/</g, "\\u003c");
+
+  const html = `<!doctype html><html><body><script>
+try{ localStorage.setItem("futevolei_auth_v1", ${authLiteral}); }catch(e){}
+location.replace("/");
+</script></body></html>`;
+
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+/* ============================================================
    ROTEAMENTO
 ============================================================ */
 export default {
@@ -1770,6 +1835,9 @@ export default {
     }
     if (path === "/api/config-set") {
       return method === "POST" ? configSet(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/google-login-callback") {
+      return method === "POST" ? googleLoginCallback(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path.startsWith("/api/")) {
       return new Response("Not found", { status: 404 });

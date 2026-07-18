@@ -854,9 +854,19 @@ function initGoogleSignIn(){
   if(!clientId || !btnDiv || !window.google || !google.accounts || !google.accounts.id) return;
   try{
     // itp_support: navegadores com Intelligent Tracking Prevention (Safari é o principal) bloqueiam
-    // o cookie de terceiro que o Google usaria por padrão pra lembrar a sessão — sem essa flag, o
-    // login costuma travar ou ficar preso sempre na mesma conta depois de um logout/troca de conta.
-    google.accounts.id.initialize({ client_id: clientId, callback: handleGoogleCredential, itp_support: true });
+    // o cookie de terceiro que o Google usaria por padrão pra lembrar a sessão.
+    // ux_mode:"redirect": no popup padrão, "Usar outra conta" fica preso dentro do próprio popup em
+    // alguns Safaris (o ITP isola o popup de um jeito que a navegação interna não avança). No modo
+    // redirect a aba inteira navega pro Google e volta via POST pro back-end (rota
+    // /api/google-login-callback, que grava o auth no localStorage e redireciona de volta), o que é
+    // mais robusto nesses navegadores.
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: handleGoogleCredential, // só entra em jogo se o navegador cair num fallback popup
+      itp_support: true,
+      ux_mode: "redirect",
+      login_uri: `${location.origin}/api/google-login-callback`
+    });
     google.accounts.id.renderButton(btnDiv, { theme:"outline", size:"large", width: 280 });
   }catch(e){ /* client id inválido ou domínio não autorizado */ }
 }
