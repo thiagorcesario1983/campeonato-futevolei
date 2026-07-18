@@ -853,16 +853,28 @@ function initGoogleSignIn(){
   const btnDiv = document.getElementById("google-signin-btn");
   if(!clientId || !btnDiv || !window.google || !google.accounts || !google.accounts.id) return;
   try{
-    google.accounts.id.initialize({ client_id: clientId, callback: handleGoogleCredential });
+    // itp_support: navegadores com Intelligent Tracking Prevention (Safari é o principal) bloqueiam
+    // o cookie de terceiro que o Google usaria por padrão pra lembrar a sessão — sem essa flag, o
+    // login costuma travar ou ficar preso sempre na mesma conta depois de um logout/troca de conta.
+    google.accounts.id.initialize({ client_id: clientId, callback: handleGoogleCredential, itp_support: true });
     google.accounts.id.renderButton(btnDiv, { theme:"outline", size:"large", width: 280 });
   }catch(e){ /* client id inválido ou domínio não autorizado */ }
 }
 
 function logout(){
+  const emailAnterior = auth?.email;
   auth = null;
   saveAuth(null);
   limparTorneioLocal(); // sem isso, a próxima conta que logar neste navegador "herdava" este torneio
-  try{ if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); }catch(e){}
+  try{
+    if(window.google && google.accounts && google.accounts.id){
+      google.accounts.id.disableAutoSelect();
+      // Revoga o consentimento desse app pra essa conta (não desloga do Google em si) — sem isso,
+      // ao tentar entrar com outra conta logo em seguida, o Google às vezes reoferece só a conta
+      // anterior em vez de mostrar o seletor de contas.
+      if(emailAnterior) google.accounts.id.revoke(emailAnterior, ()=>{});
+    }
+  }catch(e){}
   render();
 }
 
