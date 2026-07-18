@@ -352,7 +352,12 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     dataFim: existing ? existing.dataFim : (body.dataFim || null),
     pagamentoStatus: existing ? (existing.pagamentoStatus || "nao_solicitado") : "nao_solicitado",
     valorOverride: existing ? (existing.valorOverride ?? null) : null,
-    cupomAplicado
+    cupomAplicado,
+    // Controle manual do admin (relatório de uso de cupons: "repassei a comissão desse uso pro
+    // parceiro?") — nada a ver com o jogo em si, então preserva como os outros campos de
+    // identidade/financeiro: nunca reseta sozinho num re-salvamento normal do torneio.
+    comissaoRepassada: existing ? !!existing.comissaoRepassada : false,
+    comissaoRepassadaEm: existing ? (existing.comissaoRepassadaEm ?? null) : null
   };
 
   // O cliente que está salvando pode estar com uma cópia desatualizada da arbitragem — por
@@ -555,6 +560,49 @@ async function torneiosGet(request: Request, env: Env): Promise<Response> {
   return json(dados);
 }
 
+// Marca (ou desmarca) a comissão de um uso de cupom como já repassada — só um controle manual do
+// admin pro relatório de uso de cupons, não mexe em pagamento nem em jogo nenhum. Atualização
+// cirúrgica (registro completo + campo correspondente no índice), igual pixCriar/
+// confirmarPagamentoAprovado, pra não correr o risco de reconstruir o meta inteiro e derrubar
+// outro campo por engano (foi exatamente isso que já aconteceu com cupomAplicado antes).
+async function torneiosComissao(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = normEmail(body.email);
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode controlar o repasse de comissão" }, 403);
+
+  const id = body.id;
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  const repassada = !!body.repassada;
+
+  const raw = await env.DB.get(`torneio:${id}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+  if (!dados.cupomAplicado) return json({ error: "Este torneio não usou cupom" }, 400);
+
+  dados.comissaoRepassada = repassada;
+  dados.comissaoRepassadaEm = repassada ? new Date().toISOString() : null;
+
+  try {
+    await env.DB.put(`torneio:${id}`, JSON.stringify(dados));
+    const index = await getIndex(env);
+    const idx = index.findIndex((t: any) => t.id === id);
+    if (idx >= 0) {
+      index[idx].comissaoRepassada = dados.comissaoRepassada;
+      index[idx].comissaoRepassadaEm = dados.comissaoRepassadaEm;
+      await env.DB.put("torneios:index", JSON.stringify(index));
+    }
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  return json({ ok: true, comissaoRepassada: dados.comissaoRepassada, comissaoRepassadaEm: dados.comissaoRepassadaEm });
+}
+
 /* ============================================================
    CUPONS DE DESCONTO
    Guardados numa única chave (cupons:index, lista completa) — ao contrário dos torneios,
@@ -565,12 +613,18 @@ async function torneiosGet(request: Request, env: Env): Promise<Response> {
 interface Cupom {
   nome: string; // como foi cadastrado (exibição)
   nomeNormalizado: string; // MAIÚSCULO, usado pra comparar/achar duplicidade
-  percentual: number; // 0-100
+  percentual: number; // 0-100, desconto dado ao cliente que usa o cupom
   dataInicio: string | null;
   dataFim: string | null;
   status: "ativo" | "bloqueado";
   maxUsos: number | null; // null = ilimitado
   usos: number;
+  // % de comissão a repassar pra quem indicou/divulgou o cupom (ex: parceiro, influenciador) —
+  // independente do desconto dado ao cliente (percentual acima). null = comissão não configurada.
+  // Sempre lido "ao vivo" do cadastro atual do cupom no relatório de uso (nunca travado no
+  // momento do uso, diferente do desconto — pode ser ajustado depois sem afetar torneios já
+  // concluídos financeiramente, já que o acordo de comissão é externo ao app).
+  comissaoPercentual: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -657,11 +711,25 @@ async function cuponsSalvar(request: Request, env: Env): Promise<Response> {
     return json({ error: `Já existe um cupom "${nome}" — os nomes não podem se repetir.` }, 400);
   }
 
+  const comissaoPercentual = parseComissaoPercentual(body.comissaoPercentual);
+  if (comissaoPercentual === false) {
+    return json({ error: "Percentual de comissão precisa ser entre 0 e 100, ou deixe em branco" }, 400);
+  }
+
   const now = new Date().toISOString();
-  const novo: Cupom = { nome, nomeNormalizado, percentual, dataInicio, dataFim, status: "ativo", maxUsos, usos: 0, createdAt: now, updatedAt: now };
+  const novo: Cupom = { nome, nomeNormalizado, percentual, dataInicio, dataFim, status: "ativo", maxUsos, usos: 0, comissaoPercentual, createdAt: now, updatedAt: now };
   lista.push(novo);
   await saveCuponsIndex(env, lista);
   return json({ ok: true, cupom: novo });
+}
+
+// Devolve `false` (valor que nunca é um percentual válido) pra sinalizar entrada inválida sem
+// misturar com `null`, que aqui é um valor legítimo (comissão não configurada).
+function parseComissaoPercentual(v: unknown): number | null | false {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return false;
+  return n;
 }
 
 async function cuponsRemover(request: Request, env: Env): Promise<Response> {
@@ -697,6 +765,34 @@ async function cuponsBloquear(request: Request, env: Env): Promise<Response> {
   const cupom = lista.find((c) => c.nomeNormalizado === nomeNormalizado);
   if (!cupom) return json({ error: "Cupom não encontrado" }, 404);
   cupom.status = body.bloquear ? "bloqueado" : "ativo";
+  cupom.updatedAt = new Date().toISOString();
+  await saveCuponsIndex(env, lista);
+  return json({ ok: true, cupom });
+}
+
+// Só mexe na % de comissão (repasse pra quem indicou o cupom) — separado de cuponsSalvar porque
+// esse dado pode ser configurado/ajustado bem depois do cupom já existir e já ter sido usado,
+// ao contrário do desconto (percentual), que é travado por torneio no momento do uso.
+async function cuponsEditarComissao(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = normEmail(body.email);
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode configurar a comissão dos cupons" }, 403);
+
+  const comissaoPercentual = parseComissaoPercentual(body.comissaoPercentual);
+  if (comissaoPercentual === false) {
+    return json({ error: "Percentual de comissão precisa ser entre 0 e 100, ou deixe em branco pra remover" }, 400);
+  }
+
+  const nomeNormalizado = normalizarNomeCupom(body.nome);
+  const lista = await getCuponsIndex(env);
+  const cupom = lista.find((c) => c.nomeNormalizado === nomeNormalizado);
+  if (!cupom) return json({ error: "Cupom não encontrado" }, 404);
+  cupom.comissaoPercentual = comissaoPercentual;
   cupom.updatedAt = new Date().toISOString();
   await saveCuponsIndex(env, lista);
   return json({ ok: true, cupom });
@@ -795,7 +891,14 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     dataInicio: dados.dataInicio,
     dataFim: dados.dataFim,
     pagamentoStatus: dados.pagamento?.status || "nao_solicitado",
-    valorOverride: dados.valorOverride ?? null
+    valorOverride: dados.valorOverride ?? null,
+    // Sem isso aqui, o índice (torneios:index) perdia o cupomAplicado desse torneio pra sempre
+    // assim que o admin aprovasse/recusasse/bloqueasse — a lista de Aprovações e o relatório de
+    // uso de cupons (que leem do índice, não do registro completo) passavam a não mostrar mais o
+    // cupom usado, mesmo ele continuando salvo no registro completo (dados.cupomAplicado).
+    cupomAplicado: dados.cupomAplicado ?? null,
+    comissaoRepassada: !!dados.comissaoRepassada,
+    comissaoRepassadaEm: dados.comissaoRepassadaEm ?? null
   };
 
   try {
@@ -1632,6 +1735,9 @@ export default {
     if (path === "/api/torneios-aprovar") {
       return method === "POST" ? torneiosAprovar(request, env) : new Response("Method not allowed", { status: 405 });
     }
+    if (path === "/api/torneios-comissao") {
+      return method === "POST" ? torneiosComissao(request, env) : new Response("Method not allowed", { status: 405 });
+    }
     if (path === "/api/pix-criar") {
       return method === "POST" ? pixCriar(request, env) : new Response("Method not allowed", { status: 405 });
     }
@@ -1652,6 +1758,9 @@ export default {
     }
     if (path === "/api/cupons-bloquear") {
       return method === "POST" ? cuponsBloquear(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/cupons-editar-comissao") {
+      return method === "POST" ? cuponsEditarComissao(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path === "/api/cupons-validar") {
       return cuponsValidar(request, env);
