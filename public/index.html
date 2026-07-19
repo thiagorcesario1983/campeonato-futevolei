@@ -371,6 +371,7 @@
   nav.tabbar button .lbl{font-size:10px;font-weight:600;white-space:nowrap;}
   nav.tabbar button.active{color:var(--coral);}
   nav.tabbar button{position:relative;}
+  nav.tabbar button.tab-bloqueada{opacity:.35;}
   .nav-badge{
     position:absolute;top:2px;right:calc(50% - 22px);
     background:var(--coral);color:#fff;font-family:'DM Mono',monospace;
@@ -1572,6 +1573,19 @@ function campeonatoExpirado(){
 }
 function somenteLeitura(){
   return !ehAdmin() && campeonatoExpirado();
+}
+
+// Torneio já aprovado/pago, só esperando a data de início chegar: libera a aba Duplas
+// (cadastro de duplas, sortear e reiniciar torneio moram todas nela) antes da hora, pra dar tempo
+// de organizar tudo com antecedência — as outras abas (Jogos, Tabela, Mata-mata etc.) só liberam
+// no dia. Não se aplica a recusado/bloqueado/pagamento pendente: aí o torneio inteiro continua
+// bloqueado como antes, já que nem chegou a ser validado.
+function torneioPreLiberado(){
+  return !ehAdmin() && torneioEstaAtivo().motivo==="antes";
+}
+// Usada tanto pra desenhar a nav (esmaecer as abas ainda bloqueadas) quanto pro clique nelas.
+function abaBloqueadaAntesDoInicio(tab){
+  return tab!=="sorteio" && torneioPreLiberado();
 }
 
 // Busca a versão mais recente do torneio já aberto (usado ao carregar/recarregar a página,
@@ -3343,7 +3357,8 @@ function render(){
   }
 
   const ativo = torneioEstaAtivo();
-  if(!ehAdmin() && !ativo.ok && ativo.motivo!=="depois"){
+  const preLiberado = torneioPreLiberado();
+  if(!ehAdmin() && !ativo.ok && ativo.motivo!=="depois" && !preLiberado){
     nav.style.display = "none";
     navAdmin.style.display = "none";
     torneioBar.innerHTML = `<div class="torneio-bar">
@@ -3355,9 +3370,14 @@ function render(){
     return;
   }
 
+  // Antes do início, só a aba Duplas (cadastro + sortear + reiniciar torneio) fica disponível —
+  // não mexe em state.tab de verdade (evita sincronizar essa troca "forçada" com o servidor),
+  // só decide o que renderizar agora.
+  const tabAtual = preLiberado ? "sorteio" : state.tab;
+
   document.querySelector(".app").classList.toggle("somente-leitura", somenteLeitura());
 
-  if(state.tab==="apito" && state.apitoMatchId){
+  if(!preLiberado && state.tab==="apito" && state.apitoMatchId){
     nav.style.display = "none";
     navAdmin.style.display = "none";
     torneioBar.innerHTML = "";
@@ -3372,10 +3392,11 @@ function render(){
   torneioBar.innerHTML = `<div class="torneio-bar">
     <span>📋 ${escapeHtml(state.cloudNome||"Torneio")}${state.codigo ? ` <span style="opacity:.6;font-family:'DM Mono',monospace;font-size:11px;">#${escapeHtml(state.codigo)}</span>` : ""}</span>
     <button class="voltar" id="btn-voltar-torneios">Trocar torneio</button>
-  </div>${somenteLeitura() ? `<div class="readonly-banner">🔒 Encerrado em ${formatarDataBR(state.dataFim)} — somente visualização, sem alterações.</div>` : ""}`;
+  </div>${somenteLeitura() ? `<div class="readonly-banner">🔒 Encerrado em ${formatarDataBR(state.dataFim)} — somente visualização, sem alterações.</div>` : ""}${preLiberado ? `<div class="readonly-banner">🗓️ Começa em ${formatarDataBR(state.dataInicio)} — já dá pra cadastrar as duplas e sortear. As outras abas liberam no dia.</div>` : ""}`;
 
   document.querySelectorAll("#nav-torneio button").forEach(b=>{
-    b.classList.toggle("active", b.dataset.tab===state.tab);
+    b.classList.toggle("active", b.dataset.tab===tabAtual);
+    b.classList.toggle("tab-bloqueada", abaBloqueadaAntesDoInicio(b.dataset.tab));
   });
   const badge = document.getElementById("nav-badge-matamata");
   if(badge){
@@ -3383,14 +3404,14 @@ function render(){
     badge.textContent = n > 9 ? "9+" : String(n);
     badge.classList.toggle("show", n > 0);
   }
-  if(state.tab==="resumo") { main.innerHTML = renderResumo(); if(state.drawn) drawStoryCanvas(); }
-  else if(state.tab==="sorteio") main.innerHTML = renderSorteio();
-  else if(state.tab==="jogos") main.innerHTML = renderJogos();
-  else if(state.tab==="classificacao") main.innerHTML = renderClassificacao();
-  else if(state.tab==="matamata") main.innerHTML = renderMataMata();
-  else if(state.tab==="configuracoes") main.innerHTML = renderConfiguracoes();
-  else if(state.tab==="fluxo") main.innerHTML = renderFluxoJogos();
-  else if(state.tab==="placar") main.innerHTML = renderPlacarMultiplo();
+  if(tabAtual==="resumo") { main.innerHTML = renderResumo(); if(state.drawn) drawStoryCanvas(); }
+  else if(tabAtual==="sorteio") main.innerHTML = renderSorteio();
+  else if(tabAtual==="jogos") main.innerHTML = renderJogos();
+  else if(tabAtual==="classificacao") main.innerHTML = renderClassificacao();
+  else if(tabAtual==="matamata") main.innerHTML = renderMataMata();
+  else if(tabAtual==="configuracoes") main.innerHTML = renderConfiguracoes();
+  else if(tabAtual==="fluxo") main.innerHTML = renderFluxoJogos();
+  else if(tabAtual==="placar") main.innerHTML = renderPlacarMultiplo();
   else main.innerHTML = renderJogos();
   bindEvents();
 }
@@ -3412,9 +3433,6 @@ function renderTorneioBloqueado(){
   } else if(motivo==="aprovacao"){
     titulo = "⏳ Aguardando aprovação";
     texto = "Esse campeonato ainda não foi aprovado pelo admin do sistema. Você recebe um e-mail assim que a decisão for tomada.";
-  } else if(motivo==="antes"){
-    titulo = "🗓️ Ainda não começou";
-    texto = `Esse campeonato só fica disponível a partir de ${formatarDataBR(state.dataInicio)}.`;
   } else {
     titulo = "🗓️ Período encerrado";
     texto = `Esse campeonato só ficava disponível até ${formatarDataBR(state.dataFim)}.`;
@@ -5731,6 +5749,10 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
 } else {
   document.querySelectorAll("#nav-torneio button").forEach(btn=>{
     btn.addEventListener("click", ()=>{
+      if(abaBloqueadaAntesDoInicio(btn.dataset.tab)){
+        showToast(`Essa aba libera em ${formatarDataBR(state.dataInicio)} — por enquanto só Duplas.`);
+        return;
+      }
       state.tab = btn.dataset.tab;
       save();
       render();
