@@ -830,6 +830,17 @@ function decodeJwt(token){
   }catch(e){ return null; }
 }
 
+// Melhor esforço pra saber se o acesso foi via wifi/celular/etc, só informativo pro log de
+// atividade — a Network Information API é não-padrão e o Safari/iOS não implementa (então fica
+// null pra boa parte dos acessos; é esperado, não indica erro nenhum).
+function detectarTipoConexao(){
+  try{
+    const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if(!c) return null;
+    return c.type || c.effectiveType || null;
+  }catch(e){ return null; }
+}
+
 // Limpa o torneio aberto neste navegador. Precisa ser chamado sempre que a conta logada
 // mudar (login/logout) — sem isso, o app ficava "preso" mostrando o último torneio aberto
 // mesmo depois de trocar de conta, o que gerava confusão (e até duplicidade de torneios,
@@ -852,7 +863,7 @@ function handleGoogleCredential(response){
   // em googleLoginCallback, sem precisar dessa chamada extra.
   fetch("/api/log-acesso", {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ email: auth.email, name: auth.name })
+    body: JSON.stringify({ email: auth.email, name: auth.name, conexao: detectarTipoConexao() })
   }).catch(()=>{});
 }
 
@@ -980,6 +991,7 @@ function montarPayloadTorneio(){
     status: statusTorneio(),
     ownerEmail: auth.email,
     ownerName: auth.name,
+    conexao: detectarTipoConexao(),
     state
   };
 }
@@ -4160,10 +4172,11 @@ function logsFiltrados(){
 
 // Exporta a lista já filtrada (não só a página atual) — mesmo padrão de exportarRelatorioCuponsCSV.
 function exportarLogsCSV(linhas){
-  const cab = ["Data/Hora","Função","Descrição","Ator (nome)","Ator (e-mail)","Torneio","Código do torneio","Dados"];
+  const cab = ["Data/Hora","Função","Descrição","Ator (nome)","Ator (e-mail)","Torneio","Código do torneio","IP","País","Região","Cidade","Conexão","Dados"];
   const linhasCSV = linhas.map(l=> [
     formatarDataHoraBR(l.quando), ROTULO_TIPO_LOG[l.tipo] || l.tipo, l.descricao || "",
     l.atorNome || "", l.atorEmail || "", l.torneioNome || "", l.torneioCodigo || "",
+    l.ip || "", l.pais || "", l.regiao || "", l.cidade || "", l.conexao || "",
     l.dados ? JSON.stringify(l.dados) : ""
   ]);
   const csv = [cab, ...linhasCSV].map(linha=> linha.map(v=> `"${String(v).replace(/"/g,'""')}"`).join(";")).join("\r\n");
@@ -4171,37 +4184,35 @@ function exportarLogsCSV(linhas){
 }
 
 function renderLogAdminScreen(){
-  if(logsList===null && !logsLoading) fetchLogsList();
-
   let html = `<div class="section-title">Log de atividade</div>
     <div class="section-sub">Acessos ao sistema, criação de torneios, sorteios de duplas e resultados de jogos finalizados.</div>`;
 
-  if(logsList===null){
-    return html + `<div class="card empty">Carregando log...</div>`;
-  }
-  if(!logsList.length){
-    return html + `<div class="card empty"><span class="ball-icon">🗒️</span>Nenhum evento registrado ainda.</div>`;
-  }
+  // Não carrega nada do banco sozinho — só busca quando o admin escolhe as opções e aperta
+  // "Gerar relatório", pra não ficar trafegando o log inteiro à toa toda vez que a aba abre.
+  const jaCarregado = logsList!==null;
 
-  // Torneios distintos presentes no log (só faz sentido oferecer no filtro quem já tem algum
-  // evento) — cada torneio junta {id, nome, codigo} da entrada mais recente que o menciona.
+  // Torneio só dá pra filtrar depois de já ter carregado pelo menos uma vez (as opções vêm dos
+  // dados que chegaram) — antes disso dá pra pré-escolher função e período mesmo assim.
   const torneiosNoLog = [];
-  const vistos = new Set();
-  logsList.forEach(l=>{
-    if(l.torneioId && !vistos.has(l.torneioId)){
-      vistos.add(l.torneioId);
-      torneiosNoLog.push({ id:l.torneioId, nome:l.torneioNome||"Torneio sem nome", codigo:l.torneioCodigo||"" });
-    }
-  });
-  torneiosNoLog.sort((a,b)=> a.nome.localeCompare(b.nome));
+  if(jaCarregado){
+    const vistos = new Set();
+    logsList.forEach(l=>{
+      if(l.torneioId && !vistos.has(l.torneioId)){
+        vistos.add(l.torneioId);
+        torneiosNoLog.push({ id:l.torneioId, nome:l.torneioNome||"Torneio sem nome", codigo:l.torneioCodigo||"" });
+      }
+    });
+    torneiosNoLog.sort((a,b)=> a.nome.localeCompare(b.nome));
+  }
 
   html += `<div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
     <div style="flex:1;min-width:160px;">
       <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Torneio</label>
-      <select id="select-log-filtro-torneio" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">
+      <select id="select-log-filtro-torneio" ${jaCarregado?"":"disabled"} style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);${jaCarregado?"":"opacity:.6;"}">
         <option value="todos" ${logsFiltroTorneio==="todos"?"selected":""}>Todos os torneios</option>
         ${torneiosNoLog.map(t=> `<option value="${escapeHtml(t.id)}" ${logsFiltroTorneio===t.id?"selected":""}>${escapeHtml(t.nome)}${t.codigo ? ` (#${escapeHtml(t.codigo)})` : ""}</option>`).join("")}
       </select>
+      ${jaCarregado ? "" : `<div class="hint" style="font-size:11px;">Disponível depois de gerar o relatório</div>`}
     </div>
     <div style="flex:1;min-width:160px;">
       <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Função</label>
@@ -4222,6 +4233,16 @@ function renderLogAdminScreen(){
     </div>
   </div>`;
 
+  html += `<button class="btn" id="btn-gerar-relatorio-log" style="margin-bottom:16px;" ${logsLoading?"disabled":""}>${logsLoading ? "Carregando..." : (jaCarregado ? "🔄 Atualizar relatório" : "📊 Gerar relatório")}</button>`;
+
+  if(!jaCarregado){
+    return html;
+  }
+
+  if(!logsList.length){
+    return html + `<div class="card empty"><span class="ball-icon">🗒️</span>Nenhum evento registrado ainda.</div>`;
+  }
+
   html += `<button class="btn ghost" id="btn-exportar-logs" style="margin-bottom:16px;">⬇️ Exportar CSV</button>`;
 
   const lista = logsFiltrados();
@@ -4238,6 +4259,7 @@ function renderLogAdminScreen(){
   html += `<div class="sub" style="margin-bottom:10px;">${lista.length} evento${lista.length===1?"":"s"}</div>`;
 
   listaPagina.forEach(l=>{
+    const local = [l.cidade, l.regiao, l.pais].filter(Boolean).join(", ");
     html += `<div class="card" style="margin-bottom:14px;">
       <div class="row" style="margin-bottom:2px;">
         ${badgeTipoLog(l.tipo)}
@@ -4245,7 +4267,9 @@ function renderLogAdminScreen(){
       </div>
       <div class="sub" style="margin-bottom:4px;">${escapeHtml(l.descricao||"")}</div>
       <div class="sub" style="margin-bottom:2px;">👤 ${escapeHtml(l.atorNome || l.atorEmail || "—")}${l.atorEmail && l.atorNome ? ` · ${escapeHtml(l.atorEmail)}` : ""}</div>
-      ${l.torneioId ? `<div class="sub">📋 ${escapeHtml(l.torneioNome||"Torneio sem nome")}${l.torneioCodigo ? ` <span style="opacity:.7;">#${escapeHtml(l.torneioCodigo)}</span>` : ""}</div>` : ""}
+      ${l.torneioId ? `<div class="sub" style="margin-bottom:2px;">📋 ${escapeHtml(l.torneioNome||"Torneio sem nome")}${l.torneioCodigo ? ` <span style="opacity:.7;">#${escapeHtml(l.torneioCodigo)}</span>` : ""}</div>` : ""}
+      ${l.ip || local ? `<div class="sub" style="margin-bottom:2px;font-family:'DM Mono',monospace;font-size:11px;">🌐 ${escapeHtml(l.ip||"—")}${local ? ` · ${escapeHtml(local)}` : ""}</div>` : ""}
+      ${l.conexao ? `<div class="sub" style="font-size:11px;">📶 ${escapeHtml(l.conexao)}</div>` : ""}
     </div>`;
   });
 
@@ -5261,6 +5285,11 @@ function bindEvents(){
   if(btnExportarRelatorioCupons) btnExportarRelatorioCupons.addEventListener("click", ()=>{
     exportarRelatorioCuponsCSV(linhasRelatorioCuponsFiltradas());
   });
+  const btnGerarRelatorioLog = document.getElementById("btn-gerar-relatorio-log");
+  if(btnGerarRelatorioLog) btnGerarRelatorioLog.addEventListener("click", ()=>{
+    logsPagina = 1;
+    fetchLogsList();
+  });
   const selectLogFiltroTorneio = document.getElementById("select-log-filtro-torneio");
   if(selectLogFiltroTorneio) selectLogFiltroTorneio.addEventListener("change", e=>{
     logsFiltroTorneio = e.target.value;
@@ -6003,7 +6032,7 @@ async function apitoPublicoAcao(action, payload){
   try{
     const res = await fetch("/api/apito", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ torneio:c.torneio, match:c.match, token:c.token, arbitroNome:c.nome, action, ...(payload||{}) })
+      body: JSON.stringify({ torneio:c.torneio, match:c.match, token:c.token, arbitroNome:c.nome, action, conexao:detectarTipoConexao(), ...(payload||{}) })
     });
     const data = await res.json();
     if(!res.ok){ if(action) alert(data.error||"Não foi possível salvar."); return; }

@@ -442,6 +442,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   // Detecta eventos relevantes pro log de atividade comparando o estado antes/depois — cobre
   // qualquer caminho que leve a essas mudanças (apitar, digitar placar direto, W.O.) sem precisar
   // duplicar um hook em cada um. Só grava de fato depois que o save principal confirmar sucesso.
+  const origemLog = extrairOrigemRequisicao(request);
+  const conexaoLog = typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null;
   const logsParaRegistrar: Array<Omit<LogEntry, "id" | "quando">> = [];
   if (ehNovo) {
     logsParaRegistrar.push({
@@ -452,7 +454,9 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
       torneioNome: meta.nome,
       torneioCodigo: meta.codigo,
       descricao: `Torneio "${meta.nome}" criado`,
-      dados: { dataInicio: meta.dataInicio, dataFim: meta.dataFim, cupomAplicado }
+      dados: { dataInicio: meta.dataInicio, dataFim: meta.dataFim, cupomAplicado },
+      ...origemLog,
+      conexao: conexaoLog
     });
   }
   if (!existingFull?.state?.drawn && body.state?.drawn) {
@@ -465,7 +469,9 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
       torneioNome: meta.nome,
       torneioCodigo: meta.codigo,
       descricao: `Sorteio realizado (${duplas.length} duplas, formato ${body.state.formato === "eliminacao" ? "eliminação" : "grupos"})`,
-      dados: { formato: body.state.formato, duplas }
+      dados: { formato: body.state.formato, duplas },
+      ...origemLog,
+      conexao: conexaoLog
     });
   }
   {
@@ -481,7 +487,9 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
           torneioNome: meta.nome,
           torneioCodigo: meta.codigo,
           descricao: `Jogo finalizado: ${m.a || "?"} ${m.pa ?? "-"} x ${m.pb ?? "-"} ${m.b || "?"}${m.wo ? " (W.O.)" : ""}`,
-          dados: { matchId, a: m.a, b: m.b, pa: m.pa, pb: m.pb, wo: m.wo || null }
+          dados: { matchId, a: m.a, b: m.b, pa: m.pa, pb: m.pb, wo: m.wo || null },
+          ...origemLog,
+          conexao: conexaoLog
         });
       }
     }
@@ -1282,7 +1290,9 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
       torneioNome: dados.nome,
       torneioCodigo: dados.codigo,
       descricao: `Jogo finalizado via link de árbitro: ${m.a || "?"} ${m.pa ?? "-"} x ${m.pb ?? "-"} ${m.b || "?"}`,
-      dados: { matchId, a: m.a, b: m.b, pa: m.pa, pb: m.pb }
+      dados: { matchId, a: m.a, b: m.b, pa: m.pa, pb: m.pb },
+      ...extrairOrigemRequisicao(request),
+      conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
     }]);
   }
 
@@ -1819,6 +1829,8 @@ try{ localStorage.setItem("futevolei_auth_v1", ${authLiteral}); }catch(e){}
 location.replace("/");
 </script></body></html>`;
 
+  // conexao (wifi/celular) nunca dá pra saber aqui: quem faz esse POST é o próprio Google
+  // (fluxo redirect), não o JS do nosso app — não tem como grudar navigator.connection nele.
   await registrarLogs(env, [{
     tipo: "acesso",
     atorEmail: auth.email,
@@ -1826,7 +1838,9 @@ location.replace("/");
     torneioId: null,
     torneioNome: null,
     torneioCodigo: null,
-    descricao: `Login de ${auth.name || auth.email}`
+    descricao: `Login de ${auth.name || auth.email}`,
+    ...extrairOrigemRequisicao(request),
+    conexao: null
   }]);
 
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -1852,8 +1866,32 @@ interface LogEntry {
   torneioCodigo: string | null;
   descricao: string;
   dados?: any;
+  // Origem da requisição — preenchida por extrairOrigemRequisicao(request) em cada rota que
+  // gera log. ip/pais/regiao/cidade vêm de graça em toda requisição da Cloudflare (CF-Connecting-
+  // IP + request.cf, geolocalização por IP, sem chamar serviço externo nenhum). conexao (wifi/
+  // celular/etc.) só existe quando o PRÓPRIO JS do app consegue ler navigator.connection antes de
+  // mandar a requisição — não existe pro fluxo de login redirect (o Google quem faz o POST de
+  // volta, não dá pra grudar isso nele) e não existe em navegadores sem essa API (Safari/iOS,
+  // Firefox), então fica null na maioria dos acessos — é esperado, não é bug.
+  ip: string | null;
+  pais: string | null;
+  regiao: string | null;
+  cidade: string | null;
+  conexao: string | null;
 }
 const LOGS_MAX = 2000;
+// IP + geolocalização (por IP, aproximada — cidade/região/país, não é GPS) que a própria
+// Cloudflare já anexa em toda requisição que passa pela borda dela, sem custo nem chamada externa.
+// Em wrangler dev local esses campos costumam vir vazios (não tem borda real por trás) — normal.
+function extrairOrigemRequisicao(request: Request): { ip: string | null; pais: string | null; regiao: string | null; cidade: string | null } {
+  const cf: any = (request as any).cf || {};
+  return {
+    ip: request.headers.get("CF-Connecting-IP") || null,
+    pais: cf.country || null,
+    regiao: cf.regionCode || cf.region || null,
+    cidade: cf.city || null
+  };
+}
 async function getLogs(env: Env): Promise<LogEntry[]> {
   try {
     const raw = await env.DB.get("logs:index");
@@ -1915,7 +1953,9 @@ async function logAcesso(request: Request, env: Env): Promise<Response> {
     torneioId: null,
     torneioNome: null,
     torneioCodigo: null,
-    descricao: `Login de ${nome || email}`
+    descricao: `Login de ${nome || email}`,
+    ...extrairOrigemRequisicao(request),
+    conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
   }]);
   return json({ ok: true });
 }
