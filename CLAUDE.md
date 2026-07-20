@@ -285,6 +285,25 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     dos itens 1/10: `usuariosPermitidos` foi incluído tanto no `meta` de `torneiosSave` quanto no
     de `torneiosAprovar`, senão sumiria do `torneios:index` no primeiro save/aprovação depois de
     adicionar alguém (mesma classe de bug do `cupomAplicado`).
+15. **Decisão de empate técnico antes do mata-mata (formato "grupos")**: quando duas ou mais duplas
+    empatam de verdade nos 3 critérios de desempate (pontos, saldo, pontos pró) disputando a última
+    vaga de classificação de um grupo, o app não decide sozinho (antes disso, a ordem ficava por
+    conta do sort estável do JS, sem avisar ninguém) — mostra um card "⚖️ Decisão Desempate" no topo
+    da aba Mata-mata (`gruposDesempateInfo`/`gruposDesempateInfoPorLetra`, mesmo raciocínio de
+    `jaGarantidas`/`grupoEmpatado`/`vagas` já usado em `elimRepescagemInfo` pro formato
+    "eliminacao") com seleção (rádio quando só falta 1 vaga, checkbox quando o empate envolve mais
+    de uma) por grupo. Enquanto pendente ou não confirmado (`state.mataMataConfirmado`), nenhum
+    consumidor do mata-mata considera os confrontos da 1ª rodada reais — `mataMataLiberadoParaJogar()`
+    é a trava central, checada em `listarTodosOsJogos` (placar múltiplo), `elimMatchList`
+    (notificações automáticas de WhatsApp/Telegram) e na geração da imagem de Stories, além do
+    próprio `renderMataMata`. Só é liberado por um clique manual no botão "Gerar jogos do
+    mata-mata". Mudar a escolha depois de já ter gerado os jogos reseta `state.bracket` (e a
+    arbitragem do mata-mata/3º lugar) e exige gerar de novo — mas só é permitido enquanto nenhum
+    jogo da 1ª rodada tiver começado (`mataMataIniciado()`, mesmo critério de "iniciado" usado no
+    resto do app: placar parcial, finalizado ou arbitragem ativa); a partir daí os rádios/checkboxes
+    ficam desabilitados. Torneios anteriores a essa funcionalidade com mata-mata já em andamento
+    nunca são travados retroativamente (`mataMataLiberadoParaJogar` cai pra `mataMataIniciado()`
+    quando não há confirmação registrada, em vez de esconder um jogo que já começou).
 
 ## Convenções
 

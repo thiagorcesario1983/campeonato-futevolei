@@ -680,6 +680,8 @@ function defaultState(){
     telegramBot: "",
     elimNotified: {},
     elimRepescagemEscolha: null, // (formato "eliminacao") nomes escolhidos pelo organizador pra repescagem, só quando há empate real (ver elimRepescagemInfo)
+    grupoDesempateEscolha: null, // (formato "grupos") nomes escolhidos pelo organizador pra decidir empate técnico na última vaga de classificação de cada grupo, só quando há empate real (ver gruposDesempateInfo)
+    mataMataConfirmado: false, // (formato "grupos") true depois que o organizador confirma a geração dos jogos do mata-mata pelo botão "Gerar jogos" — só é exigido quando existe empate técnico pendente (ver gruposDesempateInfo); sem empate, o mata-mata é liberado normalmente sem essa confirmação extra
     cloudId: null,
     cloudNome: "",
     ownerEmail: null, // dono de verdade do torneio — usado só pra decidir se ESTE usuário logado pode gerenciar a lista de usuários com acesso (usuariosPermitidos) abaixo
@@ -1868,6 +1870,8 @@ function qualificadosCount(){
   return (state.numGrupos || 4) * 2;
 }
 function sortear(){
+  state.grupoDesempateEscolha = null;
+  state.mataMataConfirmado = false;
   if(state.formato==="eliminacao"){
     state.groups = [];
     state.groupMatches = [];
@@ -2168,6 +2172,93 @@ function allGroupsFilled(){
     state.groupMatches.every(m=> partidaFinalizada(m));
 }
 
+/* ---------- Decisão de desempate técnico (formato "grupos") ---------- */
+// Mesmos 3 critérios de standingsFor (pontos, saldo, pontos pró), comparados isoladamente pra
+// achar exatamente quem empatou de verdade na fronteira da última vaga de classificação.
+function compararClassificacao(r1, r2){
+  return (r2.pts-r1.pts) || (r2.saldo-r1.saldo) || (r2.pp-r1.pp);
+}
+// Mesmo raciocínio do elimRepescagemInfo, mas aplicado à classificação de um grupo (1º e 2º
+// avançam pro mata-mata). jaGarantidas = quem classifica sem dúvida (melhor que a fronteira);
+// grupoEmpatado = quem disputa a(s) vaga(s) empatado com a fronteira nos 3 critérios; vagas =
+// quantas dessas o organizador precisa escolher (0 = sem ambiguidade real, grupo com 2 ou menos
+// duplas nunca tem decisão pra fazer, já que ninguém fica de fora).
+function gruposDesempateInfoPorLetra(letter){
+  const rows = standingsFor(letter);
+  const vagasTotais = 2;
+  if(rows.length <= vagasTotais){
+    return {letter, jaGarantidas: rows.map(r=>r.nome), grupoEmpatado:[], vagas:0};
+  }
+  const fronteira = rows[vagasTotais-1];
+  const jaGarantidas = rows.filter(r => compararClassificacao(r, fronteira) < 0).map(r=>r.nome);
+  const grupoEmpatado = rows.filter(r => compararClassificacao(r, fronteira) === 0).map(r=>r.nome);
+  return {letter, jaGarantidas, grupoEmpatado, vagas: vagasTotais - jaGarantidas.length};
+}
+// Lista só os grupos que têm empate real disputando a última vaga (grupoEmpatado maior que as
+// vagas restantes) — só faz sentido no formato "grupos"; a "eliminacao" já resolve empate de
+// repescagem em outro lugar (ver elimRepescagemInfo), antes mesmo de chegar no mata-mata.
+function gruposDesempateInfo(){
+  if(state.formato!=="grupos" || !allGroupsFilled()) return [];
+  return groupLettersState()
+    .map(l => gruposDesempateInfoPorLetra(l))
+    .filter(info => info.grupoEmpatado.length > info.vagas);
+}
+// true quando existe pelo menos um grupo com empate real ainda sem escolha suficiente do organizador.
+function gruposDesempatePrecisaEscolha(){
+  const infos = gruposDesempateInfo();
+  if(!infos.length) return false;
+  const escolha = state.grupoDesempateEscolha || [];
+  return infos.some(info => escolha.filter(n=>info.grupoEmpatado.includes(n)).length < info.vagas);
+}
+// 1º e 2º colocados finais de um grupo, já considerando a escolha do organizador quando havia
+// empate real na última vaga. Sempre retorna 2 nomes (best-effort: usa a ordem padrão de
+// standingsFor enquanto a escolha ainda estiver incompleta) — quem trava a exibição/uso real do
+// mata-mata é o gate em mataMataLiberadoParaJogar(), não esta função.
+function gruposClassificadosFinal(letter){
+  const rows = standingsFor(letter);
+  const info = gruposDesempateInfoPorLetra(letter);
+  if(info.grupoEmpatado.length <= info.vagas){
+    return rows.slice(0,2).map(r=>r.nome);
+  }
+  const escolha = (state.grupoDesempateEscolha||[]).filter(n=>info.grupoEmpatado.includes(n));
+  const classificados = new Set([...info.jaGarantidas, ...escolha.slice(0, info.vagas)]);
+  return rows.filter(r=>classificados.has(r.nome)).map(r=>r.nome);
+}
+// Trava central: enquanto houver empate técnico pendente de decisão (ou decidido mas ainda não
+// confirmado pelo botão "Gerar jogos"), nenhum consumidor do mata-mata (placar múltiplo,
+// notificações automáticas de WhatsApp/Telegram, imagem de Stories, "próximos jogos" do Resumo)
+// deve tratar os confrontos da 1ª rodada como reais — evitam mostrar/enviar um confronto que
+// ainda pode mudar. Só se aplica ao formato "grupos"; "eliminacao" nunca precisa dessa trava
+// (repescagem já resolve tudo antes de liberar o mata-mata).
+function mataMataLiberadoParaJogar(){
+  if(state.formato!=="grupos") return true;
+  if(!gruposDesempateInfo().length) return true;
+  if(state.mataMataConfirmado) return true;
+  // Torneio de antes desta funcionalidade existir, com mata-mata já em andamento: nunca esconde
+  // retroativamente um jogo que já começou só porque o empate técnico virou detectável agora.
+  return mataMataIniciado();
+}
+// true quando algum jogo da 1ª rodada do mata-mata já foi iniciado (placar digitado, apitado ou
+// finalizado) — a partir daí a escolha do empate não pode mais ser alterada (ver ressalva no
+// card de decisão), pra não invalidar um jogo que já começou.
+function mataMataIniciado(){
+  const primeiraRodada = state.bracket && state.bracket[0];
+  if(!primeiraRodada) return false;
+  return primeiraRodada.some((m,i)=>{
+    if(m.finalizado || (m.pa!==null && m.pa!=="") || (m.pb!==null && m.pb!=="")) return true;
+    const arb = state.arbitragem?.[makeMatchId(0,i)];
+    return !!arb && arb.status!=="nao_iniciada";
+  });
+}
+// Limpa a arbitragem específica dos jogos do mata-mata/3º lugar — usado quando a escolha do
+// empate muda depois dos jogos já terem sido "gerados", já que o chaveamento inteiro é refeito.
+function limparArbitragemMataMata(){
+  if(!state.arbitragem) return;
+  Object.keys(state.arbitragem).forEach(k=>{
+    if(k==="terceiro" || /^b\d+_\d+$/.test(k)) delete state.arbitragem[k];
+  });
+}
+
 function winner(a,b,pa,pb){
   if(a==null && b==null) return null;
   if(a==null) return b; // folga (bye): b avança automaticamente, sem precisar jogar
@@ -2222,16 +2313,19 @@ function primeiraRodadaTeams(){
   const letters = groupLettersState();
   const nMatches = state.bracket[0] ? state.bracket[0].length : 0;
   if(!allGroupsFilled()) return Array.from({length:nMatches}, ()=>[null,null]);
-  const standings = letters.map(l=>standingsFor(l));
+  // gruposClassificadosFinal já resolve empate técnico decidido pelo organizador (ou usa a ordem
+  // padrão como melhor esforço enquanto a decisão ainda estiver pendente — quem trava a exibição
+  // real desses confrontos é mataMataLiberadoParaJogar(), não esta função).
+  const standings = letters.map(l=>gruposClassificadosFinal(l));
   if(letters.length===1){
     // Um único grupo: o 1º e o 2º colocados já disputam a rodada direto (geralmente a final).
-    return [[standings[0][0]?.nome, standings[0][1]?.nome]];
+    return [[standings[0][0]??null, standings[0][1]??null]];
   }
   const teams = [];
   for(let i=0; i<letters.length; i+=2){
     const A = standings[i], B = standings[i+1];
-    teams.push([A[0]?.nome, B[1]?.nome]);
-    teams.push([B[0]?.nome, A[1]?.nome]);
+    teams.push([A[0]??null, B[1]??null]);
+    teams.push([B[0]??null, A[1]??null]);
   }
   return teams;
 }
@@ -2844,7 +2938,7 @@ function elimMatchList(){
       });
     });
   }
-  if(matamataPronto()){
+  if(matamataPronto() && mataMataLiberadoParaJogar()){
     const rounds = totalRoundsBracket();
     for(let r=0; r<rounds; r++){
       const teams = bracketTeamsForRound(r);
@@ -3003,11 +3097,11 @@ function renderStory(canvas, H){
   } else if(state.formato==="eliminacao"){
     cursorY = drawBracket(ctx, W, headerH+60);
   } else {
-    // Enquanto os grupos não terminam, o chaveamento do mata-mata ainda não tem ninguém
-    // definido — mostra os jogos da fase de grupos no lugar dele; depois de allGroupsFilled(),
-    // passa a mostrar o chaveamento de verdade.
+    // Enquanto os grupos não terminam (ou há empate técnico ainda sem decisão/confirmação, ver
+    // mataMataLiberadoParaJogar), o chaveamento do mata-mata ainda não tem ninguém definido de
+    // verdade — mostra os jogos da fase de grupos no lugar dele.
     const groupsBottom = drawGroupsSection(ctx, W, headerH+60);
-    cursorY = allGroupsFilled()
+    cursorY = (allGroupsFilled() && mataMataLiberadoParaJogar())
       ? drawBracket(ctx, W, groupsBottom+50)
       : drawGroupMatchesSection(ctx, W, groupsBottom+50);
   }
@@ -4373,20 +4467,22 @@ function listaProximosJogos(){
       itens.push({tag:`${m.group}${m.jogo}`, a:m.a, b:m.b});
     });
   }
-  const totalRounds = totalRoundsBracket();
-  for(let r=0; r<totalRounds; r++){
-    const teams = bracketTeamsForRound(r);
-    const round = state.bracket[r] || [];
-    teams.forEach((t,i)=>{
-      if(t[0] && t[1] && !partidaFinalizada(round[i])){
-        itens.push({tag: nomeRodada(r, totalRounds), a:t[0], b:t[1]});
+  if(mataMataLiberadoParaJogar()){
+    const totalRounds = totalRoundsBracket();
+    for(let r=0; r<totalRounds; r++){
+      const teams = bracketTeamsForRound(r);
+      const round = state.bracket[r] || [];
+      teams.forEach((t,i)=>{
+        if(t[0] && t[1] && !partidaFinalizada(round[i])){
+          itens.push({tag: nomeRodada(r, totalRounds), a:t[0], b:t[1]});
+        }
+      });
+    }
+    if(state.terceiroLugar){
+      const [a,b] = semifinalLosers();
+      if(a && b && !partidaFinalizada(state.terceiro)){
+        itens.push({tag:"3º lugar", a, b});
       }
-    });
-  }
-  if(state.terceiroLugar){
-    const [a,b] = semifinalLosers();
-    if(a && b && !partidaFinalizada(state.terceiro)){
-      itens.push({tag:"3º lugar", a, b});
     }
   }
   return itens;
@@ -4842,7 +4938,7 @@ function listarTodosOsJogos(){
       });
     });
   }
-  if(matamataPronto()){
+  if(matamataPronto() && mataMataLiberadoParaJogar()){
     const rounds = totalRoundsBracket();
     for(let r=0;r<rounds;r++){
       const teams = bracketTeamsForRound(r);
@@ -5025,6 +5121,43 @@ function renderClassificacao(){
     html += `</tbody></table></div></div>`;
   });
   html += `<div class="tiebreak-note">Duplas em verde avançam para o mata-mata (1º e 2º de cada grupo).</div>`;
+  if(gruposDesempateInfo().length){
+    html += `<div class="tiebreak-note" style="color:var(--coral);">⚖️ Empate técnico na última vaga de algum grupo — decida quem avança na aba Mata-mata.</div>`;
+  }
+  return html;
+}
+
+// Card "Decisão Desempate", no topo da aba Mata-mata: lista, por grupo, as duplas empatadas
+// tecnicamente (pontos, saldo e pontos pró idênticos) disputando a última vaga de classificação,
+// com seleção única (radio) quando só falta 1 vaga, ou múltipla (checkbox, capada nas vagas
+// restantes) quando o empate envolve mais de uma vaga ao mesmo tempo. Fica visível mesmo depois
+// de confirmado (botão "Gerar jogos") — só trava pra edição (mataMataIniciado) quando algum jogo
+// da 1ª rodada do mata-mata já começou, pra não invalidar um jogo em andamento.
+function renderDecisaoDesempateCard(infos){
+  const escolha = state.grupoDesempateEscolha || [];
+  const bloqueado = mataMataIniciado();
+  let html = `<div class="card" style="border:1.5px solid var(--coral);margin-bottom:14px;">
+    <div style="font-weight:700;font-size:15px;color:var(--coral);margin-bottom:6px;">⚖️ Decisão Desempate</div>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;">
+      Empate técnico na classificação (pontos, saldo e pontos pró idênticos) disputando a última vaga de classificação de cada grupo abaixo. Escolha quem avança para liberar a geração dos jogos do mata-mata.
+    </div>`;
+  infos.forEach(info=>{
+    html += `<div style="margin-bottom:14px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px;">Grupo ${escapeHtml(info.letter)}${info.vagas>1?` · escolha ${info.vagas} duplas`:``}</div>`;
+    info.grupoEmpatado.forEach(nome=>{
+      const inputType = info.vagas>1 ? "checkbox" : "radio";
+      const marcado = escolha.includes(nome);
+      html += `<label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--sand-dark);${bloqueado?"opacity:.6;":""}">
+        <input type="${inputType}" name="desempate-${escapeHtml(info.letter)}" data-desempate-grupo="${escapeHtml(info.letter)}" data-desempate-nome="${escapeHtml(nome)}" ${marcado?"checked":""} ${bloqueado?"disabled":""}>
+        <span>${escapeHtml(nome)}</span>
+      </label>`;
+    });
+    html += `</div>`;
+  });
+  if(bloqueado){
+    html += `<div class="tiebreak-note">🔒 Já existe jogo do mata-mata iniciado — a decisão não pode mais ser alterada.</div>`;
+  }
+  html += `</div>`;
   return html;
 }
 
@@ -5035,9 +5168,25 @@ function renderMataMata(){
       : "O chaveamento aparece aqui quando todos os jogos da fase de grupos forem concluídos.";
     return `<div class="section-title">Mata-mata</div><div class="card empty"><span class="ball-icon">🏐</span>${dica}</div>`;
   }
+
+  const infos = gruposDesempateInfo();
+  const temEmpate = infos.length > 0;
+  const pendente = gruposDesempatePrecisaEscolha();
+  const liberado = mataMataLiberadoParaJogar();
+
+  let html = `<div class="section-title">Mata-mata</div>`;
+  if(temEmpate) html += renderDecisaoDesempateCard(infos);
+
+  if(!liberado){
+    html += pendente
+      ? `<div class="tiebreak-note" style="text-align:center;">Escolha quem avança em cada grupo acima para liberar a geração dos jogos.</div>`
+      : `<button class="btn" id="btn-gerar-jogos-matamata">Gerar jogos do mata-mata 🏆</button>`;
+    return html;
+  }
+
   const camp = champion();
   const rounds = totalRoundsBracket();
-  let html = `<div class="section-title">Mata-mata</div>
+  html += `
     <div class="section-sub">
       ${state.formato==="eliminacao"
         ? "As duplas classificadas na fase de eliminação disputam o mata-mata a partir daqui."
@@ -5751,6 +5900,48 @@ function bindEvents(){
     save();
     render();
     checkElimNotifications();
+  });
+
+  main.querySelectorAll("input[data-desempate-nome]").forEach(inp=>{
+    inp.addEventListener("change", e=>{
+      const grupo = e.target.dataset.desempateGrupo;
+      const nome = e.target.dataset.desempateNome;
+      const info = gruposDesempateInfoPorLetra(grupo);
+      let jaEscolhidos = (state.grupoDesempateEscolha||[]).filter(n=>info.grupoEmpatado.includes(n));
+      if(info.vagas<=1){
+        jaEscolhidos = e.target.checked ? [nome] : [];
+      } else if(e.target.checked){
+        if(jaEscolhidos.length >= info.vagas){
+          e.target.checked = false;
+          showToast(`Escolha só ${info.vagas} duplas no grupo ${grupo}.`);
+          return;
+        }
+        if(!jaEscolhidos.includes(nome)) jaEscolhidos.push(nome);
+      } else {
+        jaEscolhidos = jaEscolhidos.filter(n=>n!==nome);
+      }
+      const escolhaBase = (state.grupoDesempateEscolha||[]).filter(n=>!info.grupoEmpatado.includes(n));
+      state.grupoDesempateEscolha = [...escolhaBase, ...jaEscolhidos];
+
+      if(state.mataMataConfirmado){
+        state.bracket = criarBracketVazio(qualificadosCount());
+        state.terceiro = {pa:null, pb:null, finalizado:false, wo:null};
+        limparArbitragemMataMata();
+        state.mataMataConfirmado = false;
+        showToast("Seleção alterada — jogos do mata-mata reiniciados. Gere novamente quando decidir.");
+      }
+      save();
+      render();
+    });
+  });
+
+  const btnGerarMataMata = document.getElementById("btn-gerar-jogos-matamata");
+  if(btnGerarMataMata) btnGerarMataMata.addEventListener("click", ()=>{
+    state.mataMataConfirmado = true;
+    save();
+    render();
+    checkElimNotifications();
+    showToast("Jogos do mata-mata gerados.");
   });
 
   const btnClearPend = document.getElementById("btn-clear-pendentes");
