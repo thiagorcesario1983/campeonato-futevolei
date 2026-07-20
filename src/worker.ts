@@ -267,6 +267,17 @@ function ehAdmin(email: string, env: Env): boolean {
   return !!email && lista.includes(email);
 }
 
+// Dono, admin do app, ou um dos e-mails com acesso compartilhado (usuariosPermitidos, ver
+// /api/torneios-usuario-adicionar) — cobre leitura/escrita normal do torneio (duplas, sorteio,
+// jogos, link de árbitro). Ações administrativas/financeiras (excluir torneio, gerar/verificar
+// Pix, gerenciar essa própria lista de usuários) continuam checando só dono+admin, à parte —
+// usuário compartilhado tem acesso operacional, não controle total do torneio.
+function temAcessoTorneio(registro: any, email: string, env: Env): boolean {
+  if (ehAdmin(email, env)) return true;
+  if (normEmail(registro?.ownerEmail) === email) return true;
+  return Array.isArray(registro?.usuariosPermitidos) && registro.usuariosPermitidos.includes(email);
+}
+
 // Mesma regra de expiração do front-end (torneioEstaAtivo, motivo "depois"), só que aqui serve
 // de segunda trava: mesmo que alguém contorne a UI somente-leitura, o servidor recusa qualquer
 // escrita de dado de um torneio já expirado (exceto pelo admin do app).
@@ -310,8 +321,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   const existingRaw = existing ? await env.DB.get(`torneio:${id}`) : null;
   const existingFull = existingRaw ? JSON.parse(existingRaw) : null;
 
-  // Só o dono original (ou o admin) pode atualizar um torneio já existente.
-  if (existing && normEmail(existing.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+  // Dono original, admin, ou um usuário com acesso compartilhado a este torneio.
+  if (existing && !temAcessoTorneio(existing, solicitanteEmail, env)) {
     return json({ error: "Sem permissão para alterar este torneio" }, 403);
   }
 
@@ -362,7 +373,10 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     // parceiro?") — nada a ver com o jogo em si, então preserva como os outros campos de
     // identidade/financeiro: nunca reseta sozinho num re-salvamento normal do torneio.
     comissaoRepassada: existing ? !!existing.comissaoRepassada : false,
-    comissaoRepassadaEm: existing ? (existing.comissaoRepassadaEm ?? null) : null
+    comissaoRepassadaEm: existing ? (existing.comissaoRepassadaEm ?? null) : null,
+    // Usuários com acesso compartilhado a este torneio (ver /api/torneios-usuario-adicionar) —
+    // só é alterado por essa rota dedicada, nunca pelo payload normal de save.
+    usuariosPermitidos: existing ? (existing.usuariosPermitidos || []) : []
   };
 
   // O cliente que está salvando pode estar com uma cópia desatualizada da arbitragem — por
@@ -600,7 +614,7 @@ async function torneiosList(request: Request, env: Env): Promise<Response> {
   const index = await getIndex(env);
   const meus = ehAdmin(solicitanteEmail, env)
     ? index
-    : index.filter((t: any) => normEmail(t.ownerEmail) === solicitanteEmail);
+    : index.filter((t: any) => temAcessoTorneio(t, solicitanteEmail, env));
   return json({ torneios: meus });
 }
 
@@ -615,11 +629,135 @@ async function torneiosGet(request: Request, env: Env): Promise<Response> {
   if (!raw) return json({ error: "não encontrado" }, 404);
 
   const dados = JSON.parse(raw);
-  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+  if (!temAcessoTorneio(dados, solicitanteEmail, env)) {
     return json({ error: "Sem permissão para ver este torneio" }, 403);
   }
 
   return json(dados);
+}
+
+// Compartilhamento de acesso: dono/admin pode adicionar e-mails que passam a enxergar e editar
+// este torneio como o dono (duplas, sorteio, jogos, link de árbitro) — mas não podem excluir o
+// torneio, mexer no Pix, nem gerenciar essa própria lista (só dono/admin faz isso, de propósito,
+// pra não deixar o acesso se espalhar sem controle). Atualização cirúrgica (registro completo +
+// campo correspondente no índice), mesmo padrão de torneiosComissao.
+async function torneiosUsuarioAdicionar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = normEmail(body.email);
+  const id = body.id;
+  const novoEmail = normEmail(body.novoEmail);
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  if (!novoEmail || !novoEmail.includes("@")) return json({ error: "Informe um e-mail válido" }, 400);
+
+  const raw = await env.DB.get(`torneio:${id}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Só o dono do torneio ou o admin podem adicionar usuários" }, 403);
+  }
+  if (novoEmail === normEmail(dados.ownerEmail)) {
+    return json({ error: "Esse e-mail já é o dono do torneio" }, 400);
+  }
+
+  const lista: string[] = Array.isArray(dados.usuariosPermitidos) ? dados.usuariosPermitidos : [];
+  if (lista.includes(novoEmail)) {
+    return json({ error: "Esse e-mail já tem acesso a este torneio" }, 400);
+  }
+  lista.push(novoEmail);
+  dados.usuariosPermitidos = lista;
+  dados.updatedAt = new Date().toISOString();
+
+  try {
+    await env.DB.put(`torneio:${id}`, JSON.stringify(dados));
+    const index = await getIndex(env);
+    const idx = index.findIndex((t: any) => t.id === id);
+    if (idx >= 0) {
+      index[idx].usuariosPermitidos = lista;
+      await env.DB.put("torneios:index", JSON.stringify(index));
+    }
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  await registrarLogs(env, [{
+    tipo: "permissao_usuario",
+    atorEmail: solicitanteEmail,
+    atorNome: typeof body.nome === "string" ? body.nome : null,
+    torneioId: id,
+    torneioNome: dados.nome,
+    torneioCodigo: dados.codigo,
+    descricao: `Acesso concedido a ${novoEmail}`,
+    dados: { usuarioAfetado: novoEmail, acao: "adicionado" },
+    ...extrairOrigemRequisicao(request),
+    conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
+  }]);
+
+  return json({ ok: true, usuariosPermitidos: lista });
+}
+
+async function torneiosUsuarioRemover(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = normEmail(body.email);
+  const id = body.id;
+  const alvoEmail = normEmail(body.usuarioEmail);
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  if (!alvoEmail) return json({ error: "usuarioEmail obrigatório" }, 400);
+
+  const raw = await env.DB.get(`torneio:${id}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Só o dono do torneio ou o admin podem remover usuários" }, 403);
+  }
+
+  const listaAntes: string[] = Array.isArray(dados.usuariosPermitidos) ? dados.usuariosPermitidos : [];
+  const lista = listaAntes.filter((e: string) => e !== alvoEmail);
+  if (lista.length === listaAntes.length) {
+    return json({ error: "Esse e-mail não estava na lista" }, 404);
+  }
+  dados.usuariosPermitidos = lista;
+  dados.updatedAt = new Date().toISOString();
+
+  try {
+    await env.DB.put(`torneio:${id}`, JSON.stringify(dados));
+    const index = await getIndex(env);
+    const idx = index.findIndex((t: any) => t.id === id);
+    if (idx >= 0) {
+      index[idx].usuariosPermitidos = lista;
+      await env.DB.put("torneios:index", JSON.stringify(index));
+    }
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  await registrarLogs(env, [{
+    tipo: "permissao_usuario",
+    atorEmail: solicitanteEmail,
+    atorNome: typeof body.nome === "string" ? body.nome : null,
+    torneioId: id,
+    torneioNome: dados.nome,
+    torneioCodigo: dados.codigo,
+    descricao: `Acesso removido de ${alvoEmail}`,
+    dados: { usuarioAfetado: alvoEmail, acao: "removido" },
+    ...extrairOrigemRequisicao(request),
+    conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
+  }]);
+
+  return json({ ok: true, usuariosPermitidos: lista });
 }
 
 // Marca (ou desmarca) a comissão de um uso de cupom como já repassada — só um controle manual do
@@ -960,7 +1098,8 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     // cupom usado, mesmo ele continuando salvo no registro completo (dados.cupomAplicado).
     cupomAplicado: dados.cupomAplicado ?? null,
     comissaoRepassada: !!dados.comissaoRepassada,
-    comissaoRepassadaEm: dados.comissaoRepassadaEm ?? null
+    comissaoRepassadaEm: dados.comissaoRepassadaEm ?? null,
+    usuariosPermitidos: dados.usuariosPermitidos || []
   };
 
   try {
@@ -1142,7 +1281,7 @@ async function apitoCriarLink(request: Request, env: Env): Promise<Response> {
   if (!raw) return json({ error: "não encontrado" }, 404);
   const dados = JSON.parse(raw);
 
-  if (normEmail(dados.ownerEmail) !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+  if (!temAcessoTorneio(dados, solicitanteEmail, env)) {
     return json({ error: "Sem permissão para gerar link deste torneio" }, 403);
   }
 
@@ -1857,7 +1996,7 @@ location.replace("/");
 ============================================================ */
 interface LogEntry {
   id: string;
-  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado";
+  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario";
   quando: string;
   atorEmail: string | null;
   atorNome: string | null;
@@ -2008,6 +2147,12 @@ export default {
     }
     if (path === "/api/torneios-comissao") {
       return method === "POST" ? torneiosComissao(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/torneios-usuario-adicionar") {
+      return method === "POST" ? torneiosUsuarioAdicionar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/torneios-usuario-remover") {
+      return method === "POST" ? torneiosUsuarioRemover(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path === "/api/pix-criar") {
       return method === "POST" ? pixCriar(request, env) : new Response("Method not allowed", { status: 405 });
