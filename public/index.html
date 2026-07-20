@@ -689,6 +689,7 @@ function defaultState(){
     elimRepescagemEscolha: null, // (formato "eliminacao") nomes escolhidos pelo organizador pra repescagem, só quando há empate real (ver elimRepescagemInfo)
     grupoDesempateEscolha: null, // (formato "grupos") nomes escolhidos pelo organizador pra decidir empate técnico na última vaga de classificação de cada grupo, só quando há empate real (ver gruposDesempateInfo)
     mataMataConfirmado: false, // (formato "grupos") true depois que o organizador confirma a geração dos jogos do mata-mata pelo botão "Gerar jogos" — só é exigido quando existe empate técnico pendente (ver gruposDesempateInfo); sem empate, o mata-mata é liberado normalmente sem essa confirmação extra
+    resetadoEm: null, // timestamp (Date.now()) do último "Reiniciar torneio" — usado só pelo worker (torneiosSave) pra saber que a arbitragem antiga do servidor pode ser descartada de vez em vez de resgatada de volta (ver merge defensivo de arbitragem)
     cloudId: null,
     cloudNome: "",
     ownerEmail: null, // dono de verdade do torneio — usado só pra decidir se ESTE usuário logado pode gerenciar a lista de usuários com acesso (usuariosPermitidos) abaixo
@@ -2170,6 +2171,10 @@ function resetTudo(){
     telegramBot: state.telegramBot
   };
   state = Object.assign(defaultState(), preservar);
+  // Marca quando este reset aconteceu — o worker usa isso pra saber que qualquer arbitragem
+  // salva no servidor antes desse instante é justamente o que acabamos de zerar de propósito,
+  // não um progresso de outro dispositivo que este cliente ainda não viu (ver torneiosSave).
+  state.resetadoEm = Date.now();
   save();
 }
 
