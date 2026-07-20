@@ -385,6 +385,12 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   // salvamento normal (qualquer coisa que o organizador editar) sobrescreveria e perderia
   // esse progresso, ou pior, invalidaria o link (token apagado) mesmo sem ninguém mexer nele.
   const STATUS_RANK: Record<string, number> = { nao_iniciada: 0, andamento: 1, tecnico: 1, finalizada: 2 };
+  // "Reiniciar torneio" zera state.arbitragem de propósito no cliente (ver resetTudo) — sem essa
+  // marca, o "!arbCliente" abaixo (pensado pra preservar arbitragem que este cliente ainda não
+  // tinha visto, ex: outro dispositivo apitando em paralelo) não conseguia distinguir isso de um
+  // reset de verdade, e sempre resgatava a arbitragem antiga do servidor de volta — inclusive o
+  // placar/resultado do jogo — mesmo depois do reset já ter sido salvo com sucesso.
+  const resetadoEm = typeof body.state?.resetadoEm === "number" ? body.state.resetadoEm : 0;
   if (existingFull?.state?.arbitragem && body.state) {
     if (!body.state.arbitragem) body.state.arbitragem = {};
     for (const matchId of Object.keys(existingFull.state.arbitragem)) {
@@ -393,6 +399,9 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
       if (!arbServidor) continue;
 
       if (!arbCliente) {
+        // Reset aconteceu DEPOIS da última atualização conhecida dessa arbitragem no servidor —
+        // o cliente zerou esse jogo de propósito, não deixa de saber dele por acaso. Não resgata.
+        if (resetadoEm > (arbServidor.atualizadoEm || 0)) continue;
         body.state.arbitragem[matchId] = arbServidor;
         const ref = getMatchRef(body.state, matchId);
         // Nunca REGRIDE finalizado pra false aqui — só avança pra true quando a arbitragem

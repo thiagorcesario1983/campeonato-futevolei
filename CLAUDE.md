@@ -324,6 +324,24 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     consumidor de `refreshTorneioAtual` (ou de outro polling/boot que leia do servidor) precisa
     considerar que o servidor pode estar mais desatualizado que o cliente, não só o contrário —
     e que isso pode durar além de um único reload.**
+17. **"Reiniciar torneio" continuava trazendo de volta o placar do último jogo mesmo depois do
+    fix do item 16 — a causa real era no servidor, não no cliente.** `torneiosSave` faz um merge
+    defensivo de `state.arbitragem` pensado pra preservar progresso de outro dispositivo que este
+    cliente ainda não viu (ex: um árbitro convidado apitando em paralelo): quando o payload não
+    tem arbitragem pra um `matchId` que o servidor conhece (`!arbCliente`), ele resgatava a
+    arbitragem antiga do servidor de volta pro payload — inclusive reescrevendo `pa`/`pb`/
+    `finalizado` do jogo. Só que `resetTudo()` também zera `state.arbitragem` de propósito (fica
+    `{}`), e esse merge não conseguia distinguir "cliente ainda não viu essa arbitragem" de
+    "cliente acabou de resetar tudo" — sempre caía no primeiro caso e resgatava o resultado
+    antigo de volta, **mesmo num save que teve sucesso total**, sem nenhuma falha de rede
+    envolvida (por isso o fix do item 16, que só cobre falha de sync, não resolvia sozinho).
+    Corrigido com uma marca `resetadoEm` (timestamp `Date.now()`, setada em `resetTudo()` junto
+    com o resto do reset): o merge agora só resgata a arbitragem antiga do servidor quando o
+    `atualizadoEm` dela for mais recente que esse `resetadoEm` — ou seja, só quando for uma
+    atualização de verdade concorrente (posterior ao reset), nunca um resquício de antes dele.
+    **Qualquer novo caminho que zere `state.arbitragem` no cliente (não só `resetTudo`) precisa
+    lembrar de marcar `resetadoEm` também, senão esse merge do servidor volta a resgatar o que
+    acabou de ser zerado.**
 
 ## Convenções
 
