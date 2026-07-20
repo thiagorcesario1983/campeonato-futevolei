@@ -273,6 +273,18 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     pra `existing.nome` (não pro genérico) quando o payload chega sem nome, como rede de segurança
     extra. **Qualquer código que capture algo de `state` num callback assíncrono precisa considerar
     que `state` pode ter sido reatribuído (não só mutado) enquanto isso esperava.**
+14. **Acesso compartilhado a um torneio (aba Configurações → "Usuários com acesso a este
+    torneio")**: dono/admin pode adicionar e-mails de outras contas Google que passam a ter acesso
+    operacional ao torneio (`usuariosPermitidos`, checado por `temAcessoTorneio` no worker — usado
+    em `torneiosSave`, `torneiosGet`, `torneiosList` e `apitoCriarLink`). Decisão de produto
+    deliberada: usuário compartilhado **nunca** pode excluir o torneio, gerar/verificar Pix, nem
+    gerenciar essa própria lista (adicionar/remover outro usuário) — essas rotas
+    (`torneiosDelete`, `pixCriar`, `pixVerificar`, `torneiosUsuarioAdicionar/Remover`) continuam
+    checando só dono+admin, à parte de `temAcessoTorneio`. Cada adição/remoção gera uma entrada no
+    log de atividade (`tipo: "permissao_usuario"`). Segue o mesmo padrão de atualização cirúrgica
+    dos itens 1/10: `usuariosPermitidos` foi incluído tanto no `meta` de `torneiosSave` quanto no
+    de `torneiosAprovar`, senão sumiria do `torneios:index` no primeiro save/aprovação depois de
+    adicionar alguém (mesma classe de bug do `cupomAplicado`).
 
 ## Convenções
 

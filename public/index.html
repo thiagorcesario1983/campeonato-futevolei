@@ -682,6 +682,8 @@ function defaultState(){
     elimRepescagemEscolha: null, // (formato "eliminacao") nomes escolhidos pelo organizador pra repescagem, só quando há empate real (ver elimRepescagemInfo)
     cloudId: null,
     cloudNome: "",
+    ownerEmail: null, // dono de verdade do torneio — usado só pra decidir se ESTE usuário logado pode gerenciar a lista de usuários com acesso (usuariosPermitidos) abaixo
+    usuariosPermitidos: [], // e-mails com acesso compartilhado a este torneio (além do dono) — gerenciado só por dono/admin, ver /api/torneios-usuario-adicionar
     codigo: null, // identificador sequencial de 10 posições (ex: 0000012026), definido pelo servidor na criação
     aprovacaoStatus: "pendente", // "pendente" | "aprovado" | "recusado" — definido pelo admin
     dataInicio: null, // validade do campeonato (yyyy-mm-dd), definida na criação
@@ -1400,6 +1402,8 @@ async function criarNovoTorneio(nome, dataInicio, dataFim, cupomNome){
       state.cloudId = data.id;
       state.codigo = data.codigo || null;
       state.cupomAplicado = data.cupomAplicado || null;
+      state.ownerEmail = data.ownerEmail || auth.email || null;
+      state.usuariosPermitidos = data.usuariosPermitidos || [];
       // O Pix já vem gerado automaticamente (ou o campeonato já sai isento, se o cupom zerar o
       // valor) — não precisa esperar a aprovação do admin pra mostrar a tela de pagamento. Se o
       // cupom já liberou como isento, o servidor também já aprova sozinho (data.aprovacaoStatus).
@@ -1578,6 +1582,8 @@ function abrirTorneioComDados(data){
   state.pagamento = data.pagamento || null;
   state.valorOverride = (typeof data.valorOverride === "number") ? data.valorOverride : null;
   state.cupomAplicado = data.cupomAplicado || null;
+  state.ownerEmail = data.ownerEmail || null;
+  state.usuariosPermitidos = data.usuariosPermitidos || [];
   state.tab = "resumo";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   telegramStatus = {};
@@ -1691,6 +1697,8 @@ async function refreshTorneioAtual(chamadaInicial){
       state.pagamento = data.pagamento || null;
       state.valorOverride = (typeof data.valorOverride === "number") ? data.valorOverride : null;
       state.cupomAplicado = data.cupomAplicado || null;
+      state.ownerEmail = data.ownerEmail || null;
+      state.usuariosPermitidos = data.usuariosPermitidos || [];
       state.tab = tabAtual;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       telegramStatus = {};
@@ -1728,6 +1736,49 @@ async function excluirTorneio(id, nome){
   torneiosList = null;
   showToast("Torneio excluído.");
   render();
+}
+
+async function adicionarUsuarioTorneio(novoEmail){
+  novoEmail = (novoEmail||"").trim().toLowerCase();
+  if(!novoEmail || !novoEmail.includes("@")){ showToast("Informe um e-mail válido."); return; }
+  showLoading("Adicionando usuário...");
+  try{
+    const res = await fetch("/api/torneios-usuario-adicionar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, email: auth.email, nome: auth.name, novoEmail })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao adicionar usuário");
+    state.usuariosPermitidos = data.usuariosPermitidos || [];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    showToast("Usuário adicionado.");
+    render();
+  }catch(e){
+    showToast(e.message || "Falha ao adicionar usuário.");
+  }finally{
+    hideLoading();
+  }
+}
+
+async function removerUsuarioTorneio(usuarioEmail){
+  if(!confirm(`Remover o acesso de ${usuarioEmail} a este torneio?`)) return;
+  showLoading("Removendo usuário...");
+  try{
+    const res = await fetch("/api/torneios-usuario-remover", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, email: auth.email, usuarioEmail })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao remover usuário");
+    state.usuariosPermitidos = data.usuariosPermitidos || [];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    showToast("Usuário removido.");
+    render();
+  }catch(e){
+    showToast(e.message || "Falha ao remover usuário.");
+  }finally{
+    hideLoading();
+  }
 }
 
 function voltarParaTorneios(){
@@ -4158,13 +4209,15 @@ const ROTULO_TIPO_LOG = {
   acesso: "🔐 Acesso",
   torneio_criado: "🆕 Torneio criado",
   duplas_sorteadas: "🎲 Duplas sorteadas",
-  resultado_registrado: "🏐 Resultado registrado"
+  resultado_registrado: "🏐 Resultado registrado",
+  permissao_usuario: "👤 Permissão Usuários"
 };
 const COR_TIPO_LOG = {
   acesso: { bg:"#E4E4E4", cor:"#5A5A5A" },
   torneio_criado: { bg:"#DCEEE1", cor:"#2E6E42" },
   duplas_sorteadas: { bg:"#FCEFD8", cor:"#9A6B1E" },
-  resultado_registrado: { bg:"#DCE7F5", cor:"#2C5C99" }
+  resultado_registrado: { bg:"#DCE7F5", cor:"#2C5C99" },
+  permissao_usuario: { bg:"#EDE1F5", cor:"#6B3FA0" }
 };
 function badgeTipoLog(tipo){
   const c = COR_TIPO_LOG[tipo] || COR_TIPO_LOG.acesso;
@@ -4862,8 +4915,41 @@ function renderConfiguracoes(){
       <label>Bot do Telegram (usuário, sem @)</label>
       <input type="text" id="input-telegram-bot" placeholder="ex: meucampeonatobot" value="${escapeHtml(state.telegramBot||"")}">
       <div class="hint">Crie um bot gratuito com o @BotFather no Telegram e cole aqui o usuário dele (termina em "bot"). Cada dupla vai precisar apertar "Iniciar" uma única vez para poder receber os jogos automaticamente.</div>
-    </div>`;
+    </div>
+    ${renderUsuariosPermitidosCard()}`;
   return html;
+}
+
+function souDonoTorneio(){
+  const meuEmail = (auth && auth.email || "").trim().toLowerCase();
+  return !!meuEmail && (meuEmail === (state.ownerEmail||"").trim().toLowerCase());
+}
+
+function renderUsuariosPermitidosCard(){
+  const lista = state.usuariosPermitidos || [];
+  if(!souDonoTorneio() && !ehAdmin()){
+    if(!lista.length) return "";
+    return `
+    <div class="card tg-settings">
+      <label>Usuários com acesso a este torneio</label>
+      <div class="hint" style="margin-bottom:8px;">Além do dono, essas contas também podem gerenciar este torneio.</div>
+      ${lista.map(e=>`<div class="status-pill" style="margin:0 6px 6px 0;display:inline-block;">${escapeHtml(e)}</div>`).join("")}
+    </div>`;
+  }
+  return `
+    <div class="card tg-settings">
+      <label>Usuários com acesso a este torneio</label>
+      <div class="hint" style="margin-bottom:8px;">Adicione e-mails de contas Google que também poderão editar duplas, jogos e arbitragem deste torneio. Eles não podem excluir o torneio, mexer no Pix nem gerenciar esta lista.</div>
+      ${lista.length ? lista.map(e=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="flex:1;word-break:break-all;">${escapeHtml(e)}</span>
+          <button class="btn ghost btn-remover-usuario" data-email="${escapeHtml(e)}" style="flex:0 0 auto;width:auto;">Remover</button>
+        </div>`).join("") : `<div class="hint" style="margin-bottom:8px;">Nenhum usuário adicionado ainda.</div>`}
+      <div style="display:flex;gap:8px;">
+        <input type="email" id="input-novo-usuario" placeholder="email@exemplo.com" style="flex:1;">
+        <button class="btn secondary" id="btn-adicionar-usuario" style="flex:0 0 auto;width:auto;">Adicionar</button>
+      </div>
+    </div>`;
 }
 
 function renderJogos(){
@@ -5554,6 +5640,17 @@ function bindEvents(){
 
   const inputBot = document.getElementById("input-telegram-bot");
   if(inputBot) inputBot.addEventListener("input", e=>{ state.telegramBot = e.target.value; save(); });
+
+  const btnAdicionarUsuario = document.getElementById("btn-adicionar-usuario");
+  const inputNovoUsuario = document.getElementById("input-novo-usuario");
+  if(btnAdicionarUsuario && inputNovoUsuario){
+    const disparar = ()=>{ const v = inputNovoUsuario.value; inputNovoUsuario.value = ""; adicionarUsuarioTorneio(v); };
+    btnAdicionarUsuario.addEventListener("click", disparar);
+    inputNovoUsuario.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); disparar(); } });
+  }
+  main.querySelectorAll(".btn-remover-usuario").forEach(btn=>{
+    btn.addEventListener("click", ()=> removerUsuarioTorneio(btn.dataset.email));
+  });
 
   const btnTgRefresh = document.getElementById("btn-tg-refresh");
   if(btnTgRefresh) btnTgRefresh.addEventListener("click", ()=>{ showToast("Verificando ativações..."); refreshTelegramStatus(); });
