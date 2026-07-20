@@ -1002,6 +1002,10 @@ function montarPayloadTorneio(){
   };
 }
 
+// true quando o último envio ao servidor falhou (rede caiu, torneio recém-resetado sem
+// conexão no momento do sync, etc.) — enquanto isso, o servidor está com um estado mais VELHO
+// que o daqui, então iniciarLiveRefresh não pode confiar no que ele devolver (ver uso abaixo).
+let ultimoSyncFalhou = false;
 async function enviarTorneioAgora(payload, keepalive){
   enviosPendentes++;
   try{
@@ -1029,6 +1033,7 @@ async function enviarTorneioAgora(payload, keepalive){
       state.cloudId = data.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
+    ultimoSyncFalhou = false;
     return {ok:true, erro:null};
   }catch(e){
     // Sem servidor de functions disponível (ex: hospedagem local simples) — usa reserva local
@@ -1037,6 +1042,7 @@ async function enviarTorneioAgora(payload, keepalive){
       state.cloudId = meta.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
+    ultimoSyncFalhou = true;
     return {ok:false, erro: (e && e.message) ? e.message : String(e)};
   }finally{
     enviosPendentes = Math.max(0, enviosPendentes-1);
@@ -1664,6 +1670,14 @@ function iniciarLiveRefresh(){
     if(ativo && (ativo.tagName==="INPUT" || ativo.tagName==="TEXTAREA")) return; // não interrompe edição em andamento
     if(enviosPendentes>0) return; // ainda tem salvamento nosso em voo — não busca por cima
     if(Date.now()-ultimoSaveLocalEm < 4000) return; // acabamos de salvar algo aqui — dá tempo de propagar antes de confiar no que vier de volta
+    if(ultimoSyncFalhou){
+      // O último envio falhou (ex: sem rede no instante do sync, como logo depois de "Reiniciar
+      // torneio") — o servidor ainda está com um estado mais velho que o daqui. Puxar dele agora
+      // traria de volta dado antigo (ex: o placar do último jogo reaparecendo depois de um
+      // reset). Tenta reenviar em vez de buscar, até a rede voltar e o sync realmente confirmar.
+      syncTorneio();
+      return;
+    }
     refreshTorneioAtual();
   }, 5000);
 }
