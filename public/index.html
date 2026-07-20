@@ -946,6 +946,8 @@ let logsFiltroTorneio = "todos"; // "todos" ou o id exato de um torneio
 let logsFiltroTipo = "todos"; // "todos" | "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado"
 let logsFiltroDataInicio = ""; // "" ou "YYYY-MM-DD"
 let logsFiltroDataFim = "";
+let logsFiltroHoraInicio = ""; // "" ou "HH:MM" — combina com a data pra formar o instante exato
+let logsFiltroHoraFim = "";
 let logsPagina = 1;
 const LOGS_POR_PAGINA = 10;
 
@@ -3695,6 +3697,16 @@ function dataLocalISO(timestamp){
   const dia = String(d.getDate()).padStart(2,"0");
   return `${d.getFullYear()}-${mes}-${dia}`;
 }
+// Mesma ideia, mas com hora:minuto junto ("YYYY-MM-DDTHH:MM") — usada pra combinar data+hora dos
+// filtros "De"/"Até" num único instante exato, comparável como string (ordena certo por ser
+// formato tipo ISO).
+function dataHoraLocalISO(timestamp){
+  const d = timestamp ? new Date(timestamp) : null;
+  if(!d || isNaN(d.getTime())) return "";
+  const hh = String(d.getHours()).padStart(2,"0");
+  const mm = String(d.getMinutes()).padStart(2,"0");
+  return `${dataLocalISO(timestamp)}T${hh}:${mm}`;
+}
 
 function renderTorneiosScreen(){
   if(torneiosList===null && !torneiosLoading) fetchTorneiosList();
@@ -4165,8 +4177,16 @@ function logsFiltrados(){
   let lista = (logsList || []).slice().sort((a,b)=> (b.quando||"").localeCompare(a.quando||""));
   if(logsFiltroTorneio!=="todos") lista = lista.filter(l=> l.torneioId===logsFiltroTorneio);
   if(logsFiltroTipo!=="todos") lista = lista.filter(l=> l.tipo===logsFiltroTipo);
-  if(logsFiltroDataInicio) lista = lista.filter(l=> dataLocalISO(l.quando) >= logsFiltroDataInicio);
-  if(logsFiltroDataFim) lista = lista.filter(l=> dataLocalISO(l.quando) <= logsFiltroDataFim);
+  // Combina data+hora num único instante exato pra comparar — "De" sem hora vira 00:00 daquele
+  // dia, "Até" sem hora vira 23:59 (inclui o dia inteiro, como já era antes da hora existir).
+  if(logsFiltroDataInicio || logsFiltroHoraInicio){
+    const limiteInicio = `${logsFiltroDataInicio || "0000-01-01"}T${logsFiltroHoraInicio || "00:00"}`;
+    lista = lista.filter(l=> dataHoraLocalISO(l.quando) >= limiteInicio);
+  }
+  if(logsFiltroDataFim || logsFiltroHoraFim){
+    const limiteFim = `${logsFiltroDataFim || "9999-12-31"}T${logsFiltroHoraFim || "23:59"}`;
+    lista = lista.filter(l=> dataHoraLocalISO(l.quando) <= limiteFim);
+  }
   return lista;
 }
 
@@ -4225,11 +4245,13 @@ function renderLogAdminScreen(){
   <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
     <div style="flex:1;min-width:140px;">
       <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">De</label>
-      <input type="date" id="input-log-filtro-data-inicio" value="${logsFiltroDataInicio}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
+      <input type="date" id="input-log-filtro-data-inicio" value="${logsFiltroDataInicio}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:6px;">
+      <input type="time" id="input-log-filtro-hora-inicio" value="${logsFiltroHoraInicio}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
     </div>
     <div style="flex:1;min-width:140px;">
       <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Até</label>
-      <input type="date" id="input-log-filtro-data-fim" value="${logsFiltroDataFim}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
+      <input type="date" id="input-log-filtro-data-fim" value="${logsFiltroDataFim}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:6px;">
+      <input type="time" id="input-log-filtro-hora-fim" value="${logsFiltroHoraFim}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
     </div>
   </div>`;
 
@@ -5311,6 +5333,18 @@ function bindEvents(){
   const inputLogFiltroDataFim = document.getElementById("input-log-filtro-data-fim");
   if(inputLogFiltroDataFim) inputLogFiltroDataFim.addEventListener("change", e=>{
     logsFiltroDataFim = e.target.value;
+    logsPagina = 1;
+    render();
+  });
+  const inputLogFiltroHoraInicio = document.getElementById("input-log-filtro-hora-inicio");
+  if(inputLogFiltroHoraInicio) inputLogFiltroHoraInicio.addEventListener("change", e=>{
+    logsFiltroHoraInicio = e.target.value;
+    logsPagina = 1;
+    render();
+  });
+  const inputLogFiltroHoraFim = document.getElementById("input-log-filtro-hora-fim");
+  if(inputLogFiltroHoraFim) inputLogFiltroHoraFim.addEventListener("change", e=>{
+    logsFiltroHoraFim = e.target.value;
     logsPagina = 1;
     render();
   });
