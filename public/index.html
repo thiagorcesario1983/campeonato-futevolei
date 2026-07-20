@@ -2973,7 +2973,9 @@ function drawGroupsSection(ctx, W, startY){
 
 // Enquanto a fase de grupos não termina, o chaveamento do mata-mata ainda não tem ninguém
 // definido (tudo "A definir") — em vez disso, mostra os confrontos já sorteados dos grupos,
-// no mesmo estilo de pílula usado no chaveamento (ver drawMatchBox/drawTeamBar).
+// cada um dentro de uma "bolha" com o rótulo "Jogo N" (ver drawJogoBubble/drawMatchBox/
+// drawTeamBar), pra separar visualmente onde um confronto termina e o outro começa — antes
+// ficavam só as pílulas de dupla empilhadas, sem nada indicando o agrupamento.
 function drawGroupMatchesSection(ctx, W, startY){
   const WHITE = "#FFFFFF";
   ctx.textAlign = "center";
@@ -2993,12 +2995,38 @@ function drawGroupMatchesSection(ctx, W, startY){
 
     state.groupMatches.filter(m=>m.group===letter).forEach(m=>{
       const win = winnerFinal(m.a, m.b, m);
-      y = drawMatchBox(ctx, boxX, y, boxW, m.a, m.b, m, win, barH) + 20;
+      y = drawJogoBubble(ctx, boxX, y, boxW, m, win, barH) + 22;
     });
     y += 14;
   });
 
   return y;
+}
+
+// Cartão arredondado ("bolha") que envolve as duas pílulas de um confronto (dupla A / dupla B)
+// com o rótulo "Jogo N" no topo — mesmo texto usado no resto do app pra identificar esse jogo
+// (ver getMatchLabel/renderJogos, campo m.jogo). Devolve o Y do fim do cartão.
+function drawJogoBubble(ctx, x, y, w, m, win, barH){
+  const WHITE = "#FFFFFF";
+  const pad = 16, labelH = 34, gapPilulas = 6;
+  const bubbleH = pad + labelH + barH*2 + gapPilulas + pad;
+
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  roundRect(ctx, x-pad, y, w+pad*2, bubbleH, 18);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, x-pad, y, w+pad*2, bubbleH, 18);
+  ctx.stroke();
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = WHITE;
+  ctx.font = "bold 20px Arial, sans-serif";
+  ctx.fillText(`Jogo ${m.jogo}`, x, y+pad+labelH*0.6);
+
+  drawMatchBox(ctx, x, y+pad+labelH, w, m.a, m.b, m, win, barH);
+
+  return y + bubbleH;
 }
 
 /* ---------- Chaveamento (bracket), estilo "TV de Copa do Mundo": pílulas com placar,
