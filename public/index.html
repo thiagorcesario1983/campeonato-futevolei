@@ -2891,12 +2891,12 @@ function renderStory(canvas, H){
     ctx.textAlign = "center";
     ctx.fillStyle = WHITE;
     ctx.font = "600 42px Arial, sans-serif";
-    ctx.fillText("Fase de eliminação", W/2, headerH+160);
-    ctx.fillText(`Rodada ${state.elimRodadas.length} em andamento`, W/2, headerH+220);
+    ctx.fillText("Fase de eliminação", W/2, headerH+120);
+    ctx.fillText(`Rodada ${state.elimRodadas.length} em andamento`, W/2, headerH+180);
     ctx.font = "600 30px Arial, sans-serif";
     ctx.fillStyle = MUTED_ON_GREEN;
-    ctx.fillText(`${elimVivas().length} duplas seguem vivas`, W/2, headerH+280);
-    cursorY = headerH+340;
+    ctx.fillText(`${elimVivas().length} duplas seguem vivas`, W/2, headerH+240);
+    cursorY = drawElimRodadaAtualSection(ctx, W, headerH+300);
   } else if(state.formato==="eliminacao"){
     cursorY = drawBracket(ctx, W, headerH+60);
   } else {
@@ -2995,7 +2995,7 @@ function drawGroupMatchesSection(ctx, W, startY){
 
     state.groupMatches.filter(m=>m.group===letter).forEach(m=>{
       const win = winnerFinal(m.a, m.b, m);
-      y = drawJogoBubble(ctx, boxX, y, boxW, m, win, barH) + 22;
+      y = drawJogoBubble(ctx, boxX, y, boxW, m, win, barH, `Jogo ${m.jogo}`) + 22;
     });
     y += 14;
   });
@@ -3003,10 +3003,34 @@ function drawGroupMatchesSection(ctx, W, startY){
   return y;
 }
 
+// Enquanto a fase de eliminação não termina (ainda não deu pra fechar o mata-mata de verdade),
+// mostra os confrontos da rodada atual no mesmo estilo de bolha usado nos grupos — antes disso
+// a imagem só trazia um texto resumido ("Rodada X em andamento"), sem nenhum jogo visível.
+function drawElimRodadaAtualSection(ctx, W, startY){
+  const WHITE = "#FFFFFF";
+  const rodada = elimRodadaAtual();
+  if(!rodada || !rodada.matches.length) return startY;
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = WHITE;
+  ctx.font = "600 26px Arial, sans-serif";
+  ctx.fillText(`JOGOS DA RODADA ${state.elimRodadas.length}`, W/2, startY);
+
+  const boxW = 560, boxX = (W-boxW)/2, barH = 42;
+  let y = startY + 44;
+
+  rodada.matches.forEach((m, mi)=>{
+    const win = winnerFinal(m.a, m.b, m);
+    y = drawJogoBubble(ctx, boxX, y, boxW, m, win, barH, `Jogo ${mi+1}`) + 22;
+  });
+
+  return y;
+}
+
 // Cartão arredondado ("bolha") que envolve as duas pílulas de um confronto (dupla A / dupla B)
-// com o rótulo "Jogo N" no topo — mesmo texto usado no resto do app pra identificar esse jogo
-// (ver getMatchLabel/renderJogos, campo m.jogo). Devolve o Y do fim do cartão.
-function drawJogoBubble(ctx, x, y, w, m, win, barH){
+// com o rótulo do jogo (ex: "Jogo 1") no topo — antes os pares de dupla ficavam só empilhados,
+// sem nada indicando onde um confronto terminava e o outro começava. Devolve o Y do fim do cartão.
+function drawJogoBubble(ctx, x, y, w, m, win, barH, label){
   const WHITE = "#FFFFFF";
   const pad = 16, labelH = 34, gapPilulas = 6;
   const bubbleH = pad + labelH + barH*2 + gapPilulas + pad;
@@ -3022,7 +3046,7 @@ function drawJogoBubble(ctx, x, y, w, m, win, barH){
   ctx.textAlign = "left";
   ctx.fillStyle = WHITE;
   ctx.font = "bold 20px Arial, sans-serif";
-  ctx.fillText(`Jogo ${m.jogo}`, x, y+pad+labelH*0.6);
+  ctx.fillText(label, x, y+pad+labelH*0.6);
 
   drawMatchBox(ctx, x, y+pad+labelH, w, m.a, m.b, m, win, barH);
 
