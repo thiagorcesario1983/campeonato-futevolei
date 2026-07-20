@@ -649,6 +649,7 @@
       <button data-tela-admin="aprovacoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg><span class="lbl">Aprovações</span></button>
       <button data-tela-admin="cupons"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V8z"/><path d="M9 6v10" stroke-dasharray="2 2"/></svg><span class="lbl">Cupons</span></button>
       <button data-tela-admin="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
+      <button data-tela-admin="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="lbl">Log</span></button>
     </nav>
   </div>
 </div>
@@ -847,6 +848,12 @@ function handleGoogleCredential(response){
   saveAuth(auth);
   render();
   fetchAndCacheClientId();
+  // Fallback do fluxo popup — o fluxo redirect (padrão hoje) já loga o acesso direto no servidor
+  // em googleLoginCallback, sem precisar dessa chamada extra.
+  fetch("/api/log-acesso", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ email: auth.email, name: auth.name })
+  }).catch(()=>{});
 }
 
 function initGoogleSignIn(){
@@ -921,6 +928,15 @@ let relatorioPagina = 1;
 const RELATORIO_POR_PAGINA = 8;
 let cupomValidacaoCache = {}; // {nomeDigitado: {valido, percentual, motivo}} — evita revalidar a cada tecla
 let placarSelecionados = new Set(); // matchIds escolhidos na aba Placar
+
+let logsList = null;
+let logsLoading = false;
+let logsFiltroTorneio = "todos"; // "todos" ou o id exato de um torneio
+let logsFiltroTipo = "todos"; // "todos" | "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado"
+let logsFiltroDataInicio = ""; // "" ou "YYYY-MM-DD"
+let logsFiltroDataFim = "";
+let logsPagina = 1;
+const LOGS_POR_PAGINA = 10;
 
 const LOCAL_TORNEIOS_KEY = "futevolei_local_torneios_v1";
 function getLocalTorneiosDB(){
@@ -1053,6 +1069,22 @@ async function fetchTorneiosList(){
 }
 
 /* ---------- Cupons de desconto (admin) ---------- */
+async function fetchLogsList(){
+  if(logsLoading) return;
+  logsLoading = true;
+  try{
+    const res = await fetch(`/api/log-list?email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    logsList = data.logs || [];
+  }catch(e){
+    logsList = [];
+    showToast("Não foi possível carregar os logs.");
+  }
+  logsLoading = false;
+  render();
+}
+
 async function fetchCuponsList(){
   if(cuponsLoading) return;
   cuponsLoading = true;
@@ -3631,6 +3663,26 @@ function formatarDataBR(iso){
   const [y,m,d] = iso.split("-");
   return (y&&m&&d) ? `${d}/${m}/${y}` : iso;
 }
+// timestamp completo (new Date().toISOString(), com hora) -> "dd/mm/aaaa hh:mm" no fuso local do
+// aparelho — diferente de formatarDataBR acima, que só trata datas soltas "YYYY-MM-DD" (sem hora).
+function formatarDataHoraBR(timestamp){
+  const d = timestamp ? new Date(timestamp) : null;
+  if(!d || isNaN(d.getTime())) return "—";
+  const dia = String(d.getDate()).padStart(2,"0");
+  const mes = String(d.getMonth()+1).padStart(2,"0");
+  const hh = String(d.getHours()).padStart(2,"0");
+  const mm = String(d.getMinutes()).padStart(2,"0");
+  return `${dia}/${mes}/${d.getFullYear()} ${hh}:${mm}`;
+}
+// Mesma ideia de hojeLocalISO(), mas pra um timestamp qualquer — usada pra comparar o log com o
+// filtro de data (que é "YYYY-MM-DD" vindo de um <input type=date>) no fuso local do aparelho.
+function dataLocalISO(timestamp){
+  const d = timestamp ? new Date(timestamp) : null;
+  if(!d || isNaN(d.getTime())) return "";
+  const mes = String(d.getMonth()+1).padStart(2,"0");
+  const dia = String(d.getDate()).padStart(2,"0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
 
 function renderTorneiosScreen(){
   if(torneiosList===null && !torneiosLoading) fetchTorneiosList();
@@ -3657,6 +3709,10 @@ function renderTorneiosScreen(){
   }
   if(ehAdmin() && telaAdmin==="cupons"){
     html += renderCuponsAdminScreen();
+    return html;
+  }
+  if(ehAdmin() && telaAdmin==="log"){
+    html += renderLogAdminScreen();
     return html;
   }
 
@@ -4068,6 +4124,122 @@ function renderRelatorioCuponsScreen(){
       <button class="btn ghost" id="btn-relatorio-pagina-anterior" style="width:auto;padding:8px 16px;${relatorioPagina<=1 ? "opacity:.45;cursor:not-allowed;" : ""}" ${relatorioPagina<=1 ? "disabled" : ""}>← Anterior</button>
       <span class="sub">Página ${relatorioPagina} de ${totalPaginas}</span>
       <button class="btn ghost" id="btn-relatorio-pagina-proxima" style="width:auto;padding:8px 16px;${relatorioPagina>=totalPaginas ? "opacity:.45;cursor:not-allowed;" : ""}" ${relatorioPagina>=totalPaginas ? "disabled" : ""}>Próxima →</button>
+    </div>`;
+  }
+
+  return html;
+}
+
+const ROTULO_TIPO_LOG = {
+  acesso: "🔐 Acesso",
+  torneio_criado: "🆕 Torneio criado",
+  duplas_sorteadas: "🎲 Duplas sorteadas",
+  resultado_registrado: "🏐 Resultado registrado"
+};
+const COR_TIPO_LOG = {
+  acesso: { bg:"#E4E4E4", cor:"#5A5A5A" },
+  torneio_criado: { bg:"#DCEEE1", cor:"#2E6E42" },
+  duplas_sorteadas: { bg:"#FCEFD8", cor:"#9A6B1E" },
+  resultado_registrado: { bg:"#DCE7F5", cor:"#2C5C99" }
+};
+function badgeTipoLog(tipo){
+  const c = COR_TIPO_LOG[tipo] || COR_TIPO_LOG.acesso;
+  return `<span class="status-pill" style="background:${c.bg};color:${c.cor};">${ROTULO_TIPO_LOG[tipo] || tipo}</span>`;
+}
+
+// Aplica os filtros atuais (torneio, tipo/função, período) sobre logsList — usada tanto pra
+// desenhar a tela (com paginação por cima) quanto pra montar as opções do filtro de torneio.
+function logsFiltrados(){
+  let lista = (logsList || []).slice().sort((a,b)=> (b.quando||"").localeCompare(a.quando||""));
+  if(logsFiltroTorneio!=="todos") lista = lista.filter(l=> l.torneioId===logsFiltroTorneio);
+  if(logsFiltroTipo!=="todos") lista = lista.filter(l=> l.tipo===logsFiltroTipo);
+  if(logsFiltroDataInicio) lista = lista.filter(l=> dataLocalISO(l.quando) >= logsFiltroDataInicio);
+  if(logsFiltroDataFim) lista = lista.filter(l=> dataLocalISO(l.quando) <= logsFiltroDataFim);
+  return lista;
+}
+
+function renderLogAdminScreen(){
+  if(logsList===null && !logsLoading) fetchLogsList();
+
+  let html = `<div class="section-title">Log de atividade</div>
+    <div class="section-sub">Acessos ao sistema, criação de torneios, sorteios de duplas e resultados de jogos finalizados.</div>`;
+
+  if(logsList===null){
+    return html + `<div class="card empty">Carregando log...</div>`;
+  }
+  if(!logsList.length){
+    return html + `<div class="card empty"><span class="ball-icon">🗒️</span>Nenhum evento registrado ainda.</div>`;
+  }
+
+  // Torneios distintos presentes no log (só faz sentido oferecer no filtro quem já tem algum
+  // evento) — cada torneio junta {id, nome, codigo} da entrada mais recente que o menciona.
+  const torneiosNoLog = [];
+  const vistos = new Set();
+  logsList.forEach(l=>{
+    if(l.torneioId && !vistos.has(l.torneioId)){
+      vistos.add(l.torneioId);
+      torneiosNoLog.push({ id:l.torneioId, nome:l.torneioNome||"Torneio sem nome", codigo:l.torneioCodigo||"" });
+    }
+  });
+  torneiosNoLog.sort((a,b)=> a.nome.localeCompare(b.nome));
+
+  html += `<div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:160px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Torneio</label>
+      <select id="select-log-filtro-torneio" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">
+        <option value="todos" ${logsFiltroTorneio==="todos"?"selected":""}>Todos os torneios</option>
+        ${torneiosNoLog.map(t=> `<option value="${escapeHtml(t.id)}" ${logsFiltroTorneio===t.id?"selected":""}>${escapeHtml(t.nome)}${t.codigo ? ` (#${escapeHtml(t.codigo)})` : ""}</option>`).join("")}
+      </select>
+    </div>
+    <div style="flex:1;min-width:160px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Função</label>
+      <select id="select-log-filtro-tipo" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">
+        <option value="todos" ${logsFiltroTipo==="todos"?"selected":""}>Todas</option>
+        ${Object.keys(ROTULO_TIPO_LOG).map(key=> `<option value="${key}" ${logsFiltroTipo===key?"selected":""}>${ROTULO_TIPO_LOG[key]}</option>`).join("")}
+      </select>
+    </div>
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:140px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">De</label>
+      <input type="date" id="input-log-filtro-data-inicio" value="${logsFiltroDataInicio}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
+    </div>
+    <div style="flex:1;min-width:140px;">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Até</label>
+      <input type="date" id="input-log-filtro-data-fim" value="${logsFiltroDataFim}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
+    </div>
+  </div>`;
+
+  const lista = logsFiltrados();
+  if(!lista.length){
+    return html + `<div class="card empty">Nenhum evento com esses filtros.</div>`;
+  }
+
+  const totalPaginas = Math.max(1, Math.ceil(lista.length / LOGS_POR_PAGINA));
+  if(logsPagina > totalPaginas) logsPagina = totalPaginas;
+  if(logsPagina < 1) logsPagina = 1;
+  const inicio = (logsPagina-1) * LOGS_POR_PAGINA;
+  const listaPagina = lista.slice(inicio, inicio + LOGS_POR_PAGINA);
+
+  html += `<div class="sub" style="margin-bottom:10px;">${lista.length} evento${lista.length===1?"":"s"}</div>`;
+
+  listaPagina.forEach(l=>{
+    html += `<div class="card" style="margin-bottom:14px;">
+      <div class="row" style="margin-bottom:2px;">
+        ${badgeTipoLog(l.tipo)}
+        <span class="sub" style="font-family:'DM Mono',monospace;">${formatarDataHoraBR(l.quando)}</span>
+      </div>
+      <div class="sub" style="margin-bottom:4px;">${escapeHtml(l.descricao||"")}</div>
+      <div class="sub" style="margin-bottom:2px;">👤 ${escapeHtml(l.atorNome || l.atorEmail || "—")}${l.atorEmail && l.atorNome ? ` · ${escapeHtml(l.atorEmail)}` : ""}</div>
+      ${l.torneioId ? `<div class="sub">📋 ${escapeHtml(l.torneioNome||"Torneio sem nome")}${l.torneioCodigo ? ` <span style="opacity:.7;">#${escapeHtml(l.torneioCodigo)}</span>` : ""}</div>` : ""}
+    </div>`;
+  });
+
+  if(totalPaginas > 1){
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;">
+      <button class="btn ghost" id="btn-log-pagina-anterior" style="width:auto;padding:8px 16px;${logsPagina<=1 ? "opacity:.45;cursor:not-allowed;" : ""}" ${logsPagina<=1 ? "disabled" : ""}>← Anterior</button>
+      <span class="sub">Página ${logsPagina} de ${totalPaginas}</span>
+      <button class="btn ghost" id="btn-log-pagina-proxima" style="width:auto;padding:8px 16px;${logsPagina>=totalPaginas ? "opacity:.45;cursor:not-allowed;" : ""}" ${logsPagina>=totalPaginas ? "disabled" : ""}>Próxima →</button>
     </div>`;
   }
 
@@ -5074,6 +5246,40 @@ function bindEvents(){
   const btnExportarRelatorioCupons = document.getElementById("btn-exportar-relatorio-cupons");
   if(btnExportarRelatorioCupons) btnExportarRelatorioCupons.addEventListener("click", ()=>{
     exportarRelatorioCuponsCSV(linhasRelatorioCuponsFiltradas());
+  });
+  const selectLogFiltroTorneio = document.getElementById("select-log-filtro-torneio");
+  if(selectLogFiltroTorneio) selectLogFiltroTorneio.addEventListener("change", e=>{
+    logsFiltroTorneio = e.target.value;
+    logsPagina = 1;
+    render();
+  });
+  const selectLogFiltroTipo = document.getElementById("select-log-filtro-tipo");
+  if(selectLogFiltroTipo) selectLogFiltroTipo.addEventListener("change", e=>{
+    logsFiltroTipo = e.target.value;
+    logsPagina = 1;
+    render();
+  });
+  const inputLogFiltroDataInicio = document.getElementById("input-log-filtro-data-inicio");
+  if(inputLogFiltroDataInicio) inputLogFiltroDataInicio.addEventListener("change", e=>{
+    logsFiltroDataInicio = e.target.value;
+    logsPagina = 1;
+    render();
+  });
+  const inputLogFiltroDataFim = document.getElementById("input-log-filtro-data-fim");
+  if(inputLogFiltroDataFim) inputLogFiltroDataFim.addEventListener("change", e=>{
+    logsFiltroDataFim = e.target.value;
+    logsPagina = 1;
+    render();
+  });
+  const btnLogPaginaAnterior = document.getElementById("btn-log-pagina-anterior");
+  if(btnLogPaginaAnterior) btnLogPaginaAnterior.addEventListener("click", ()=>{
+    logsPagina--;
+    render();
+  });
+  const btnLogPaginaProxima = document.getElementById("btn-log-pagina-proxima");
+  if(btnLogPaginaProxima) btnLogPaginaProxima.addEventListener("click", ()=>{
+    logsPagina++;
+    render();
   });
   const btnMigrar = document.getElementById("btn-migrar-local");
   if(btnMigrar) btnMigrar.addEventListener("click", migrarTorneioLocal);

@@ -439,6 +439,54 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     }
   }
 
+  // Detecta eventos relevantes pro log de atividade comparando o estado antes/depois — cobre
+  // qualquer caminho que leve a essas mudanças (apitar, digitar placar direto, W.O.) sem precisar
+  // duplicar um hook em cada um. Só grava de fato depois que o save principal confirmar sucesso.
+  const logsParaRegistrar: Array<Omit<LogEntry, "id" | "quando">> = [];
+  if (ehNovo) {
+    logsParaRegistrar.push({
+      tipo: "torneio_criado",
+      atorEmail: solicitanteEmail,
+      atorNome: body.ownerName || null,
+      torneioId: id,
+      torneioNome: meta.nome,
+      torneioCodigo: meta.codigo,
+      descricao: `Torneio "${meta.nome}" criado`,
+      dados: { dataInicio: meta.dataInicio, dataFim: meta.dataFim, cupomAplicado }
+    });
+  }
+  if (!existingFull?.state?.drawn && body.state?.drawn) {
+    const duplas = (body.state.duplas || []).map((d: any) => d?.nome).filter(Boolean);
+    logsParaRegistrar.push({
+      tipo: "duplas_sorteadas",
+      atorEmail: solicitanteEmail,
+      atorNome: body.ownerName || null,
+      torneioId: id,
+      torneioNome: meta.nome,
+      torneioCodigo: meta.codigo,
+      descricao: `Sorteio realizado (${duplas.length} duplas, formato ${body.state.formato === "eliminacao" ? "eliminação" : "grupos"})`,
+      dados: { formato: body.state.formato, duplas }
+    });
+  }
+  {
+    const matchesAntesMap = new Map(listarTodosMatches(existingFull?.state).map((x) => [x.matchId, x.m]));
+    for (const { matchId, m } of listarTodosMatches(body.state)) {
+      const antes = matchesAntesMap.get(matchId);
+      if (m?.finalizado && !antes?.finalizado) {
+        logsParaRegistrar.push({
+          tipo: "resultado_registrado",
+          atorEmail: solicitanteEmail,
+          atorNome: body.ownerName || null,
+          torneioId: id,
+          torneioNome: meta.nome,
+          torneioCodigo: meta.codigo,
+          descricao: `Jogo finalizado: ${m.a || "?"} ${m.pa ?? "-"} x ${m.pb ?? "-"} ${m.b || "?"}${m.wo ? " (W.O.)" : ""}`,
+          dados: { matchId, a: m.a, b: m.b, pa: m.pa, pb: m.pb, wo: m.wo || null }
+        });
+      }
+    }
+  }
+
   try {
     await env.DB.put(`torneio:${id}`, JSON.stringify({ ...meta, pagamento: existingFull?.pagamento ?? null, state: body.state }));
     const newIndex = index.filter((t: any) => t.id !== id);
@@ -447,6 +495,7 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   } catch (e: any) {
     return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
   }
+  await registrarLogs(env, logsParaRegistrar);
 
   // Pix automático na criação: as datas e o cupom já foram escolhidos pelo organizador no
   // formulário, então o valor já está totalmente determinado — não precisa mais esperar a
@@ -1163,6 +1212,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
   }
 
   let trocarLado = false;
+  let finalizouAgora = false;
   if (action === "iniciar") {
     if (arb.status === "nao_iniciada") {
       arb.inicioMs = Date.now();
@@ -1203,6 +1253,7 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
       m.pa = arb.placarA;
       m.pb = arb.placarB;
       m.finalizado = true;
+      finalizouAgora = true;
     }
   } else if (action === "reabrir") {
     if (arb.status === "finalizada") {
@@ -1221,6 +1272,18 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
     await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
   } catch (e: any) {
     return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+  if (finalizouAgora) {
+    await registrarLogs(env, [{
+      tipo: "resultado_registrado",
+      atorEmail: null,
+      atorNome: arb.arbitroNome || "Árbitro convidado",
+      torneioId,
+      torneioNome: dados.nome,
+      torneioCodigo: dados.codigo,
+      descricao: `Jogo finalizado via link de árbitro: ${m.a || "?"} ${m.pa ?? "-"} x ${m.pb ?? "-"} ${m.b || "?"}`,
+      dados: { matchId, a: m.a, b: m.b, pa: m.pa, pb: m.pb }
+    }]);
   }
 
   return json({ ok: true, arb, finalizado: !!m.finalizado, trocarLado });
@@ -1756,7 +1819,105 @@ try{ localStorage.setItem("futevolei_auth_v1", ${authLiteral}); }catch(e){}
 location.replace("/");
 </script></body></html>`;
 
+  await registrarLogs(env, [{
+    tipo: "acesso",
+    atorEmail: auth.email,
+    atorNome: auth.name || null,
+    torneioId: null,
+    torneioNome: null,
+    torneioCodigo: null,
+    descricao: `Login de ${auth.name || auth.email}`
+  }]);
+
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+/* ============================================================
+   LOG DE ATIVIDADE (admin)
+   Trilha de auditoria leve: login, criação de torneio, sorteio de duplas e jogos finalizados —
+   guardada numa única chave (logs:index, lista completa, mesmo esquema de cupons:index), capada
+   em LOGS_MAX entradas mais recentes pra não crescer pra sempre (cada gravação relê e regrava o
+   blob inteiro; sem cap, isso ficaria cada vez mais pesado com o tempo). Uma falha ao gravar log
+   nunca pode derrubar a ação principal que originou o evento — por isso registrarLogs engole
+   qualquer erro.
+============================================================ */
+interface LogEntry {
+  id: string;
+  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado";
+  quando: string;
+  atorEmail: string | null;
+  atorNome: string | null;
+  torneioId: string | null;
+  torneioNome: string | null;
+  torneioCodigo: string | null;
+  descricao: string;
+  dados?: any;
+}
+const LOGS_MAX = 2000;
+async function getLogs(env: Env): Promise<LogEntry[]> {
+  try {
+    const raw = await env.DB.get("logs:index");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+async function registrarLogs(env: Env, novos: Array<Omit<LogEntry, "id" | "quando">>): Promise<void> {
+  if (!novos.length) return;
+  try {
+    const lista = await getLogs(env);
+    const quando = new Date().toISOString();
+    for (const n of novos) lista.push({ ...n, id: crypto.randomUUID(), quando });
+    const cortada = lista.length > LOGS_MAX ? lista.slice(lista.length - LOGS_MAX) : lista;
+    await env.DB.put("logs:index", JSON.stringify(cortada));
+  } catch {
+    // auditoria não pode derrubar a ação principal que originou o evento
+  }
+}
+// Enumera todos os jogos de um state (grupos, eliminação, mata-mata, 3º lugar) junto com o
+// matchId de cada um — usado pra comparar antes/depois e detectar transições relevantes (sorteio
+// feito, jogo finalizado) sem duplicar em vários lugares a lógica de "qual formato é esse jogo".
+function listarTodosMatches(state: any): { matchId: string; m: any }[] {
+  const lista: { matchId: string; m: any }[] = [];
+  (state?.groupMatches || []).forEach((m: any, idx: number) => lista.push({ matchId: `g${idx}`, m }));
+  (state?.elimRodadas || []).forEach((r: any, ri: number) => {
+    (r?.matches || []).forEach((m: any, mi: number) => lista.push({ matchId: `e${ri}_${mi}`, m }));
+  });
+  (state?.bracket || []).forEach((round: any, ri: number) => {
+    (round || []).forEach((m: any, mi: number) => lista.push({ matchId: `b${ri}_${mi}`, m }));
+  });
+  if (state?.terceiro) lista.push({ matchId: "terceiro", m: state.terceiro });
+  return lista;
+}
+
+async function logList(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const solicitanteEmail = normEmail(url.searchParams.get("email"));
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode ver os logs" }, 403);
+  return json({ logs: await getLogs(env) });
+}
+
+// Usada pelo fallback popup do login (ux_mode:"redirect" já loga direto em googleLoginCallback;
+// isso só cobre o caso raro de o navegador cair no popup padrão do Google Identity Services).
+async function logAcesso(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const email = normEmail(body.email);
+  if (!email) return json({ error: "email obrigatório" }, 400);
+  const nome = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 120) : null;
+  await registrarLogs(env, [{
+    tipo: "acesso",
+    atorEmail: email,
+    atorNome: nome,
+    torneioId: null,
+    torneioNome: null,
+    torneioCodigo: null,
+    descricao: `Login de ${nome || email}`
+  }]);
+  return json({ ok: true });
 }
 
 /* ============================================================
@@ -1843,6 +2004,12 @@ export default {
     }
     if (path === "/api/google-login-callback") {
       return method === "POST" ? googleLoginCallback(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/log-list") {
+      return logList(request, env);
+    }
+    if (path === "/api/log-acesso") {
+      return method === "POST" ? logAcesso(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path.startsWith("/api/")) {
       return new Response("Not found", { status: 404 });

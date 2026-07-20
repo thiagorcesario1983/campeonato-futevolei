@@ -63,7 +63,9 @@ campeonato-futevolei/
   tudo o mais.
 - **Banco**: Cloudflare KV, namespace `campeonato-futevolei-db`. Cada torneio é uma chave
   `torneio:{id}` (JSON completo, incluindo `state`), mais `torneios:index` (resumo leve de todos,
-  usado pra listagem rápida) e `telegram:{codigo}` (chat_id do Telegram por dupla/torneio).
+  usado pra listagem rápida), `telegram:{codigo}` (chat_id do Telegram por dupla/torneio) e
+  `logs:index` (lista completa de eventos do log de atividade — login, torneio criado, sorteio de
+  duplas, jogo finalizado —, capada nas 2000 entradas mais recentes, ver `LOGS_MAX`).
 
 ## Variáveis de ambiente / Secrets (painel Cloudflare → Settings → Variables and Secrets)
 
@@ -146,6 +148,8 @@ no worker.
 | `/api/apito` | GET/POST | público, mas exige o token daquela partida específica |
 | `/api/config-get` / `/api/config-set` | GET / POST | público / só admin |
 | `/api/telegram-*` | vário | integração do bot |
+| `/api/log-list` | GET | só admin — lista o log de atividade completo |
+| `/api/log-acesso` | POST | por e-mail — fallback do login popup (o fluxo redirect já loga direto em `googleLoginCallback`) |
 
 Admin é decidido **só pelo servidor**, comparando o e-mail com `ADMIN_EMAILS` (`ehAdmin(email,
 env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já resolvido via
