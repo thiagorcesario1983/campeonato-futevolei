@@ -304,6 +304,22 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     ficam desabilitados. Torneios anteriores a essa funcionalidade com mata-mata já em andamento
     nunca são travados retroativamente (`mataMataLiberadoParaJogar` cai pra `mataMataIniciado()`
     quando não há confirmação registrada, em vez de esconder um jogo que já começou).
+16. **`iniciarLiveRefresh()` podia trazer de volta um placar antigo depois de "Reiniciar
+    torneio" (ou qualquer save) se a rede caísse bem no instante do sync.** `syncTorneio()`
+    agenda o envio (debounce 800ms) e só incrementa `enviosPendentes` quando o `fetch` realmente
+    dispara — entre o clique e esse instante, a única proteção do polling de 5s era
+    `Date.now()-ultimoSaveLocalEm < 4000`, que cobre o debounce mas não protege contra uma falha
+    de rede nesse envio: se ele cair no `catch` (sem conexão no momento), o dado só é salvo na
+    reserva local (`saveTorneioLocalFallback`) — o servidor nunca recebe o reset e continua com o
+    estado antigo. Assim que o `Date.now()-ultimoSaveLocalEm` passava de 4s, o próximo tick do
+    polling chamava `refreshTorneioAtual()` e trazia esse estado antigo de volta por cima do
+    reset local (ex: o placar do último jogo reaparecendo "do nada" alguns segundos depois de
+    reiniciar o torneio). Corrigido com uma flag `ultimoSyncFalhou` (setada em
+    `enviarTorneioAgora`, true no `catch`/false quando a resposta vem `ok`): enquanto ela for
+    true, o polling nunca puxa do servidor — só tenta reenviar (`syncTorneio()`) até a rede
+    voltar e o servidor realmente confirmar. **Qualquer novo consumidor de `refreshTorneioAtual`
+    (ou de outro polling que leia do servidor) precisa considerar que o servidor pode estar mais
+    desatualizado que o cliente, não só o contrário.**
 
 ## Convenções
 

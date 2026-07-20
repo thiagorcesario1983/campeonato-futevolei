@@ -1002,6 +1002,10 @@ function montarPayloadTorneio(){
   };
 }
 
+// true quando o último envio ao servidor falhou (rede caiu, torneio recém-resetado sem
+// conexão no momento do sync, etc.) — enquanto isso, o servidor está com um estado mais VELHO
+// que o daqui, então iniciarLiveRefresh não pode confiar no que ele devolver (ver uso abaixo).
+let ultimoSyncFalhou = false;
 async function enviarTorneioAgora(payload, keepalive){
   enviosPendentes++;
   try{
@@ -1029,6 +1033,7 @@ async function enviarTorneioAgora(payload, keepalive){
       state.cloudId = data.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
+    ultimoSyncFalhou = false;
     return {ok:true, erro:null};
   }catch(e){
     // Sem servidor de functions disponível (ex: hospedagem local simples) — usa reserva local
@@ -1037,6 +1042,7 @@ async function enviarTorneioAgora(payload, keepalive){
       state.cloudId = meta.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
+    ultimoSyncFalhou = true;
     return {ok:false, erro: (e && e.message) ? e.message : String(e)};
   }finally{
     enviosPendentes = Math.max(0, enviosPendentes-1);
@@ -1664,6 +1670,14 @@ function iniciarLiveRefresh(){
     if(ativo && (ativo.tagName==="INPUT" || ativo.tagName==="TEXTAREA")) return; // não interrompe edição em andamento
     if(enviosPendentes>0) return; // ainda tem salvamento nosso em voo — não busca por cima
     if(Date.now()-ultimoSaveLocalEm < 4000) return; // acabamos de salvar algo aqui — dá tempo de propagar antes de confiar no que vier de volta
+    if(ultimoSyncFalhou){
+      // O último envio falhou (ex: sem rede no instante do sync, como logo depois de "Reiniciar
+      // torneio") — o servidor ainda está com um estado mais velho que o daqui. Puxar dele agora
+      // traria de volta dado antigo (ex: o placar do último jogo reaparecendo depois de um
+      // reset). Tenta reenviar em vez de buscar, até a rede voltar e o sync realmente confirmar.
+      syncTorneio();
+      return;
+    }
     refreshTorneioAtual();
   }, 5000);
 }
@@ -2221,7 +2235,14 @@ function gruposClassificadosFinal(letter){
     return rows.slice(0,2).map(r=>r.nome);
   }
   const escolha = (state.grupoDesempateEscolha||[]).filter(n=>info.grupoEmpatado.includes(n));
-  const classificados = new Set([...info.jaGarantidas, ...escolha.slice(0, info.vagas)]);
+  const escolhidos = escolha.slice(0, info.vagas);
+  // Enquanto a escolha ainda estiver incompleta, completa o que falta com a ordem padrão dos
+  // próprios empatados (melhor esforço) — sem isso, essa função podia devolver só 1 nome (ou
+  // nenhum) pra um grupo com 2 vagas, e quem lê o array (ex: primeiraRodadaTeams) tratava a
+  // posição vazia como bye, mostrando "avança direto (folga)" sem ter folga nenhuma de verdade.
+  const faltam = info.vagas - escolhidos.length;
+  const completar = faltam > 0 ? info.grupoEmpatado.filter(n=>!escolhidos.includes(n)).slice(0, faltam) : [];
+  const classificados = new Set([...info.jaGarantidas, ...escolhidos, ...completar]);
   return rows.filter(r=>classificados.has(r.nome)).map(r=>r.nome);
 }
 // Trava central: enquanto houver empate técnico pendente de decisão (ou decidido mas ainda não
@@ -4862,16 +4883,42 @@ function renderFluxoJogos(){
       html += fluxoStep(`Grupo ${letter} · Jogos`, jogosHtml, "var(--ocean)");
 
       const rows = standingsFor(letter);
+      // Empate real na última vaga de classificação (ver gruposDesempateInfo) é uma decisão do
+      // organizador, distinta do empate informativo de critério entre 1º/2º abaixo — precisa
+      // ficar bem clara no fluxo, inclusive se ainda está pendente ou já foi decidida.
+      const desempateInfo = gruposDesempateInfoPorLetra(letter);
+      const temEmpateReal = desempateInfo.grupoEmpatado.length > desempateInfo.vagas;
+      const escolhaGrupo = (state.grupoDesempateEscolha||[]).filter(n=>desempateInfo.grupoEmpatado.includes(n));
+      const pendente = temEmpateReal && escolhaGrupo.length < desempateInfo.vagas;
+      // Enquanto pendente, só quem já está garantido (jaGarantidas) mantém o badge QUALIFICADO —
+      // os empatados disputando a vaga (grupoEmpatado) ficam com "AGUARDANDO DECISÃO" abaixo, em
+      // vez de perderem qualquer badge (o que escondia até quem nunca esteve em dúvida).
+      const classificadosFinais = new Set(pendente ? desempateInfo.jaGarantidas : gruposClassificadosFinal(letter));
+
       let criterioHtml = "";
       if(rows.length>=2 && rows[0].pts===rows[1].pts){
         criterioHtml = rows[0].saldo!==rows[1].saldo
           ? `⚖️ Empate em pontos entre 1º e 2º colocado → decidido por <b>saldo de pontos</b>.`
-          : (rows[0].pp!==rows[1].pp ? `⚖️ Empate em pontos e saldo → decidido por <b>pontos pró</b>.` : `⚖️ Empate total entre 1º e 2º colocado (nenhum critério separou).`);
+          : (rows[0].pp!==rows[1].pp ? `⚖️ Empate em pontos e saldo → decidido por <b>pontos pró</b>.` : ``);
       }
-      const classifHtml = rows.map((r,i)=>
-        `${i+1}º ${escapeHtml(r.nome)} — ${r.pts}pts, saldo ${r.saldo>0?"+":""}${r.saldo}, ${r.pp} pontos pró${i<2?` <span class="flow-badge" style="background:#DCEEE1;color:#2E6E42;">QUALIFICADO</span>`:``}`
-      ).join("<br>");
-      html += fluxoStep(`Grupo ${letter} · Classificação`, classifHtml + (criterioHtml?`<br><br>${criterioHtml}`:``), "var(--grass)");
+      let empateRealHtml = "";
+      if(temEmpateReal){
+        const nomesEmpatados = desempateInfo.grupoEmpatado.map(n=>escapeHtml(n)).join(", ");
+        const vagaTxt = desempateInfo.vagas>1 ? "as últimas vagas" : "a última vaga";
+        empateRealHtml = pendente
+          ? `⚖️ <b>Empate técnico real</b> (pontos, saldo e pontos pró idênticos) entre ${nomesEmpatados} disputando ${vagaTxt} de classificação — decisão ainda pendente do organizador (ver card "Decisão Desempate" na aba Mata-mata).`
+          : `⚖️ <b>Empate técnico real</b> entre ${nomesEmpatados} disputando ${vagaTxt} de classificação → decidido manualmente pelo organizador: <b>${escolhaGrupo.slice(0,desempateInfo.vagas).map(n=>escapeHtml(n)).join(", ")}</b> avança${escolhaGrupo.slice(0,desempateInfo.vagas).length>1?"m":""} pro mata-mata.`;
+      }
+
+      const classifHtml = rows.map((r,i)=>{
+        let badge = "";
+        if(classificadosFinais.has(r.nome)) badge = ` <span class="flow-badge" style="background:#DCEEE1;color:#2E6E42;">QUALIFICADO</span>`;
+        else if(pendente && desempateInfo.grupoEmpatado.includes(r.nome)) badge = ` <span class="flow-badge" style="background:#FCEFD8;color:#9A6B1E;">⚖️ AGUARDANDO DECISÃO</span>`;
+        return `${i+1}º ${escapeHtml(r.nome)} — ${r.pts}pts, saldo ${r.saldo>0?"+":""}${r.saldo}, ${r.pp} pontos pró${badge}`;
+      }).join("<br>");
+
+      const extras = [criterioHtml, empateRealHtml].filter(Boolean).join("<br>");
+      html += fluxoStep(`Grupo ${letter} · Classificação`, classifHtml + (extras?`<br><br>${extras}`:``), "var(--grass)");
     });
   } else {
     state.elimRodadas.forEach((r,ri)=>{
@@ -4886,6 +4933,23 @@ function renderFluxoJogos(){
         ? `❌ Eliminadas (2 derrotas): ${eliminadas.map(n=>escapeHtml(n)).join(", ")}.`
         : `Nenhuma dupla eliminada.`;
       elimHtml += `<br>✅ Classificadas para o mata-mata: ${vivas.map(n=>escapeHtml(n)).join(", ")}.`;
+
+      // Repescagem (ver elimRepescagemInfo) também é uma decisão que precisa ficar clara no
+      // fluxo, igual ao empate técnico do formato "grupos" acima — inclusive quando envolveu
+      // empate real e escolha manual do organizador, não só o preenchimento automático.
+      const repesc = elimRepescagemInfo();
+      if(repesc.necessario > 0){
+        const resgatadas = elimRepescadasFinal();
+        elimHtml += `<br>🎟️ Repescagem: faltaram duplas pra fechar a meta de ${state.elimTarget || 4} qualificados — ${resgatadas.length ? resgatadas.map(n=>escapeHtml(n)).join(", ") : "ninguém"} ${resgatadas.length>1?"entraram":"entrou"} pelo melhor retrospecto entre as eliminadas (vitórias, saldo de pontos, pontos pró).`;
+        if(repesc.grupoEmpatado.length > repesc.vagas){
+          const nomesEmpatados = repesc.grupoEmpatado.map(n=>escapeHtml(n)).join(", ");
+          const escolha = (state.elimRepescagemEscolha||[]).filter(n=>repesc.grupoEmpatado.includes(n));
+          const vagaTxt = repesc.vagas>1 ? "as vagas restantes" : "a vaga restante";
+          elimHtml += escolha.length >= repesc.vagas
+            ? `<br>⚖️ <b>Empate técnico real</b> entre ${nomesEmpatados} disputando ${vagaTxt} da repescagem → decidido manualmente pelo organizador: <b>${escolha.slice(0,repesc.vagas).map(n=>escapeHtml(n)).join(", ")}</b> avança${escolha.slice(0,repesc.vagas).length>1?"m":""}.`
+            : `<br>⚖️ <b>Empate técnico real</b> entre ${nomesEmpatados} disputando ${vagaTxt} da repescagem — decisão ainda pendente do organizador (ver aba Jogos).`;
+        }
+      }
       html += fluxoStep(`Eliminação · Fechamento`, elimHtml, "var(--grass)");
     }
   }
