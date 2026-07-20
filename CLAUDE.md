@@ -304,22 +304,26 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     ficam desabilitados. Torneios anteriores a essa funcionalidade com mata-mata já em andamento
     nunca são travados retroativamente (`mataMataLiberadoParaJogar` cai pra `mataMataIniciado()`
     quando não há confirmação registrada, em vez de esconder um jogo que já começou).
-16. **`iniciarLiveRefresh()` podia trazer de volta um placar antigo depois de "Reiniciar
-    torneio" (ou qualquer save) se a rede caísse bem no instante do sync.** `syncTorneio()`
-    agenda o envio (debounce 800ms) e só incrementa `enviosPendentes` quando o `fetch` realmente
-    dispara — entre o clique e esse instante, a única proteção do polling de 5s era
+16. **`refreshTorneioAtual()` podia trazer de volta um placar antigo depois de "Reiniciar
+    torneio" (ou qualquer save) se a rede caísse bem no instante do sync — inclusive depois de
+    recarregar/reabrir a página, não só no polling periódico.** `syncTorneio()` agenda o envio
+    (debounce 800ms) e só incrementa `enviosPendentes` quando o `fetch` realmente dispara — entre
+    o clique e esse instante, a única proteção do polling de 5s era
     `Date.now()-ultimoSaveLocalEm < 4000`, que cobre o debounce mas não protege contra uma falha
     de rede nesse envio: se ele cair no `catch` (sem conexão no momento), o dado só é salvo na
     reserva local (`saveTorneioLocalFallback`) — o servidor nunca recebe o reset e continua com o
-    estado antigo. Assim que o `Date.now()-ultimoSaveLocalEm` passava de 4s, o próximo tick do
-    polling chamava `refreshTorneioAtual()` e trazia esse estado antigo de volta por cima do
-    reset local (ex: o placar do último jogo reaparecendo "do nada" alguns segundos depois de
-    reiniciar o torneio). Corrigido com uma flag `ultimoSyncFalhou` (setada em
-    `enviarTorneioAgora`, true no `catch`/false quando a resposta vem `ok`): enquanto ela for
-    true, o polling nunca puxa do servidor — só tenta reenviar (`syncTorneio()`) até a rede
-    voltar e o servidor realmente confirmar. **Qualquer novo consumidor de `refreshTorneioAtual`
-    (ou de outro polling que leia do servidor) precisa considerar que o servidor pode estar mais
-    desatualizado que o cliente, não só o contrário.**
+    estado antigo. Uma primeira correção guardou isso só em memória (flag zerada a cada reload),
+    o que resolvia o polling mas não o caso relatado de verdade: reabrir/recarregar a página logo
+    depois do reset, antes da rede voltar — nesse caso `refreshTorneioAtual(true)` no boot buscava
+    o servidor incondicionalmente e trazia o placar antigo de volta (ex: o placar do jogo 1
+    reaparecendo depois de reabrir o app). Corrigido com uma marca **persistida** em localStorage
+    (`SYNC_PENDENTE_KEY`, setada em `save()` sempre que agenda um envio, limpa só quando
+    `enviarTorneioAgora` confirma sucesso): enquanto ela existir, `refreshTorneioAtual` (usado
+    tanto no boot quanto no polling) nunca busca do servidor — só tenta reenviar
+    (`flushSyncTorneio()`) até a rede voltar e o servidor realmente confirmar. **Qualquer novo
+    consumidor de `refreshTorneioAtual` (ou de outro polling/boot que leia do servidor) precisa
+    considerar que o servidor pode estar mais desatualizado que o cliente, não só o contrário —
+    e que isso pode durar além de um único reload.**
 
 ## Convenções
 
