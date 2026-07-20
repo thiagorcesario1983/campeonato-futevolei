@@ -4158,6 +4158,18 @@ function logsFiltrados(){
   return lista;
 }
 
+// Exporta a lista já filtrada (não só a página atual) — mesmo padrão de exportarRelatorioCuponsCSV.
+function exportarLogsCSV(linhas){
+  const cab = ["Data/Hora","Função","Descrição","Ator (nome)","Ator (e-mail)","Torneio","Código do torneio","Dados"];
+  const linhasCSV = linhas.map(l=> [
+    formatarDataHoraBR(l.quando), ROTULO_TIPO_LOG[l.tipo] || l.tipo, l.descricao || "",
+    l.atorNome || "", l.atorEmail || "", l.torneioNome || "", l.torneioCodigo || "",
+    l.dados ? JSON.stringify(l.dados) : ""
+  ]);
+  const csv = [cab, ...linhasCSV].map(linha=> linha.map(v=> `"${String(v).replace(/"/g,'""')}"`).join(";")).join("\r\n");
+  baixarArquivo(`log-atividade-${hojeLocalISO()}.csv`, "﻿"+csv, "text/csv;charset=utf-8");
+}
+
 function renderLogAdminScreen(){
   if(logsList===null && !logsLoading) fetchLogsList();
 
@@ -4209,6 +4221,8 @@ function renderLogAdminScreen(){
       <input type="date" id="input-log-filtro-data-fim" value="${logsFiltroDataFim}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
     </div>
   </div>`;
+
+  html += `<button class="btn ghost" id="btn-exportar-logs" style="margin-bottom:16px;">⬇️ Exportar CSV</button>`;
 
   const lista = logsFiltrados();
   if(!lista.length){
@@ -5280,6 +5294,10 @@ function bindEvents(){
   if(btnLogPaginaProxima) btnLogPaginaProxima.addEventListener("click", ()=>{
     logsPagina++;
     render();
+  });
+  const btnExportarLogs = document.getElementById("btn-exportar-logs");
+  if(btnExportarLogs) btnExportarLogs.addEventListener("click", ()=>{
+    exportarLogsCSV(logsFiltrados());
   });
   const btnMigrar = document.getElementById("btn-migrar-local");
   if(btnMigrar) btnMigrar.addEventListener("click", migrarTorneioLocal);
