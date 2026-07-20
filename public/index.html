@@ -3697,15 +3697,15 @@ function dataLocalISO(timestamp){
   const dia = String(d.getDate()).padStart(2,"0");
   return `${d.getFullYear()}-${mes}-${dia}`;
 }
-// Mesma ideia, mas com hora:minuto junto ("YYYY-MM-DDTHH:MM") — usada pra combinar data+hora dos
-// filtros "De"/"Até" num único instante exato, comparável como string (ordena certo por ser
-// formato tipo ISO).
-function dataHoraLocalISO(timestamp){
+// Só o "HH:MM" (sem data) no fuso local — usada pro filtro de hora do log funcionar como
+// horário do dia, independente da data (ex: "das 14:30 às 14:55" vale pra qualquer dia
+// selecionado, não só um instante específico combinado com a data).
+function horaLocalISO(timestamp){
   const d = timestamp ? new Date(timestamp) : null;
   if(!d || isNaN(d.getTime())) return "";
   const hh = String(d.getHours()).padStart(2,"0");
   const mm = String(d.getMinutes()).padStart(2,"0");
-  return `${dataLocalISO(timestamp)}T${hh}:${mm}`;
+  return `${hh}:${mm}`;
 }
 
 function renderTorneiosScreen(){
@@ -4177,16 +4177,13 @@ function logsFiltrados(){
   let lista = (logsList || []).slice().sort((a,b)=> (b.quando||"").localeCompare(a.quando||""));
   if(logsFiltroTorneio!=="todos") lista = lista.filter(l=> l.torneioId===logsFiltroTorneio);
   if(logsFiltroTipo!=="todos") lista = lista.filter(l=> l.tipo===logsFiltroTipo);
-  // Combina data+hora num único instante exato pra comparar — "De" sem hora vira 00:00 daquele
-  // dia, "Até" sem hora vira 23:59 (inclui o dia inteiro, como já era antes da hora existir).
-  if(logsFiltroDataInicio || logsFiltroHoraInicio){
-    const limiteInicio = `${logsFiltroDataInicio || "0000-01-01"}T${logsFiltroHoraInicio || "00:00"}`;
-    lista = lista.filter(l=> dataHoraLocalISO(l.quando) >= limiteInicio);
-  }
-  if(logsFiltroDataFim || logsFiltroHoraFim){
-    const limiteFim = `${logsFiltroDataFim || "9999-12-31"}T${logsFiltroHoraFim || "23:59"}`;
-    lista = lista.filter(l=> dataHoraLocalISO(l.quando) <= limiteFim);
-  }
+  // Data e hora são filtros independentes (não um instante único combinado): a hora vale como
+  // horário do dia em qualquer data selecionada — por isso dá pra preencher só a hora (ex: "das
+  // 14:30 às 14:55") sem escolher nenhuma data, e funciona igual em todos os dias do log.
+  if(logsFiltroDataInicio) lista = lista.filter(l=> dataLocalISO(l.quando) >= logsFiltroDataInicio);
+  if(logsFiltroDataFim) lista = lista.filter(l=> dataLocalISO(l.quando) <= logsFiltroDataFim);
+  if(logsFiltroHoraInicio) lista = lista.filter(l=> horaLocalISO(l.quando) >= logsFiltroHoraInicio);
+  if(logsFiltroHoraFim) lista = lista.filter(l=> horaLocalISO(l.quando) <= logsFiltroHoraFim);
   return lista;
 }
 
