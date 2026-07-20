@@ -1576,16 +1576,18 @@ function somenteLeitura(){
 }
 
 // Torneio já aprovado/pago, só esperando a data de início chegar: libera a aba Duplas
-// (cadastro de duplas, sortear e reiniciar torneio moram todas nela) antes da hora, pra dar tempo
-// de organizar tudo com antecedência — as outras abas (Jogos, Tabela, Mata-mata etc.) só liberam
-// no dia. Não se aplica a recusado/bloqueado/pagamento pendente: aí o torneio inteiro continua
-// bloqueado como antes, já que nem chegou a ser validado.
+// (cadastro de duplas, sortear e reiniciar torneio moram todas nela) e a aba Resumo (só
+// informativa, sem nenhuma ação que grave dado) antes da hora, pra dar tempo de organizar tudo
+// com antecedência — as outras abas (Jogos, Tabela, Mata-mata etc.) só liberam no dia. Não se
+// aplica a recusado/bloqueado/pagamento pendente: aí o torneio inteiro continua bloqueado como
+// antes, já que nem chegou a ser validado.
+const ABAS_LIBERADAS_ANTES_DO_INICIO = ["resumo", "sorteio"];
 function torneioPreLiberado(){
   return !ehAdmin() && torneioEstaAtivo().motivo==="antes";
 }
 // Usada tanto pra desenhar a nav (esmaecer as abas ainda bloqueadas) quanto pro clique nelas.
 function abaBloqueadaAntesDoInicio(tab){
-  return tab!=="sorteio" && torneioPreLiberado();
+  return !ABAS_LIBERADAS_ANTES_DO_INICIO.includes(tab) && torneioPreLiberado();
 }
 
 // Busca a versão mais recente do torneio já aberto (usado ao carregar/recarregar a página,
@@ -3370,10 +3372,11 @@ function render(){
     return;
   }
 
-  // Antes do início, só a aba Duplas (cadastro + sortear + reiniciar torneio) fica disponível —
-  // não mexe em state.tab de verdade (evita sincronizar essa troca "forçada" com o servidor),
-  // só decide o que renderizar agora.
-  const tabAtual = preLiberado ? "sorteio" : state.tab;
+  // Antes do início, só Resumo e Duplas (cadastro + sortear + reiniciar torneio) ficam
+  // disponíveis — se a aba atual já é uma delas mantém, senão cai em Duplas. Não mexe em
+  // state.tab de verdade (evita sincronizar essa troca "forçada" com o servidor), só decide o
+  // que renderizar agora.
+  const tabAtual = preLiberado ? (ABAS_LIBERADAS_ANTES_DO_INICIO.includes(state.tab) ? state.tab : "sorteio") : state.tab;
 
   document.querySelector(".app").classList.toggle("somente-leitura", somenteLeitura());
 
@@ -5750,7 +5753,7 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
   document.querySelectorAll("#nav-torneio button").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       if(abaBloqueadaAntesDoInicio(btn.dataset.tab)){
-        showToast(`Essa aba libera em ${formatarDataBR(state.dataInicio)} — por enquanto só Duplas.`);
+        showToast(`Essa aba libera em ${formatarDataBR(state.dataInicio)} — por enquanto só Resumo e Duplas.`);
         return;
       }
       state.tab = btn.dataset.tab;
