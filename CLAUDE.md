@@ -254,6 +254,21 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     redirecionamento). Isso não é algo que o código resolve sozinho — é config do lado do Google,
     por fora do repositório. **Sempre que o domínio do site mudar (custom domain novo, por
     exemplo), ver o "Checklist ao trocar de domínio" acima antes de considerar o login quebrado.**
+13. **"Trocar torneio" durante uma sincronização em voo corrompia o torneio real.** `syncTorneio()`
+    agenda o envio (debounce 800ms) e só monta o payload/dispara o `fetch` quando o timer dispara —
+    se o usuário clicasse em "Trocar torneio" (que reseta `state` pra `defaultState()` via
+    `limparTorneioLocal()`) enquanto essa requisição ainda estava em voo, a resposta chegava depois
+    e `enviarTorneioAgora` reatava o `cloudId` do torneio real de volta nesse `state` em branco (sem
+    nome, sem pagamento) — parecia ter "criado um campeonato sem nome" e voltado a pedir Pix. Pior:
+    se uma sincronização normal acontecesse depois com esse state corrompido ainda carregado, ela
+    salvava `"Torneio sem nome"` por cima do nome real no servidor (`torneiosSave` usava
+    `body.nome || "Torneio sem nome"` sem nunca preservar o nome já existente — mesma categoria dos
+    itens 1/10, mas dessa vez no campo `nome`). Corrigido nos dois lados: `enviarTorneioAgora` só
+    aplica a resposta se `state.cloudId` ainda for o mesmo que foi enviado (`payload.id`) — se o
+    usuário já saiu do torneio nesse meio tempo, a resposta é ignorada; e `torneiosSave` agora cai
+    pra `existing.nome` (não pro genérico) quando o payload chega sem nome, como rede de segurança
+    extra. **Qualquer código que capture algo de `state` num callback assíncrono precisa considerar
+    que `state` pode ter sido reatribuído (não só mutado) enquanto isso esperava.**
 
 ## Convenções
 

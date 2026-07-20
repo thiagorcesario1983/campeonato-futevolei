@@ -338,7 +338,12 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   const meta = {
     id,
     codigo: existing ? existing.codigo : await gerarCodigoTorneio(env),
-    nome: body.nome || "Torneio sem nome",
+    // Preserva o nome já salvo se o payload chegar sem nome (torneio existente) — sem isso, um
+    // client com o state corrompido/zerado (ver enviarTorneioAgora no front, bug do "Trocar
+    // torneio" enquanto uma sincronização ainda estava em voo) sobrescrevia o nome de um torneio
+    // real por "Torneio sem nome" a cada resync. Só cai no genérico mesmo na criação (existing
+    // nulo) quando o organizador realmente não informou nome nenhum.
+    nome: body.nome || existing?.nome || "Torneio sem nome",
     status: body.status || "Criado",
     ownerEmail: existing?.ownerEmail || body.ownerEmail || null,
     ownerName: existing?.ownerName || body.ownerName || null,
