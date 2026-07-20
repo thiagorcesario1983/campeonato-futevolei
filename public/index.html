@@ -4613,6 +4613,11 @@ function renderConfiguracoes(){
     <div class="section-title">Configurações</div>
     <div class="section-sub">Personalização e integrações deste torneio.</div>
     <div class="card tg-settings">
+      <label>Nome do campeonato</label>
+      <input type="text" id="input-nome-torneio" placeholder="ex: Campeonato de Verão" value="${escapeHtml(state.cloudNome||"")}">
+      <div class="hint">Aparece no topo do app, nas mensagens automáticas e na imagem de Stories.</div>
+    </div>
+    <div class="card tg-settings">
       <label>Imagem do topo (banner deste campeonato)</label>
       ${state.headerImage ? `<img src="${state.headerImage}" style="width:100%;border-radius:10px;margin-bottom:10px;display:block;max-height:140px;object-fit:cover;">` : ``}
       <div style="display:flex;gap:8px;">
@@ -5254,6 +5259,13 @@ function bindEvents(){
     if(confirm("Isso vai apagar duplas, grupos e todos os resultados. Continuar?")){
       resetTudo(); render(); showToast("Torneio reiniciado.");
     }
+  });
+
+  const inputNomeTorneio = document.getElementById("input-nome-torneio");
+  if(inputNomeTorneio) inputNomeTorneio.addEventListener("input", e=>{
+    state.cloudNome = e.target.value;
+    save();
+    atualizarHeader();
   });
 
   const inputBot = document.getElementById("input-telegram-bot");
