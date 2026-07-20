@@ -5,7 +5,8 @@ simples, mata-mata, notificações por WhatsApp/Telegram, cobrança das diárias
 Pago), aprovação de torneios por um admin, link de árbitro convidado, modo claro/escuro, e
 geração de imagem pra Stories do Instagram.
 
-- **Site:** `https://campeonato-futevolei.thiagobaptistella.workers.dev`
+- **Site:** `https://ftv.thiagorcesario.com.br` (domínio customizado; o antigo
+  `https://campeonato-futevolei.thiagobaptistella.workers.dev` continua existindo por baixo)
 - **Hospedagem:** Cloudflare Workers (com Cloudflare Workers Builds — deploy automático a cada
   push no GitHub, sem GitHub Actions próprio)
 - **Repositório:** `thiagorcesario1983/campeonato-futevolei`
@@ -87,6 +88,23 @@ Webhook do Telegram: se o domínio do site mudar, reconfigurar via
 
 Webhook do Mercado Pago: painel Mercado Pago Developers → Webhooks → URL
 `https://SEU-DOMINIO/api/pix-webhook`, evento `payments`.
+
+### Checklist ao trocar de domínio (ou adicionar um domínio customizado)
+
+Cada um desses pontos só vale pro domínio configurado nele — trocar/adicionar um domínio (ex:
+sair do `*.workers.dev` pra um domínio próprio) não atualiza nenhum sozinho. Sem revisar os
+quatro, o app pode continuar "funcionando" (o site abre normal) mas com login, bot do Telegram
+e/ou confirmação de Pix quebrados silenciosamente:
+
+1. **Login com Google** (senão dá erro no redirect, ver item 12 abaixo): Google Cloud Console →
+   APIs e Serviços → Credenciais → o OAuth 2.0 Client ID usado no app (o mesmo salvo em
+   Configurações → Client ID do Google) →
+   - **Origens JavaScript autorizadas**: adicionar `https://SEU-DOMINIO`
+   - **URIs de redirecionamento autorizados**: adicionar `https://SEU-DOMINIO/api/google-login-callback`
+2. **Webhook do Telegram**: reconfigurar via `setWebhook` (URL acima).
+3. **Webhook do Mercado Pago**: trocar a URL no painel (acima).
+4. Pode manter as entradas do domínio antigo nos três painéis se ele ainda vai continuar
+   acessível, ou remover se não for mais usar.
 
 ## Modelo de dados (dentro de `state`, ver `defaultState()` no index.html)
 
@@ -226,6 +244,16 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     do PWA (HTML + Service Worker), mantendo o cache padrão pra `manifest.json`/ícones (mudam
     raramente). **Se precisar mexer em cache de assets estáticos de novo, mexa em `public/_headers`
     ou em `wrangler.jsonc` (`run_worker_first`), nunca no `fetch()` do Worker.**
+12. **Login com Google usa `ux_mode:"redirect"`** (`initGoogleSignIn` em `index.html`), trocado do
+    popup padrão porque o popup travava em alguns Safaris ao tentar "Usar outra conta" (ITP isola
+    o popup de um jeito que a navegação interna não avança). Nesse modo, o Google faz um POST de
+    volta pra `login_uri` (`/api/google-login-callback`, calculada como
+    `${location.origin}/api/google-login-callback` — acompanha o domínio atual sozinha, não é fixa
+    no código). Só que o Google **recusa esse POST com erro de redirect** se o domínio não estiver
+    cadastrado no OAuth Client no Google Cloud Console (Origens JavaScript autorizadas + URIs de
+    redirecionamento). Isso não é algo que o código resolve sozinho — é config do lado do Google,
+    por fora do repositório. **Sempre que o domínio do site mudar (custom domain novo, por
+    exemplo), ver o "Checklist ao trocar de domínio" acima antes de considerar o login quebrado.**
 
 ## Convenções
 
