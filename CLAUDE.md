@@ -342,6 +342,17 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     **Qualquer novo caminho que zere `state.arbitragem` no cliente (não só `resetTudo`) precisa
     lembrar de marcar `resetadoEm` também, senão esse merge do servidor volta a resgatar o que
     acabou de ser zerado.**
+18. **Link de árbitro convidado (e cupom de desconto) bloqueava/expirava até 3h antes da hora
+    certa, por causa de fuso horário.** `torneioExpirado` (usada pelo link de árbitro e pelo
+    modo somente-leitura de torneio encerrado) e `checarValidadeCupom` comparavam a data com
+    `new Date().toISOString().slice(0,10)` — mas o Worker roda em UTC, e o app é só pt-BR/Brasil
+    (UTC-3). Entre 21h e 23h59 no horário de Brasília, o UTC já tinha virado o dia seguinte, então
+    um torneio configurado até "hoje" (ou um cupom válido até "hoje") já aparecia
+    encerrado/expirado horas antes da meia-noite de verdade local. Corrigido com
+    `hojeBrasilISO()` (`Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo"})`) no lugar
+    do `toISOString()` cru. **Qualquer nova comparação de "hoje" no worker.ts precisa usar
+    `hojeBrasilISO()`, nunca `new Date().toISOString()` direto — o runtime não tem fuso local
+    nenhum, é sempre UTC.**
 
 ## Convenções
 
