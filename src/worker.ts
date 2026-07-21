@@ -278,13 +278,21 @@ function temAcessoTorneio(registro: any, email: string, env: Env): boolean {
   return Array.isArray(registro?.usuariosPermitidos) && registro.usuariosPermitidos.includes(email);
 }
 
+// Cloudflare Workers rodam em UTC — comparar "hoje" com toISOString() fazia o torneio (e o
+// cupom, ver checarValidadeCupom embaixo) "encerrar"/expirar até 3h ANTES da meia-noite de
+// verdade no horário de Brasília (UTC-3): entre 21h e 23h59 local, o UTC já tinha virado o dia
+// seguinte.
+// O app é só pt-BR/Brasil (ver CLAUDE.md), então fixamos o fuso de Brasília aqui em vez de usar
+// o "hoje" cru do runtime.
+function hojeBrasilISO(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
 // Mesma regra de expiração do front-end (torneioEstaAtivo, motivo "depois"), só que aqui serve
 // de segunda trava: mesmo que alguém contorne a UI somente-leitura, o servidor recusa qualquer
 // escrita de dado de um torneio já expirado (exceto pelo admin do app).
 function torneioExpirado(dataFim: string | null | undefined): boolean {
   if (!dataFim) return false;
-  const hojeISO = new Date().toISOString().slice(0, 10);
-  return hojeISO > dataFim;
+  return hojeBrasilISO() > dataFim;
 }
 
 // Código sequencial de 10 posições: 6 dígitos de sequência (controlada pelo app, nunca reseta)
@@ -851,9 +859,6 @@ async function saveCuponsIndex(env: Env, lista: Cupom[]): Promise<void> {
 function normalizarNomeCupom(nome: unknown): string {
   return String(nome || "").trim().toUpperCase();
 }
-function hojeISOUTC(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 // Só checa status/validade/limite de usos de um cupom já encontrado — não mexe em contador nenhum.
 function checarValidadeCupom(cupom: Cupom, hojeISO: string): { valido: boolean; motivo: string | null } {
   if (cupom.status === "bloqueado") return { valido: false, motivo: "Este cupom foi bloqueado." };
@@ -871,7 +876,7 @@ async function resolverCupom(env: Env, nomeDigitado: unknown): Promise<{ lista: 
   if (!nomeNormalizado) return { lista, cupom: null, valido: false, motivo: "Informe o nome do cupom." };
   const cupom = lista.find((c) => c.nomeNormalizado === nomeNormalizado) || null;
   if (!cupom) return { lista, cupom: null, valido: false, motivo: "Cupom não encontrado." };
-  const { valido, motivo } = checarValidadeCupom(cupom, hojeISOUTC());
+  const { valido, motivo } = checarValidadeCupom(cupom, hojeBrasilISO());
   return { lista, cupom, valido, motivo };
 }
 
