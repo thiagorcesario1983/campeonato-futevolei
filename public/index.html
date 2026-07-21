@@ -1001,7 +1001,34 @@ function saveTorneioLocalFallback(payload){
   return meta;
 }
 
+// Anota .a/.b (nomes das duplas) nos jogos do mata-mata/3º lugar antes de enviar pro servidor.
+// state.bracket nunca guarda nome nos próprios objetos — só o cliente resolve dinamicamente quem
+// joga cada confronto (bracketTeamsForRound/gruposClassificadosFinal), já que isso depende de
+// standings e de uma eventual decisão de empate técnico ainda podendo mudar. Sem isso, o worker
+// não tem como saber quem jogou ao gerar o log de atividade (registrarLogs em torneiosSave),
+// e "Jogo finalizado: ? 18 x 14 ?" saía com "?" no lugar dos nomes. Nada no cliente lê .a/.b
+// direto do objeto do bracket (sempre recebe os nomes já resolvidos como parâmetro à parte),
+// então anotar aqui é só um espelho pro servidor, sem risco de conflitar com nada.
+function anotarNomesBracket(){
+  if(!state.bracket || !state.bracket.length) return;
+  const rounds = totalRoundsBracket();
+  for(let r=0; r<rounds; r++){
+    const teams = bracketTeamsForRound(r);
+    (state.bracket[r]||[]).forEach((m,i)=>{
+      const [a,b] = teams[i] || [null,null];
+      m.a = a || null;
+      m.b = b || null;
+    });
+  }
+  if(state.terceiroLugar && state.terceiro){
+    const [la,lb] = semifinalLosers();
+    state.terceiro.a = la || null;
+    state.terceiro.b = lb || null;
+  }
+}
+
 function montarPayloadTorneio(){
+  anotarNomesBracket();
   return {
     id: state.cloudId,
     nome: state.cloudNome || "Torneio sem nome",

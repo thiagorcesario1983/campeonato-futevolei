@@ -353,6 +353,19 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     do `toISOString()` cru. **Qualquer nova comparação de "hoje" no worker.ts precisa usar
     `hojeBrasilISO()`, nunca `new Date().toISOString()` direto — o runtime não tem fuso local
     nenhum, é sempre UTC.**
+19. **Log de atividade registrava "Jogo finalizado: ? 18 x 14 ?" pros jogos do mata-mata/3º
+    lugar — "?" no lugar do nome das duplas.** `registrarLogs` (dentro de `torneiosSave`, no
+    worker) monta a descrição direto de `m.a`/`m.b` do objeto do jogo recém-finalizado. Isso
+    funciona pra grupos/eliminação (`state.groupMatches`/`state.elimRodadas[].matches` sempre têm
+    `.a`/`.b` gravados desde o sorteio), mas os jogos de `state.bracket` (mata-mata) **nunca**
+    guardam nome no próprio objeto — quem joga cada confronto é resolvido dinamicamente só no
+    cliente (`bracketTeamsForRound`/`gruposClassificadosFinal`), já que depende de standings e de
+    uma eventual decisão de empate técnico (ver item 15) ainda podendo mudar. Sem `.a`/`.b`, o
+    worker caía no fallback `m.a || "?"`. Corrigido anotando `.a`/`.b` nos objetos de
+    `state.bracket`/`state.terceiro` no cliente (`anotarNomesBracket()`, chamada em
+    `montarPayloadTorneio()` antes de todo envio) — só um espelho pro log conseguir mostrar o
+    nome; nada no cliente lê esses campos de volta (sempre recebe os nomes já resolvidos como
+    parâmetro à parte), então não há risco de conflito com a lógica dinâmica existente.
 
 ## Convenções
 
