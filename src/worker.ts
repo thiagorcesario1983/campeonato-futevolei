@@ -2214,6 +2214,14 @@ export default {
       return new Response("Not found", { status: 404 });
     }
 
+    // "www.supremoftv.com.br" é o domínio institucional (portfólio/benefícios) —
+    // serve a landing page em vez do app operacional, que continua em ftv.supremoftv.com.br.
+    if (url.hostname === "www.supremoftv.com.br" && (path === "/" || path === "/index.html")) {
+      const institucionalUrl = new URL(request.url);
+      institucionalUrl.pathname = "/institucional.html";
+      return env.ASSETS.fetch(new Request(institucionalUrl.toString(), request));
+    }
+
     return env.ASSETS.fetch(request);
   }
 };
