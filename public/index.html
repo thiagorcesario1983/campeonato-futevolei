@@ -2990,6 +2990,77 @@ async function compartilharLinkApito(matchId){
   }
 }
 
+/* ---------- Inscrição pública de duplas ---------- */
+async function gerarLinkInscricao(){
+  if(!state.cloudId){ showToast("Salve o torneio na nuvem antes de gerar o link de inscrição."); return; }
+  showLoading("Gerando link...");
+  try{
+    const res = await fetch("/api/inscricao-link", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, email: auth.email })
+    });
+    const data = await res.json();
+    if(!res.ok){ showToast(data.error || "Não foi possível gerar o link."); return; }
+    state.inscricaoLink = { token: data.token, ativo: data.ativo, vagas: data.vagas };
+    save(); render();
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível gerar o link.");
+  }finally{
+    hideLoading();
+  }
+}
+async function atualizarLinkInscricao(patch){
+  if(!state.cloudId || !state.inscricaoLink) return;
+  try{
+    const res = await fetch("/api/inscricao-link", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: state.cloudId, email: auth.email, ...patch })
+    });
+    const data = await res.json();
+    if(!res.ok){ showToast(data.error || "Não foi possível atualizar o link."); return; }
+    state.inscricaoLink = { token: data.token, ativo: data.ativo, vagas: data.vagas };
+    save(); render();
+  }catch(e){
+    showToast("Sem conexão com o servidor — não foi possível atualizar o link.");
+  }
+}
+function urlInscricao(){
+  if(!state.inscricaoLink || !state.cloudId) return "";
+  const params = new URLSearchParams({ inscrever:"1", torneio: state.cloudId, token: state.inscricaoLink.token });
+  return `${location.origin}${location.pathname}?${params.toString()}`;
+}
+async function compartilharLinkInscricao(){
+  const url = urlInscricao();
+  if(!url) return;
+  if(navigator.share){
+    try{ await navigator.share({ title:"Inscrição de dupla", url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
+  }
+  try{
+    await navigator.clipboard.writeText(url);
+    showToast("Link copiado! Envie para as duplas se inscreverem.");
+  }catch(e){
+    prompt("Copie o link abaixo:", url);
+  }
+}
+function acharDuplaPorId(id){ return state.duplas.find(d=>d.id===id); }
+function aprovarDupla(id){
+  const d = acharDuplaPorId(id);
+  if(!d) return;
+  d.status = "ativa";
+  d.atualizadoEm = Date.now();
+  save(); render();
+  showToast(`"${d.nome}" aprovada.`);
+}
+function bloquearDupla(id){
+  const d = acharDuplaPorId(id);
+  if(!d) return;
+  if(!confirm(`Bloquear "${d.nome}"? Ela sai do sorteio até ser aprovada de novo.`)) return;
+  d.status = "bloqueada";
+  d.atualizadoEm = Date.now();
+  save(); render();
+  showToast(`"${d.nome}" bloqueada.`);
+}
+
 
 let refTickInterval = null;
 function stopRefTick(){
@@ -4718,10 +4789,44 @@ function renderContatoBlock(i, slot, tel, baseMsg, trackKey){
   </div>`;
 }
 
+function badgeStatusDupla(status){
+  if(status==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente pagamento</span>`;
+  if(status==="bloqueada") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">🚫 Bloqueada</span>`;
+  return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativa</span>`;
+}
+
+function renderCardInscricaoLink(){
+  let html = `<div class="card">
+    <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Link de inscrição</label>`;
+  if(state.drawn){
+    html += `<div class="hint">O sorteio já foi feito — as inscrições estão encerradas.</div>`;
+  } else if(!state.cloudId){
+    html += `<div class="hint">Salve o torneio na nuvem pra poder gerar o link de inscrição.</div>`;
+  } else if(!state.inscricaoLink){
+    const valorOk = typeof state.valorInscricao === "number" && state.valorInscricao > 0;
+    html += `<div class="hint" style="margin-bottom:10px;">Gere um link público pra duplas se inscreverem sozinhas e pagarem a inscrição via Pix.${valorOk?"":" Configure o valor da inscrição na aba Configurações antes."}</div>
+      <button class="btn secondary" id="btn-gerar-link-inscricao" ${valorOk?"":'disabled style="opacity:.5;"'}>🔗 Gerar link de inscrição</button>`;
+  } else {
+    const ocupadas = state.duplas.filter(d=>d.status==="ativa"||d.status==="pendente").length;
+    const vagasTxt = typeof state.inscricaoLink.vagas === "number" ? `${ocupadas} / ${state.inscricaoLink.vagas} vagas` : `${ocupadas} inscrita(s) · sem limite de vagas`;
+    html += `<div class="hint" style="margin-bottom:8px;">${vagasTxt}</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button class="btn secondary" id="btn-compartilhar-link-inscricao" style="flex:1;">🔗 Copiar link</button>
+        <button class="btn secondary" id="btn-toggle-link-inscricao" style="flex:1;${state.inscricaoLink.ativo?"":"border-color:var(--coral);color:var(--coral);"}">${state.inscricaoLink.ativo?"⏸️ Fechar inscrições":"▶️ Reabrir inscrições"}</button>
+      </div>
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Limite de vagas (em branco = sem limite)</label>
+      <input type="number" min="1" step="1" id="input-vagas-inscricao" placeholder="ex: 16" value="${state.inscricaoLink.vagas ?? ""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">`;
+  }
+  html += `</div>`;
+  return html;
+}
+
 function renderSorteio(){
   let html = `
     <div class="section-title">Duplas</div>
     <div class="section-sub">Adicione as duplas conforme a necessidade. Preencha o nome e, se quiser, até 2 telefones por dupla (para enviar os jogos via WhatsApp e/ou Telegram depois do sorteio).</div>`;
+
+  html += renderCardInscricaoLink();
 
   if(!state.drawn){
     html += `<div class="card">
@@ -4757,12 +4862,28 @@ function renderSorteio(){
   }
 
   state.duplas.forEach((d,i)=>{
+    const statusReal = d.status || "ativa";
+    const ehInscricao = d.origem==="inscricao";
+    // Duplas vindas do link público nunca podem ser removidas por aqui (só Bloquear) — sem
+    // isso, o servidor não teria como distinguir "cliente ainda não viu essa inscrição" de
+    // "organizador removeu de propósito" no merge defensivo de torneiosSave.
+    const podeRemover = !state.drawn && !ehInscricao;
     html += `<div class="dupla-card">
       <div class="top-row">
         <span class="num">${String(i+1).padStart(2,"0")}</span>
         <input type="text" data-dupla="${i}" data-field="nome" placeholder="Nome da dupla" value="${escapeHtml(d.nome)}">
-        ${state.drawn?"":`<button class="ref-mini-btn ghost" data-remover-dupla="${i}" style="flex:0 0 auto;width:auto;padding:8px 10px;">🗑️</button>`}
+        ${podeRemover?`<button class="ref-mini-btn ghost" data-remover-dupla="${i}" style="flex:0 0 auto;width:auto;padding:8px 10px;">🗑️</button>`:""}
       </div>
+      ${ehInscricao ? `
+      <div style="margin:4px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        ${badgeStatusDupla(statusReal)}
+        ${statusReal!=="ativa"?`<button class="ref-mini-btn" data-aprovar-dupla="${d.id}" style="width:auto;padding:6px 10px;">✅ Aprovar</button>`:""}
+        ${statusReal!=="bloqueada"?`<button class="ref-mini-btn ghost" data-bloquear-dupla="${d.id}" style="width:auto;padding:6px 10px;border-color:var(--coral);color:var(--coral);">🚫 Bloquear</button>`:""}
+      </div>
+      <div class="hint" style="font-size:11.5px;margin-bottom:8px;line-height:1.5;">
+        ${escapeHtml(d.jogador1?.nomeCompleto||"")} · ${escapeHtml(d.jogador1?.email||"")}<br>
+        ${escapeHtml(d.jogador2?.nomeCompleto||"")} · ${escapeHtml(d.jogador2?.email||"")}
+      </div>` : ""}
       <div class="tel-row">
         <input type="tel" data-dupla="${i}" data-field="tel1" placeholder="Tel. jogador 1 (WhatsApp)" value="${escapeHtml(d.tel1||"")}">
         <input type="tel" data-dupla="${i}" data-field="tel2" placeholder="Tel. jogador 2 (WhatsApp)" value="${escapeHtml(d.tel2||"")}">
@@ -5900,6 +6021,25 @@ function bindEvents(){
       save(); render();
     });
   });
+  const btnGerarLinkInscricao = document.getElementById("btn-gerar-link-inscricao");
+  if(btnGerarLinkInscricao) btnGerarLinkInscricao.addEventListener("click", gerarLinkInscricao);
+  const btnCompartilharLinkInscricao = document.getElementById("btn-compartilhar-link-inscricao");
+  if(btnCompartilharLinkInscricao) btnCompartilharLinkInscricao.addEventListener("click", compartilharLinkInscricao);
+  const btnToggleLinkInscricao = document.getElementById("btn-toggle-link-inscricao");
+  if(btnToggleLinkInscricao) btnToggleLinkInscricao.addEventListener("click", ()=>{
+    atualizarLinkInscricao({ ativo: !state.inscricaoLink.ativo });
+  });
+  const inputVagasInscricao = document.getElementById("input-vagas-inscricao");
+  if(inputVagasInscricao) inputVagasInscricao.addEventListener("change", e=>{
+    const v = e.target.value;
+    atualizarLinkInscricao({ vagas: v==="" ? null : Number(v) });
+  });
+  main.querySelectorAll("[data-aprovar-dupla]").forEach(btn=>{
+    btn.addEventListener("click", ()=> aprovarDupla(btn.dataset.aprovarDupla));
+  });
+  main.querySelectorAll("[data-bloquear-dupla]").forEach(btn=>{
+    btn.addEventListener("click", ()=> bloquearDupla(btn.dataset.bloquearDupla));
+  });
   const inputNumGrupos = document.getElementById("input-num-grupos");
   if(inputNumGrupos) inputNumGrupos.addEventListener("change", e=>{
     const v = Number(e.target.value);
@@ -6551,6 +6691,184 @@ async function apitoPublicoAcao(action, payload){
   }
 }
 
+/* ============================================================
+   INSCRIÇÃO PÚBLICA DE DUPLAS (link gerado na aba Duplas)
+   Mesmo padrão do apito público: página isolada, sem login, só o token do link é suficiente.
+   Quem abre só vê o formulário de inscrição e a tela de Pix dessa UMA dupla — nunca o resto
+   do torneio (outras duplas, telefones etc).
+============================================================ */
+let __inscricaoPublicaCtx = null;
+let __inscricaoPublicaInfo = null;
+let __inscricaoPublicaNomeDuplaEditado = false;
+let __inscricaoPublicaResultado = null;
+let __inscricaoPublicaPollTimer = null;
+
+function primeiroNome(nomeCompleto){
+  return (nomeCompleto||"").trim().split(/\s+/)[0] || "";
+}
+
+async function iniciarInscricaoPublica(ctx){
+  __inscricaoPublicaCtx = ctx;
+  document.body.innerHTML = `<div class="ref-screen"><div class="ref-top"><div class="ref-label">Carregando...</div></div></div>`;
+  try{
+    const res = await fetch(`/api/inscricao?torneio=${encodeURIComponent(ctx.torneio)}&token=${encodeURIComponent(ctx.token)}`, { cache:"no-store" });
+    const data = await res.json();
+    if(!res.ok){
+      document.body.innerHTML = `<div class="ref-screen"><div class="ref-top"><div class="ref-label">⚠️ ${escapeHtml(data.error||"Link inválido ou expirado.")}</div></div></div>`;
+      return;
+    }
+    __inscricaoPublicaInfo = data;
+    renderInscricaoPublicaForm();
+  }catch(e){
+    document.body.innerHTML = `<div class="ref-screen"><div class="ref-top"><div class="ref-label">⚠️ Sem conexão. Recarregue a página pra tentar de novo.</div></div></div>`;
+  }
+}
+
+function renderInscricaoPublicaForm(erro){
+  const info = __inscricaoPublicaInfo;
+  const valorTxt = typeof info.valorInscricao === "number" ? `R$ ${info.valorInscricao.toFixed(2).replace(".", ",")}` : "—";
+  document.body.innerHTML = `<div class="ref-screen">
+    <div class="ref-top"><div class="ref-label">${escapeHtml(info.nomeTorneio||"Inscrição")}</div></div>
+    <div style="padding:16px 20px 40px;max-width:420px;margin:0 auto;">
+      <div class="hint" style="margin-bottom:14px;">Inscrição da dupla · ${valorTxt} via Pix${info.vagasRestantes!=null ? ` · ${info.vagasRestantes} vaga(s) restante(s)` : ""}</div>
+      ${erro ? `<div class="card" style="border-color:var(--coral);color:var(--coral);font-size:13px;margin-bottom:14px;">⚠️ ${escapeHtml(erro)}</div>` : ""}
+
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 1 — nome completo</label>
+      <input type="text" id="input-j1-nome" placeholder="Nome completo" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 1 — telefone</label>
+      <input type="tel" id="input-j1-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 1 — e-mail</label>
+      <input type="email" id="input-j1-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:18px;">
+
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 2 — nome completo</label>
+      <input type="text" id="input-j2-nome" placeholder="Nome completo" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 2 — telefone</label>
+      <input type="tel" id="input-j2-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 2 — e-mail</label>
+      <input type="email" id="input-j2-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:18px;">
+
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Nome da dupla</label>
+      <input type="text" id="input-nome-dupla" placeholder="Sugerido a partir dos nomes acima" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:18px;">
+
+      <button class="btn primary" id="btn-inscricao-enviar" style="width:100%;">Continuar pro Pix</button>
+    </div>
+  </div>`;
+
+  const sugerirNomeDupla = ()=>{
+    if(__inscricaoPublicaNomeDuplaEditado) return;
+    const n1 = primeiroNome(document.getElementById("input-j1-nome").value);
+    const n2 = primeiroNome(document.getElementById("input-j2-nome").value);
+    const campo = document.getElementById("input-nome-dupla");
+    if(n1 || n2) campo.value = [n1,n2].filter(Boolean).join(" & ");
+  };
+  document.getElementById("input-j1-nome").addEventListener("input", sugerirNomeDupla);
+  document.getElementById("input-j2-nome").addEventListener("input", sugerirNomeDupla);
+  document.getElementById("input-nome-dupla").addEventListener("input", ()=>{ __inscricaoPublicaNomeDuplaEditado = true; });
+
+  document.getElementById("btn-inscricao-enviar").addEventListener("click", enviarInscricaoPublica);
+}
+
+async function enviarInscricaoPublica(){
+  const ctx = __inscricaoPublicaCtx;
+  const jogador1 = {
+    nomeCompleto: (document.getElementById("input-j1-nome").value||"").trim(),
+    tel: (document.getElementById("input-j1-tel").value||"").trim(),
+    email: (document.getElementById("input-j1-email").value||"").trim()
+  };
+  const jogador2 = {
+    nomeCompleto: (document.getElementById("input-j2-nome").value||"").trim(),
+    tel: (document.getElementById("input-j2-tel").value||"").trim(),
+    email: (document.getElementById("input-j2-email").value||"").trim()
+  };
+  const nomeDupla = (document.getElementById("input-nome-dupla").value||"").trim();
+
+  if(!nomeDupla || !jogador1.nomeCompleto || !jogador1.tel || !jogador1.email || !jogador2.nomeCompleto || !jogador2.tel || !jogador2.email){
+    renderInscricaoPublicaForm("Preencha todos os campos dos 2 jogadores e o nome da dupla.");
+    return;
+  }
+
+  const btn = document.getElementById("btn-inscricao-enviar");
+  if(btn){ btn.disabled = true; btn.textContent = "Enviando..."; }
+  try{
+    const res = await fetch("/api/inscricao", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ torneio: ctx.torneio, token: ctx.token, nomeDupla, jogador1, jogador2, conexao: detectarTipoConexao() })
+    });
+    const data = await res.json();
+    if(!res.ok){
+      renderInscricaoPublicaForm(data.error || "Não foi possível concluir a inscrição.");
+      return;
+    }
+    __inscricaoPublicaResultado = { duplaId: data.duplaId, inscricao: data.inscricao, status: "pendente" };
+    renderInscricaoPublicaPix();
+  }catch(e){
+    renderInscricaoPublicaForm("Sem conexão — tente de novo.");
+  }
+}
+
+function renderInscricaoPublicaPix(){
+  const r = __inscricaoPublicaResultado;
+  const pg = r.inscricao;
+  document.body.innerHTML = `<div class="ref-screen">
+    <div class="ref-top"><div class="ref-label">Pagamento da inscrição</div></div>
+    <div style="padding:16px 20px 40px;max-width:420px;margin:0 auto;text-align:center;">
+      <div style="font-weight:700;font-size:16px;color:var(--heading,#205527);margin-bottom:10px;">R$ ${pg.valor.toFixed(2).replace(".", ",")}</div>
+      ${pg.qrCodeBase64 ? `<img src="data:image/png;base64,${pg.qrCodeBase64}" alt="QR Code Pix" style="width:220px;height:220px;margin:0 auto 14px;display:block;border-radius:10px;border:1px solid #ddd;">` : ""}
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;text-align:left;">Pix copia e cola</label>
+      <textarea readonly style="width:100%;min-height:70px;font-family:'DM Mono',monospace;font-size:11px;padding:8px;border-radius:8px;border:1px solid #ddd;margin-bottom:10px;" onclick="this.select()">${escapeHtml(pg.copiaCola)}</textarea>
+      <button class="btn secondary" id="btn-inscricao-copiar" style="width:100%;margin-bottom:8px;">Copiar código</button>
+      <button class="btn ghost" id="btn-inscricao-verificar" style="width:100%;">Já paguei, verificar</button>
+      <div id="inscricao-status-msg" style="font-size:12px;color:var(--muted,#666);margin-top:12px;">Assim que o pagamento cair, sua dupla já fica confirmada automaticamente.</div>
+    </div>
+  </div>`;
+
+  document.getElementById("btn-inscricao-copiar").addEventListener("click", async ()=>{
+    try{ await navigator.clipboard.writeText(pg.copiaCola); showToastPublico("Código copiado!"); }catch(e){}
+  });
+  document.getElementById("btn-inscricao-verificar").addEventListener("click", ()=> verificarInscricaoPublica(false));
+
+  clearInterval(__inscricaoPublicaPollTimer);
+  __inscricaoPublicaPollTimer = setInterval(()=> verificarInscricaoPublica(true), 20000);
+}
+
+// Tela pública não tem o overlay de toast do app principal (document.body foi substituído) —
+// versão mínima só pra dar feedback rápido, escrita direto na mensagem de status embaixo do Pix.
+function showToastPublico(msg){
+  const el = document.getElementById("inscricao-status-msg");
+  if(el) el.textContent = msg;
+}
+
+async function verificarInscricaoPublica(silencioso){
+  const ctx = __inscricaoPublicaCtx;
+  const r = __inscricaoPublicaResultado;
+  try{
+    const res = await fetch("/api/inscricao-verificar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ torneio: ctx.torneio, token: ctx.token, duplaId: r.duplaId })
+    });
+    const data = await res.json();
+    if(!res.ok){ if(!silencioso) showToastPublico(data.error||"Não foi possível verificar agora."); return; }
+    if(data.status==="ativa"){
+      clearInterval(__inscricaoPublicaPollTimer);
+      renderInscricaoPublicaConfirmada();
+    } else if(!silencioso){
+      showToastPublico("Ainda não identificamos o pagamento — tente de novo em alguns instantes.");
+    }
+  }catch(e){
+    if(!silencioso) showToastPublico("Sem conexão — tente de novo.");
+  }
+}
+
+function renderInscricaoPublicaConfirmada(){
+  document.body.innerHTML = `<div class="ref-screen">
+    <div class="ref-top"><div class="ref-label">Inscrição confirmada!</div></div>
+    <div style="padding:30px 20px;text-align:center;">
+      <div style="font-size:40px;margin-bottom:14px;">✅</div>
+      <div style="font-size:15px;line-height:1.5;">Pagamento confirmado — sua dupla já está inscrita no campeonato. Boa sorte! 🏐</div>
+    </div>
+  </div>`;
+}
+
 
 const __urlParams = new URLSearchParams(location.search);
 const __tvMatchId = __urlParams.get("placarTV");
@@ -6559,6 +6877,7 @@ const __tvTorneioId = __urlParams.get("torneio");
 const __apitarFlag = __urlParams.get("apitar");
 const __apitarMatch = __urlParams.get("match");
 const __apitarToken = __urlParams.get("token");
+const __inscreverFlag = __urlParams.get("inscrever");
 
 if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
   iniciarApitoPublico({
@@ -6569,6 +6888,8 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
     b: __urlParams.get("b") || "",
     label: __urlParams.get("label") || ""
   });
+} else if(__inscreverFlag && __tvTorneioId && __apitarToken){
+  iniciarInscricaoPublica({ torneio: __tvTorneioId, token: __apitarToken });
 } else if(__tvMatchId && __tvTorneioId){
   iniciarPlacarTV(__tvTorneioId, __tvMatchId);
 } else if(__tvMultiIds && __tvTorneioId){

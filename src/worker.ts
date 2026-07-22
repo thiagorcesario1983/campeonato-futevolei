@@ -470,6 +470,38 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     }
   }
 
+  // Duplas vindas do link público de inscrição podem ter sido criadas (ou pagas) depois da
+  // última vez que ESTE cliente carregou o torneio — sem merge, um save normal do organizador
+  // (ex: só corrigindo o nome de outra dupla) sobrescreveria state.duplas inteiro e apagaria
+  // silenciosamente uma inscrição que acabou de chegar. Diferente da arbitragem, aqui não tem
+  // ambiguidade "cliente não viu" vs "cliente deletou de propósito": uma dupla com
+  // origem "inscricao" nunca é removida por nenhum caminho do app (só o status muda, via
+  // Aprovar/Bloquear no front) — então sempre é seguro resgatá-la de volta se estiver ausente
+  // no payload. Duplas "manual" continuam sem merge (escritor único, como sempre foi).
+  if (existingFull?.state?.duplas && body.state) {
+    if (!Array.isArray(body.state.duplas)) body.state.duplas = [];
+    const duplasClientePorId = new Map(body.state.duplas.map((d: any) => [d?.id, d]));
+    for (const duplaServidor of existingFull.state.duplas) {
+      if (!duplaServidor?.id) continue;
+      const duplaCliente: any = duplasClientePorId.get(duplaServidor.id);
+      if (!duplaCliente) {
+        if (duplaServidor.origem === "inscricao") body.state.duplas.push(duplaServidor);
+        continue;
+      }
+      // Presente nos dois lados: quem tem "atualizadoEm" mais recente vence, só nos campos que
+      // podem ter um segundo escritor (status/inscricao — mutados pelo webhook/verificação de
+      // pagamento). Nome/telefones/dados dos jogadores são editados só pelo organizador, sem
+      // concorrência, então sempre vêm do payload do cliente.
+      const atualizadoServidor = duplaServidor.atualizadoEm || 0;
+      const atualizadoCliente = duplaCliente.atualizadoEm || 0;
+      if (atualizadoServidor > atualizadoCliente) {
+        duplaCliente.status = duplaServidor.status;
+        duplaCliente.inscricao = duplaServidor.inscricao;
+        duplaCliente.atualizadoEm = duplaServidor.atualizadoEm;
+      }
+    }
+  }
+
   // Detecta eventos relevantes pro log de atividade comparando o estado antes/depois — cobre
   // qualquer caminho que leve a essas mudanças (apitar, digitar placar direto, W.O.) sem precisar
   // duplicar um hook em cada um. Só grava de fato depois que o save principal confirmar sucesso.
@@ -1517,6 +1549,54 @@ function calcularDias(dataInicio?: string | null, dataFim?: string | null): numb
   return Math.round((fim - ini) / 86400000) + 1;
 }
 
+// Núcleo puro de chamada à API do Mercado Pago — só cria a cobrança Pix e devolve o
+// resultado, sem saber nada de torneio/dupla/KV. Reaproveitado tanto pelo Pix da diária do
+// torneio (gerarCobrancaPix) quanto pelo Pix da inscrição de uma dupla (inscricaoCriar), pra
+// não duplicar o tratamento de erro do Mercado Pago duas vezes.
+async function criarCobrancaMP(env: Env, params: {
+  valor: number;
+  descricao: string;
+  externalReference: string;
+  notificationUrl: string;
+  payerEmail?: string | null;
+  idempotencyKey: string;
+}): Promise<
+  | { ok: true; paymentId: string | number; copiaCola: string; qrCodeBase64: string | null }
+  | { ok: false; error: string; status: number }
+> {
+  if (!env.MP_ACCESS_TOKEN) {
+    return { ok: false, error: "Pagamento via Pix não configurado neste servidor (MP_ACCESS_TOKEN ausente)", status: 500 };
+  }
+  let mpResp: any;
+  try {
+    const res = await fetch("https://api.mercadopago.com/v1/payments", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${env.MP_ACCESS_TOKEN}`,
+        "X-Idempotency-Key": params.idempotencyKey
+      },
+      body: JSON.stringify({
+        transaction_amount: params.valor,
+        description: params.descricao,
+        payment_method_id: "pix",
+        payer: { email: params.payerEmail || undefined },
+        external_reference: params.externalReference,
+        notification_url: params.notificationUrl
+      })
+    });
+    mpResp = await res.json();
+    if (!res.ok) return { ok: false, error: "Falha ao criar cobrança no Mercado Pago", status: 502 };
+  } catch {
+    return { ok: false, error: "Falha de rede ao falar com o Mercado Pago", status: 502 };
+  }
+  const txData = mpResp?.point_of_interaction?.transaction_data;
+  if (!txData?.qr_code) {
+    return { ok: false, error: "Mercado Pago não retornou o código Pix", status: 502 };
+  }
+  return { ok: true, paymentId: mpResp.id, copiaCola: txData.qr_code, qrCodeBase64: txData.qr_code_base64 || null };
+}
+
 // Núcleo da geração de cobrança Pix — reaproveitado pela geração automática na criação
 // (torneiosSave), pela geração automática na aprovação como rede de segurança caso a primeira
 // tentativa tenha falhado (torneiosAprovar), e pela rota manual (pixCriar, botão "Gerar Pix" no
@@ -1573,43 +1653,24 @@ async function gerarCobrancaPix(env: Env, id: string, origin: string, solicitant
 
   const notificationUrl = `${origin}/api/pix-webhook`;
 
-  let mpResp: any;
-  try {
-    const res = await fetch("https://api.mercadopago.com/v1/payments", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${env.MP_ACCESS_TOKEN}`,
-        // Evita cobrar duas vezes se o app reenviar a mesma requisição (ex: conexão instável)
-        "X-Idempotency-Key": `torneio-${id}-${dados.pagamento?.paymentId || "novo"}-${dias}-${valor}`
-      },
-      body: JSON.stringify({
-        transaction_amount: valor,
-        description: `Diárias de uso — campeonato ${dados.codigo} (${dias} diária${dias > 1 ? "s" : ""})`,
-        payment_method_id: "pix",
-        payer: { email: dados.ownerEmail || solicitanteEmail },
-        external_reference: id,
-        notification_url: notificationUrl
-      })
-    });
-    mpResp = await res.json();
-    if (!res.ok) return { ok: false, error: "Falha ao criar cobrança no Mercado Pago", status: 502 };
-  } catch (e: any) {
-    return { ok: false, error: "Falha de rede ao falar com o Mercado Pago", status: 502 };
-  }
-
-  const txData = mpResp?.point_of_interaction?.transaction_data;
-  if (!txData?.qr_code) {
-    return { ok: false, error: "Mercado Pago não retornou o código Pix", status: 502 };
-  }
+  const cobranca = await criarCobrancaMP(env, {
+    valor,
+    descricao: `Diárias de uso — campeonato ${dados.codigo} (${dias} diária${dias > 1 ? "s" : ""})`,
+    externalReference: id,
+    notificationUrl,
+    payerEmail: dados.ownerEmail || solicitanteEmail,
+    // Evita cobrar duas vezes se o app reenviar a mesma requisição (ex: conexão instável)
+    idempotencyKey: `torneio-${id}-${dados.pagamento?.paymentId || "novo"}-${dias}-${valor}`
+  });
+  if (!cobranca.ok) return cobranca;
 
   dados.pagamento = {
     status: "pendente",
     valor,
     dias,
-    paymentId: mpResp.id,
-    copiaCola: txData.qr_code,
-    qrCodeBase64: txData.qr_code_base64 || null,
+    paymentId: cobranca.paymentId,
+    copiaCola: cobranca.copiaCola,
+    qrCodeBase64: cobranca.qrCodeBase64,
     criadoEm: new Date().toISOString(),
     pagoEm: null
   };
@@ -1765,6 +1826,329 @@ async function buscarPagamentoPorReferencia(env: Env, torneioId: string): Promis
   }
 }
 
+/* ============================================================
+   INSCRIÇÃO PÚBLICA DE DUPLAS (com Pix por dupla)
+   Mesmo padrão arquitetural do link de árbitro convidado (apitoCriarLink/apitoGet/apitoPost):
+   uma rota autenticada gera/reconfigura um token guardado dentro do torneio
+   (state.inscricaoLink), e rotas públicas validam esse token a cada chamada — nunca confiam
+   no que o formulário manda sem reconferir no servidor.
+
+   O Mercado Pago só aceita até 64 caracteres alfanuméricos+hífen em external_reference, então
+   não dá pra compor "torneioId:duplaId" nesse campo (estouraria o limite e usa ':', fora do
+   charset aceito). Por isso cada dupla usa o PRÓPRIO id (um UUID, já único globalmente) como
+   external_reference, e um índice reverso `inscricao-dupla:{duplaId} -> torneioId` (mesmo
+   padrão já usado hoje pra `telegram:{codigo} -> chatId`) resolve o torneio a partir do
+   pagamento — ver uso em pixWebhook.
+============================================================ */
+
+// Autenticado (dono/admin, mesmo padrão de apitoCriarLink): gera (ou reconfigura) o link
+// público de inscrição de duplas pra este torneio.
+async function inscricaoCriarLink(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const torneioId = body.id;
+  const solicitanteEmail = normEmail(body.email);
+  if (!torneioId) return json({ error: "id obrigatório" }, 400);
+  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  if (!temAcessoTorneio(dados, solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para gerar o link deste torneio" }, 403);
+  }
+
+  if (!dados.state.inscricaoLink) {
+    dados.state.inscricaoLink = { token: crypto.randomUUID(), ativo: true, vagas: null };
+  }
+  if (typeof body.ativo === "boolean") dados.state.inscricaoLink.ativo = body.ativo;
+  if (body.vagas !== undefined) {
+    const v = Number(body.vagas);
+    dados.state.inscricaoLink.vagas = Number.isFinite(v) && v > 0 ? Math.floor(v) : null;
+  }
+
+  try {
+    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  return json({ ok: true, ...dados.state.inscricaoLink });
+}
+
+// Conta quantas vagas já estão ocupadas — "pendente" também ocupa vaga (senão o limite não
+// protege de verdade contra inscrições nunca pagas se acumulando além do combinado); só
+// "bloqueada" libera a vaga de volta.
+function inscricaoVagasOcupadas(duplas: any[]): number {
+  return (duplas || []).filter((d: any) => d.status === "ativa" || d.status === "pendente").length;
+}
+
+function inscricaoValidarLink(dados: any, token: string): { ok: true } | { ok: false; error: string; status: number } {
+  const link = dados.state?.inscricaoLink;
+  if (!link || link.token !== token) return { ok: false, error: "Link inválido ou expirado", status: 403 };
+  if (torneioExpirado(dados.dataFim)) return { ok: false, error: "Esse campeonato já foi encerrado.", status: 403 };
+  if (!link.ativo) return { ok: false, error: "As inscrições deste campeonato estão fechadas no momento.", status: 403 };
+  // Sem isso, uma dupla podia pagar e ficar "ativa" depois do sorteio já feito, sem nenhum jogo
+  // gerado pra ela — não existe hoje um caminho pra inserir alguém num bracket já montado.
+  if (dados.state?.drawn) return { ok: false, error: "O sorteio deste campeonato já foi feito — as inscrições estão encerradas.", status: 403 };
+  return { ok: true };
+}
+
+// Público (com token): dados mínimos pra montar a tela de inscrição — nunca a lista de duplas
+// existentes nem qualquer outro dado do torneio (mesmo princípio de privacidade do apitoGet).
+async function inscricaoInfo(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const torneioId = url.searchParams.get("torneio");
+  const token = url.searchParams.get("token");
+  if (!torneioId || !token) return json({ error: "torneio e token são obrigatórios" }, 400);
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  const validacao = inscricaoValidarLink(dados, token);
+  if (!validacao.ok) return json({ error: validacao.error }, validacao.status);
+
+  const link = dados.state.inscricaoLink;
+  const ocupadas = inscricaoVagasOcupadas(dados.state?.duplas || []);
+  const vagasRestantes = typeof link.vagas === "number" ? Math.max(0, link.vagas - ocupadas) : null;
+  if (vagasRestantes === 0) return json({ error: "As vagas deste campeonato se esgotaram." }, 403);
+
+  return json({
+    ok: true,
+    nomeTorneio: dados.nome || "",
+    valorInscricao: typeof dados.state?.valorInscricao === "number" ? dados.state.valorInscricao : null,
+    vagasRestantes
+  });
+}
+
+function inscricaoValidarJogador(j: any): j is { nomeCompleto: string; tel: string; email: string } {
+  return !!j
+    && typeof j.nomeCompleto === "string" && j.nomeCompleto.trim().length >= 3
+    && typeof j.tel === "string" && j.tel.trim().length >= 8
+    && typeof j.email === "string" && /\S+@\S+\.\S+/.test(j.email.trim());
+}
+
+// Público (com token): cria a dupla (status "pendente") e gera o Pix da inscrição. Nunca
+// reescreve o array de duplas inteiro — só faz push da nova dupla em cima do registro mais
+// recente do KV.
+async function inscricaoCriar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const torneioId = body.torneio;
+  const token = body.token;
+  const nomeDupla = typeof body.nomeDupla === "string" ? body.nomeDupla.trim() : "";
+  if (!torneioId || !token) return json({ error: "torneio e token são obrigatórios" }, 400);
+  if (!nomeDupla) return json({ error: "Informe o nome da dupla" }, 400);
+  if (!inscricaoValidarJogador(body.jogador1) || !inscricaoValidarJogador(body.jogador2)) {
+    return json({ error: "Preencha nome completo, telefone e e-mail válidos dos 2 jogadores" }, 400);
+  }
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  const validacao = inscricaoValidarLink(dados, token);
+  if (!validacao.ok) return json({ error: validacao.error }, validacao.status);
+
+  const valorInscricao = dados.state?.valorInscricao;
+  if (typeof valorInscricao !== "number" || valorInscricao <= 0) {
+    return json({ error: "O organizador ainda não configurou o valor da inscrição." }, 400);
+  }
+
+  if (!Array.isArray(dados.state.duplas)) dados.state.duplas = [];
+  const link = dados.state.inscricaoLink;
+  if (typeof link.vagas === "number" && inscricaoVagasOcupadas(dados.state.duplas) >= link.vagas) {
+    return json({ error: "As vagas deste campeonato se esgotaram." }, 403);
+  }
+
+  const duplaId = crypto.randomUUID();
+  const jogador1 = { nomeCompleto: body.jogador1.nomeCompleto.trim(), tel: body.jogador1.tel.trim(), email: body.jogador1.email.trim() };
+  const jogador2 = { nomeCompleto: body.jogador2.nomeCompleto.trim(), tel: body.jogador2.tel.trim(), email: body.jogador2.email.trim() };
+  const novaDupla = {
+    id: duplaId,
+    nome: nomeDupla,
+    tel1: jogador1.tel,
+    tel2: jogador2.tel,
+    nomeDefault: false,
+    origem: "inscricao",
+    status: "pendente",
+    jogador1, jogador2,
+    inscricao: null,
+    atualizadoEm: Date.now()
+  };
+  dados.state.duplas.push(novaDupla);
+
+  try {
+    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
+    await env.DB.put(`inscricao-dupla:${duplaId}`, torneioId);
+  } catch (e: any) {
+    return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
+  }
+
+  const origin = new URL(request.url).origin;
+  const cobranca = await criarCobrancaMP(env, {
+    valor: valorInscricao,
+    descricao: `Inscrição de dupla — campeonato ${dados.codigo} (${nomeDupla})`,
+    externalReference: duplaId,
+    notificationUrl: `${origin}/api/pix-webhook`,
+    payerEmail: jogador1.email,
+    idempotencyKey: `inscricao-${duplaId}`
+  });
+  if (!cobranca.ok) {
+    // A dupla já foi cadastrada (o organizador consegue ver e resolver manualmente) mesmo que
+    // o Pix tenha falhado agora — não tenta desfazer o cadastro, só informa o problema.
+    return json({ error: `Dupla cadastrada, mas houve um problema ao gerar o Pix: ${cobranca.error}`, duplaId }, cobranca.status);
+  }
+
+  const inscricaoResultado = {
+    valor: valorInscricao,
+    status: "pendente",
+    paymentId: cobranca.paymentId,
+    copiaCola: cobranca.copiaCola,
+    qrCodeBase64: cobranca.qrCodeBase64,
+    criadoEm: new Date().toISOString(),
+    pagoEm: null
+  };
+
+  // Escrita cirúrgica final: relê o registro (pode ter mudado durante a ida e volta com o
+  // Mercado Pago) e atualiza só essa dupla, por id — nunca o array inteiro.
+  try {
+    const raw2 = await env.DB.get(`torneio:${torneioId}`);
+    if (raw2) {
+      const dados2 = JSON.parse(raw2);
+      const idx = (dados2.state?.duplas || []).findIndex((d: any) => d.id === duplaId);
+      if (idx >= 0) {
+        dados2.state.duplas[idx].inscricao = inscricaoResultado;
+        dados2.state.duplas[idx].atualizadoEm = Date.now();
+        await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados2));
+      }
+    }
+  } catch {
+    // Se essa segunda escrita falhar, a dupla já existe com inscricao:null — o organizador
+    // ainda consegue ver que alguém tentou se inscrever e resolver manualmente.
+  }
+
+  await registrarLogs(env, [{
+    tipo: "inscricao_recebida",
+    atorEmail: null,
+    atorNome: `${jogador1.nomeCompleto} / ${jogador2.nomeCompleto}`,
+    torneioId,
+    torneioNome: dados.nome,
+    torneioCodigo: dados.codigo,
+    descricao: `Nova inscrição: "${nomeDupla}"`,
+    dados: { duplaId, nomeDupla },
+    ...extrairOrigemRequisicao(request),
+    conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
+  }]);
+
+  return json({ ok: true, duplaId, inscricao: inscricaoResultado });
+}
+
+// Mesma ideia de confirmarPagamentoAprovado, mas escopada a UMA dupla — nunca reescreve o
+// torneio inteiro nem o array de duplas, só o item por id. Ativa a dupla automaticamente
+// (status "ativa"), sem depender de um clique manual do organizador em "Aprovar".
+async function confirmarPagamentoInscricao(env: Env, torneioId: string, duplaId: string, pagamentoMP: any): Promise<{ status: string; inscricao: any } | null> {
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return null;
+  const dados = JSON.parse(raw);
+  const idx = (dados.state?.duplas || []).findIndex((d: any) => d.id === duplaId);
+  if (idx < 0) return null;
+  const dupla = dados.state.duplas[idx];
+
+  if (dupla.inscricao?.status === "pago") return { status: dupla.status, inscricao: dupla.inscricao };
+
+  dupla.inscricao = { ...(dupla.inscricao || {}), status: "pago", paymentId: pagamentoMP.id, pagoEm: new Date().toISOString() };
+  dupla.status = "ativa";
+  dupla.atualizadoEm = Date.now();
+
+  try {
+    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dados));
+  } catch {
+    return null;
+  }
+
+  await registrarLogs(env, [{
+    tipo: "inscricao_paga",
+    atorEmail: null,
+    atorNome: dupla.nome || null,
+    torneioId,
+    torneioNome: dados.nome,
+    torneioCodigo: dados.codigo,
+    descricao: `Inscrição paga e ativada: "${dupla.nome}"`,
+    dados: { duplaId, valor: dupla.inscricao.valor },
+    ip: null, pais: null, regiao: null, cidade: null, conexao: null
+  }]);
+
+  return { status: dupla.status, inscricao: dupla.inscricao };
+}
+
+// Público (com token): verificação ativa do pagamento de UMA inscrição — mesmo padrão de
+// pixVerificar, sob demanda (botão "Já paguei, verificar" na tela pública) e via polling.
+async function inscricaoVerificar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+
+  const torneioId = body.torneio;
+  const token = body.token;
+  const duplaId = body.duplaId;
+  if (!torneioId || !token || !duplaId) return json({ error: "torneio, token e duplaId são obrigatórios" }, 400);
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return json({ error: "não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  const link = dados.state?.inscricaoLink;
+  if (!link || link.token !== token) return json({ error: "Link inválido ou expirado" }, 403);
+
+  const dupla = (dados.state?.duplas || []).find((d: any) => d.id === duplaId);
+  if (!dupla) return json({ error: "Inscrição não encontrada" }, 404);
+
+  if (dupla.inscricao?.status === "pago" || dupla.inscricao?.status === "isento") {
+    return json({ ok: true, status: dupla.status, inscricao: dupla.inscricao });
+  }
+
+  if (!env.MP_ACCESS_TOKEN) {
+    return json({ error: "Pagamento via Pix não configurado neste servidor (MP_ACCESS_TOKEN ausente)" }, 500);
+  }
+
+  let pagamentoMP: any = null;
+  if (dupla.inscricao?.paymentId) {
+    try {
+      const res = await fetch(`https://api.mercadopago.com/v1/payments/${dupla.inscricao.paymentId}`, {
+        headers: { Authorization: `Bearer ${env.MP_ACCESS_TOKEN}` }
+      });
+      if (res.ok) pagamentoMP = await res.json();
+    } catch {}
+  }
+  if (!pagamentoMP || pagamentoMP.status !== "approved") {
+    const viaBusca = await buscarPagamentoPorReferencia(env, duplaId);
+    if (viaBusca) pagamentoMP = viaBusca;
+  }
+
+  if (pagamentoMP?.status === "approved") {
+    const atualizado = await confirmarPagamentoInscricao(env, torneioId, duplaId, pagamentoMP);
+    if (atualizado) return json({ ok: true, status: atualizado.status, inscricao: atualizado.inscricao });
+  }
+
+  return json({ ok: true, status: dupla.status, inscricao: dupla.inscricao, statusMercadoPago: pagamentoMP?.status || null });
+}
+
 async function pixWebhook(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   let paymentId = url.searchParams.get("data.id") || url.searchParams.get("id");
@@ -1798,10 +2182,18 @@ async function pixWebhook(request: Request, env: Env): Promise<Response> {
     return new Response("OK", { status: 200 });
   }
 
-  const torneioId = pagamento?.external_reference;
-  if (!torneioId || pagamento?.status !== "approved") return new Response("OK", { status: 200 });
+  const referencia = pagamento?.external_reference;
+  if (!referencia || pagamento?.status !== "approved") return new Response("OK", { status: 200 });
 
-  await confirmarPagamentoAprovado(env, torneioId, pagamento);
+  // external_reference pode ser o id de um torneio (diária) ou o id de uma dupla (inscrição) —
+  // o Mercado Pago não deixa compor os dois num só campo (ver comentário em inscricaoCriar).
+  // Tenta como torneio primeiro (comportamento de sempre); se não existir, resolve como
+  // inscrição de dupla via o índice reverso.
+  const resultadoTorneio = await confirmarPagamentoAprovado(env, referencia, pagamento);
+  if (!resultadoTorneio) {
+    const torneioIdDaDupla = await env.DB.get(`inscricao-dupla:${referencia}`);
+    if (torneioIdDaDupla) await confirmarPagamentoInscricao(env, torneioIdDaDupla, referencia, pagamento);
+  }
 
   return new Response("OK", { status: 200 });
 }
@@ -2010,7 +2402,7 @@ location.replace("/");
 ============================================================ */
 interface LogEntry {
   id: string;
-  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario";
+  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario" | "inscricao_recebida" | "inscricao_paga";
   quando: string;
   atorEmail: string | null;
   atorNome: string | null;
@@ -2176,6 +2568,17 @@ export default {
     }
     if (path === "/api/pix-verificar") {
       return method === "POST" ? pixVerificar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/inscricao-link") {
+      return method === "POST" ? inscricaoCriarLink(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/inscricao") {
+      if (method === "GET") return inscricaoInfo(request, env);
+      if (method === "POST") return inscricaoCriar(request, env);
+      return new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/inscricao-verificar") {
+      return method === "POST" ? inscricaoVerificar(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path === "/api/cupons-list") {
       return cuponsList(request, env);
