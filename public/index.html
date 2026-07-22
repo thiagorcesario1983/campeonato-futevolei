@@ -667,10 +667,27 @@ function marcarSyncPendente(){ try{ localStorage.setItem(SYNC_PENDENTE_KEY, "1")
 function limparSyncPendente(){ try{ localStorage.removeItem(SYNC_PENDENTE_KEY); }catch(e){} }
 function haSyncPendente(){ try{ return localStorage.getItem(SYNC_PENDENTE_KEY)==="1"; }catch(e){ return false; } }
 
+// Uma dupla cadastrada manualmente pelo organizador nasce "ativa" (sem inscrição/pagamento
+// pra confirmar) — só duplas vindas do link público de inscrição nascem "pendente" (ver
+// /api/inscricao no worker). O "id" existe em toda dupla (inclusive manuais) porque o botão
+// Aprovar/Bloquear, o merge defensivo do servidor e os códigos do Telegram (ver codigoDupla)
+// precisam de uma referência estável — o índice dentro do array não serve mais pra isso
+// assim que duplas podem chegar de forma assíncrona por um formulário público.
+function criarDuplaVazia(nome){
+  return {
+    id: crypto.randomUUID(),
+    nome, tel1:"", tel2:"", nomeDefault:true,
+    origem:"manual", status:"ativa",
+    jogador1:null, jogador2:null,
+    inscricao:null,
+    atualizadoEm: Date.now()
+  };
+}
+
 function defaultState(){
   return {
     tab: "resumo",
-    duplas: Array.from({length:6}, (_,i)=>({nome:`Dupla ${i+1}`, tel1:"", tel2:"", nomeDefault:true})),
+    duplas: Array.from({length:6}, (_,i)=>criarDuplaVazia(`Dupla ${i+1}`)),
     formato: "grupos", // "grupos" | "eliminacao" — escolhido antes do sorteio
     numGrupos: 4, // (formato "grupos") quantidade de grupos, deve dividir a qtde de duplas igualmente
     elimTarget: 4, // (formato "eliminacao") quantidade de duplas que avançam pro mata-mata (potência de 2)
@@ -703,7 +720,9 @@ function defaultState(){
     cupomAplicado: null, // {nome, percentual} — travado no momento da criação, nunca muda depois mesmo que o cupom seja editado/bloqueado
     headerImage: null, // data URL da imagem de topo customizada para este campeonato (opcional)
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
-    apitoMatchId: null
+    apitoMatchId: null,
+    valorInscricao: null, // valor da inscrição por dupla, definido pelo organizador (aba Configurações) — null até ser configurado
+    inscricaoLink: null // {token, ativo, vagas} — token do link público de inscrição, gerado sob demanda (ver /api/inscricao-link)
   };
 }
 
@@ -721,6 +740,20 @@ function migrarBracketAntigo(s){
     if(!s.terceiro || (s.terceiro.pa==null && s.terceiro.pb==null)){
       s.terceiro = { pa: s.elim.terceiro?.pa ?? null, pb: s.elim.terceiro?.pb ?? null };
     }
+  }
+  // Duplas salvas antes da inscrição pública existir não têm id/origem/status/etc — completa
+  // com os valores equivalentes a "cadastrada manualmente e já ativa", sem regressão nenhuma
+  // pra torneios já em andamento.
+  if(s && Array.isArray(s.duplas)){
+    s.duplas.forEach(d=>{
+      if(!d.id) d.id = crypto.randomUUID();
+      if(!d.origem) d.origem = "manual";
+      if(!d.status) d.status = "ativa";
+      if(d.jogador1===undefined) d.jogador1 = null;
+      if(d.jogador2===undefined) d.jogador2 = null;
+      if(d.inscricao===undefined) d.inscricao = null;
+      if(!d.atualizadoEm) d.atualizadoEm = Date.now();
+    });
   }
   return s;
 }
@@ -1932,6 +1965,13 @@ function groupLettersState(){
 function qualificadosCount(){
   return (state.numGrupos || 4) * 2;
 }
+// Só duplas com status "ativa" (cadastradas manualmente, ou com o Pix da inscrição
+// confirmado/aprovadas pelo organizador) entram no sorteio — "pendente" (aguardando
+// pagamento/aprovação) e "bloqueada" ficam de fora até o organizador resolver, pra não
+// sortear grupo com gente que pode nem confirmar a inscrição.
+function duplasAtivas(){
+  return state.duplas.filter(d => (d.status||"ativa")==="ativa");
+}
 function sortear(){
   state.grupoDesempateEscolha = null;
   state.mataMataConfirmado = false;
@@ -1947,7 +1987,7 @@ function sortear(){
     save();
     return;
   }
-  const nomes = state.duplas.map(d => (d.nome||"").trim() || "Dupla sem nome");
+  const nomes = duplasAtivas().map(d => (d.nome||"").trim() || "Dupla sem nome");
   const numGrupos = state.numGrupos || 4;
   const tamanhoGrupo = nomes.length / numGrupos;
   const embaralhado = shuffle(nomes);
@@ -1988,25 +2028,31 @@ function sortear(){
 // pelo menos 3 duplas por grupo (para a fase de grupos fazer sentido).
 // Já no formato "eliminacao", só validamos a quantidade de duplas que avançam pro mata-mata.
 function configuracaoValida(){
-  const n = state.duplas.length;
+  const n = duplasAtivas().length;
+  // Se tiver dupla pendente/bloqueada, todas as mensagens abaixo precisam deixar claro que a
+  // conta é só das ativas — senão o organizador não entende por que "8 duplas cadastradas"
+  // não libera o sorteio pra 4 grupos.
+  const sufixoPendentes = n < state.duplas.length
+    ? ` (${n} ativa${n!==1?"s":""} de ${state.duplas.length} cadastrada${state.duplas.length!==1?"s":""} — as demais estão pendentes ou bloqueadas)`
+    : "";
   if(state.formato==="eliminacao"){
     const t = state.elimTarget || 4;
-    if(n < 3) return {ok:false, msg:"São necessárias pelo menos 3 duplas."};
+    if(n < 3) return {ok:false, msg:`São necessárias pelo menos 3 duplas ativas.${sufixoPendentes}`};
     if(t<2 || (t & (t-1))!==0) return {ok:false, msg:"A quantidade de duplas que avançam pro mata-mata precisa ser uma potência de 2 (2, 4, 8...)."};
-    if(t >= n) return {ok:false, msg:`Escolha um número de qualificados menor que o total de duplas (${n}).`};
+    if(t >= n) return {ok:false, msg:`Escolha um número de qualificados menor que o total de duplas ativas (${n}).${sufixoPendentes}`};
     return {ok:true, msg:""};
   }
   const g = state.numGrupos || 4;
   if(g<1 || (g & (g-1))!==0) return {ok:false, msg:"A quantidade de grupos precisa ser uma potência de 2 (1, 2, 4, 8...)."};
-  if(n % g !== 0) return {ok:false, msg:`${n} duplas não dividem igualmente em ${g} grupos. Ajuste a quantidade de duplas ou de grupos.`};
+  if(n % g !== 0) return {ok:false, msg:`${n} duplas ativas não dividem igualmente em ${g} grupos.${sufixoPendentes} Ajuste a quantidade de duplas ou de grupos.`};
   const tamanho = n/g;
-  if(tamanho < 3) return {ok:false, msg:`Cada grupo ficaria com só ${tamanho} dupla(s). São necessárias pelo menos 3 duplas por grupo.`};
+  if(tamanho < 3) return {ok:false, msg:`Cada grupo ficaria com só ${tamanho} dupla(s) ativa(s). São necessárias pelo menos 3 duplas por grupo.${sufixoPendentes}`};
   return {ok:true, msg:""};
 }
 
 /* ---------- Modo Eliminação: sorteio por rodadas, 2 derrotas = eliminada ---------- */
 function duplasNomes(){
-  return state.duplas.map(d => (d.nome||"").trim() || "Dupla sem nome");
+  return duplasAtivas().map(d => (d.nome||"").trim() || "Dupla sem nome");
 }
 // Nº de derrotas de cada dupla, somando todas as rodadas já sorteadas (derivado, sempre recalculado —
 // se um placar for corrigido depois, a contagem se ajusta sozinha).
@@ -2205,7 +2251,13 @@ function resetTudo(){
     pagamento: state.pagamento,
     valorOverride: state.valorOverride,
     headerImage: state.headerImage,
-    telegramBot: state.telegramBot
+    telegramBot: state.telegramBot,
+    // "Reiniciar torneio" é pra apagar jogos/grupos/bracket, não a lista de duplas cadastradas
+    // (nem o link de inscrição já compartilhado, nem o valor configurado) — sem isso, quem já
+    // se inscreveu e pagou teria que se inscrever nas duplas de novo do zero.
+    duplas: state.duplas,
+    valorInscricao: state.valorInscricao,
+    inscricaoLink: state.inscricaoLink
   };
   state = Object.assign(defaultState(), preservar);
   // Marca quando este reset aconteceu — o worker usa isso pra saber que qualquer arbitragem
@@ -4926,7 +4978,7 @@ function renderFluxoJogos(){
 
   html += fluxoStep(
     "🏐 Sorteio",
-    `Formato: <b>${state.formato==="eliminacao"?"Eliminação":"Por grupos"}</b>${state.formato==="eliminacao" ? ` · Meta de qualificados: ${state.elimTarget}` : ` · ${state.numGrupos} grupo(s)`} · ${state.duplas.length} duplas sorteadas.`
+    `Formato: <b>${state.formato==="eliminacao"?"Eliminação":"Por grupos"}</b>${state.formato==="eliminacao" ? ` · Meta de qualificados: ${state.elimTarget}` : ` · ${state.numGrupos} grupo(s)`} · ${duplasAtivas().length} duplas sorteadas.`
   );
 
   if(state.formato==="grupos"){
@@ -5128,6 +5180,11 @@ function renderConfiguracoes(){
       <label>Bot do Telegram (usuário, sem @)</label>
       <input type="text" id="input-telegram-bot" placeholder="ex: meucampeonatobot" value="${escapeHtml(state.telegramBot||"")}">
       <div class="hint">Crie um bot gratuito com o @BotFather no Telegram e cole aqui o usuário dele (termina em "bot"). Cada dupla vai precisar apertar "Iniciar" uma única vez para poder receber os jogos automaticamente.</div>
+    </div>
+    <div class="card tg-settings">
+      <label>Valor da inscrição por dupla (R$)</label>
+      <input type="number" min="0" step="0.01" id="input-valor-inscricao" placeholder="ex: 50.00" value="${state.valorInscricao!=null ? state.valorInscricao : ""}">
+      <div class="hint">Cobrado via Pix de cada dupla que se inscrever pelo link público (aba Duplas). Deixe em branco pra não cobrar inscrição.</div>
     </div>
     ${renderUsuariosPermitidosCard()}`;
   return html;
@@ -5779,6 +5836,7 @@ function bindEvents(){
       const field = e.target.dataset.field;
       state.duplas[i][field] = e.target.value;
       if(field==="nome") state.duplas[i].nomeDefault = false;
+      state.duplas[i].atualizadoEm = Date.now();
       save();
     });
     if(inp.dataset.field==="nome"){
@@ -5803,7 +5861,7 @@ function bindEvents(){
   });
   const btnAddDupla = document.getElementById("btn-add-dupla");
   if(btnAddDupla) btnAddDupla.addEventListener("click", ()=>{
-    state.duplas.push({nome:`Dupla ${state.duplas.length+1}`, tel1:"", tel2:"", nomeDefault:true});
+    state.duplas.push(criarDuplaVazia(`Dupla ${state.duplas.length+1}`));
     save(); render();
   });
   const inputHeaderImage = document.getElementById("input-header-image");
@@ -5892,7 +5950,7 @@ function bindEvents(){
   });
   const btnReset = document.getElementById("btn-reset");
   if(btnReset) btnReset.addEventListener("click", ()=>{
-    if(confirm("Isso vai apagar duplas, grupos e todos os resultados. Continuar?")){
+    if(confirm("Isso vai apagar grupos, jogos e todos os resultados — as duplas cadastradas continuam. Continuar?")){
       resetTudo(); render(); showToast("Torneio reiniciado.");
     }
   });
@@ -5906,6 +5964,13 @@ function bindEvents(){
 
   const inputBot = document.getElementById("input-telegram-bot");
   if(inputBot) inputBot.addEventListener("input", e=>{ state.telegramBot = e.target.value; save(); });
+
+  const inputValorInscricao = document.getElementById("input-valor-inscricao");
+  if(inputValorInscricao) inputValorInscricao.addEventListener("input", e=>{
+    const v = e.target.value;
+    state.valorInscricao = v==="" ? null : Math.max(0, Number(v));
+    save();
+  });
 
   const btnAdicionarUsuario = document.getElementById("btn-adicionar-usuario");
   const inputNovoUsuario = document.getElementById("input-novo-usuario");
