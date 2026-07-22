@@ -89,7 +89,7 @@
     -webkit-background-clip:text; background-clip:text; color:transparent;
   }
 
-  .star{flex-shrink:0;}
+  .brand-logo{width:28px; height:28px; border-radius:50%; object-fit:cover; flex-shrink:0;}
 
   /* ---------- net-band divider: diamond mesh strip, like the line of a net ---------- */
   .net-band{
@@ -304,7 +304,7 @@
 <header>
   <div class="bar">
     <div class="brand metal">
-      <svg class="star" width="15" height="15" viewBox="0 0 24 24" fill="var(--red)"><polygon points="12,1 15,9 23,9 16.5,14 19,22 12,17 5,22 7.5,14 1,9 9,9"/></svg>
+      <img class="brand-logo" src="./icons/logo-supremo-ftv.png" alt="Supremo FTV">
       Supremo FTV
     </div>
     <nav class="links">
@@ -459,7 +459,7 @@
 
 <footer>
   <div class="wrap bar">
-    <span class="brand metal" style="font-family:var(--font-display);">Supremo FTV</span>
+    <span class="brand metal" style="font-family:var(--font-display); display:inline-flex; align-items:center; gap:9px;"><img class="brand-logo" src="./icons/logo-supremo-ftv.png" alt="Supremo FTV">Supremo FTV</span>
     <span>ftv.supremoftv.com.br</span>
     <span>Página institucional · não substitui o painel operacional do app</span>
   </div>
