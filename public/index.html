@@ -882,10 +882,20 @@ function handleGoogleCredential(response){
   }).catch(()=>{});
 }
 
-function initGoogleSignIn(){
+function initGoogleSignIn(tentativa){
+  tentativa = tentativa || 0;
   const clientId = loadClientId();
   const btnDiv = document.getElementById("google-signin-btn");
-  if(!clientId || !btnDiv || !window.google || !google.accounts || !google.accounts.id) return;
+  if(!clientId || !btnDiv) return;
+  if(!window.google || !google.accounts || !google.accounts.id){
+    // accounts.google.com/gsi/client é carregado com async/defer — na primeira visita (sem nada
+    // em cache do navegador ainda) ele pode não estar pronto nos 50ms que os chamadores de
+    // initGoogleSignIn esperam por padrão. Sem essa nova tentativa, o botão simplesmente nunca
+    // aparecia até um refresh (quando o script já carregava rápido o bastante). Tenta de novo por
+    // até ~6s antes de desistir de vez.
+    if(tentativa < 30) setTimeout(()=>initGoogleSignIn(tentativa+1), 200);
+    return;
+  }
   try{
     // itp_support: navegadores com Intelligent Tracking Prevention (Safari é o principal) bloqueiam
     // o cookie de terceiro que o Google usaria por padrão pra lembrar a sessão.
