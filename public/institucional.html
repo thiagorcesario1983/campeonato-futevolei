@@ -240,6 +240,24 @@
   .benefit h3{font-family:var(--font-body); font-weight:700; font-size:16px; color:var(--ink); letter-spacing:0;}
   .benefit p{margin:0; font-size:14.5px; color:var(--muted); line-height:1.55;}
 
+  /* screenshots gallery */
+  .gallery{
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(230px,1fr)); gap:20px;
+  }
+  .gallery-item{
+    background:var(--panel); border-radius:16px; overflow:hidden; box-shadow:var(--shadow);
+    display:flex; flex-direction:column;
+    border-top:2px solid transparent;
+    border-image:linear-gradient(90deg, var(--silver-low), var(--silver-hi) 45%, var(--silver-low) 100%) 1;
+  }
+  .gallery-item .shot{
+    width:100%; height:360px; object-fit:cover; object-position:top;
+    display:block; border-bottom:1px solid var(--line); background:var(--bg-alt);
+  }
+  .gallery-item .cap{padding:18px 18px 20px;}
+  .gallery-item .cap h3{font-family:var(--font-body); font-weight:700; font-size:15.5px; color:var(--ink); margin-bottom:6px;}
+  .gallery-item .cap p{margin:0; font-size:13.5px; color:var(--muted); line-height:1.5;}
+
   /* how it works */
   .steps{display:flex; flex-direction:column; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel);}
   .step{
@@ -309,6 +327,7 @@
     </div>
     <nav class="links">
       <a href="#recursos">Recursos</a>
+      <a href="#app">Telas do app</a>
       <a href="#como-funciona">Como funciona</a>
       <a href="#pagamento">Pagamento</a>
     </nav>
@@ -396,6 +415,41 @@
 <div class="benefit"><div class="icon"><svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="16" height="11" rx="2"/><line x1="8" y1="19" x2="14" y2="19"/><line x1="11" y1="15" x2="11" y2="19"/></svg></div><h3>Placar público pro telão</h3><p>Um link somente-leitura pra jogar na TV da arena, com o placar sempre atualizado.</p></div>
 <div class="benefit"><div class="icon"><svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="4"/><line x1="11" y1="2.5" x2="11" y2="5"/><line x1="11" y1="17" x2="11" y2="19.5"/><line x1="2.5" y1="11" x2="5" y2="11"/><line x1="17" y1="11" x2="19.5" y2="11"/><line x1="5.3" y1="5.3" x2="7" y2="7"/><line x1="15" y1="15" x2="16.7" y2="16.7"/><line x1="16.7" y1="5.3" x2="15" y2="7"/><line x1="7" y1="15" x2="5.3" y2="16.7"/></svg></div><h3>Modo claro e escuro</h3><p>Confortável pro sol da praia ou pra tela de madrugada, sem perder contraste em nenhum dos dois.</p></div>
 <div class="benefit"><div class="icon"><svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="12" height="17" rx="3.5"/><circle cx="11" cy="7" r="1.9"/><line x1="9" y1="15.3" x2="13" y2="15.3"/></svg></div><h3>Imagem pronta pra Stories</h3><p>Gera a arte do resultado no formato do Instagram, pronta pra postar assim que a partida termina.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="net-band"></div>
+
+  <section id="app">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Direto do app</p>
+        <h2>Por dentro do Supremo FTV</h2>
+        <p>Sem mockup — são telas reais do app, do cadastro das duplas ao placar no telão.</p>
+      </div>
+
+      <div class="gallery">
+        <div class="gallery-item">
+          <img class="shot" src="./screenshots/app-duplas.png" alt="Tela de cadastro de duplas do Supremo FTV, com o formato do campeonato e a lista de duplas preenchida">
+          <div class="cap"><h3>Cadastro de duplas</h3><p>Nome e formato do campeonato numa tela só — grupos ou eliminação, à sua escolha.</p></div>
+        </div>
+        <div class="gallery-item">
+          <img class="shot" src="./screenshots/app-jogos.png" alt="Tela da fase de grupos do Supremo FTV, com os placares dos confrontos já registrados">
+          <div class="cap"><h3>Fase de grupos</h3><p>Registre o placar e finalize a partida — a classificação atualiza sozinha.</p></div>
+        </div>
+        <div class="gallery-item">
+          <img class="shot" src="./screenshots/app-matamata.png" alt="Tela do mata-mata do Supremo FTV, com as semifinais já definidas a partir da fase de grupos">
+          <div class="cap"><h3>Mata-mata</h3><p>Chaveamento automático a partir de quem se classificou nos grupos.</p></div>
+        </div>
+        <div class="gallery-item">
+          <img class="shot" src="./screenshots/app-apito.png" alt="Tela de apitar jogo do Supremo FTV, com cronômetro e placar ao vivo de uma partida em andamento">
+          <div class="cap"><h3>Apitar jogo</h3><p>Cronômetro, placar ao vivo e troca de lado automática a cada 6 pontos.</p></div>
+        </div>
+        <div class="gallery-item">
+          <img class="shot" src="./screenshots/app-telao.png" alt="Placar para TV do Supremo FTV, mostrando o placar ao vivo de uma partida em tela cheia">
+          <div class="cap"><h3>Placar para TV</h3><p>Link público só de leitura, ótimo pro telão da arena.</p></div>
+        </div>
       </div>
     </div>
   </section>
