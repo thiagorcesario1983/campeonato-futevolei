@@ -5,7 +5,7 @@ simples, mata-mata, notificações por WhatsApp/Telegram, cobrança das diárias
 Pago), aprovação de torneios por um admin, link de árbitro convidado, modo claro/escuro, e
 geração de imagem pra Stories do Instagram.
 
-- **Site:** `https://ftv.thiagorcesario.com.br` (domínio customizado; o antigo
+- **Site:** `https://ftv.supremoftv.com.br` (domínio customizado; o antigo
   `https://campeonato-futevolei.thiagobaptistella.workers.dev` continua existindo por baixo)
 - **Hospedagem:** Cloudflare Workers (com Cloudflare Workers Builds — deploy automático a cada
   push no GitHub, sem GitHub Actions próprio)
