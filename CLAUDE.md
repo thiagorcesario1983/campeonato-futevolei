@@ -79,6 +79,7 @@ campeonato-futevolei/
 | `TELEGRAM_BOT_TOKEN` | token do bot criado via `@BotFather` |
 | `MP_ACCESS_TOKEN` | Access Token de produção do Mercado Pago |
 | `MP_WEBHOOK_SECRET` | opcional; chave do webhook configurado no painel do Mercado Pago |
+| `SESSION_SECRET` | qualquer string aleatória longa; assina o token de sessão emitido no login (ver item 20) — sem ela, login para de emitir token e nenhuma rota de dono/admin funciona |
 
 ⚠️ **`wrangler.jsonc` precisa ter `"keep_vars": true`** no nível raiz. Sem isso, o Wrangler trata
 "nenhuma variável declarada no arquivo" como a configuração correta e apaga tudo que só existe no
@@ -366,6 +367,40 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     `montarPayloadTorneio()` antes de todo envio) — só um espelho pro log conseguir mostrar o
     nome; nada no cliente lê esses campos de volta (sempre recebe os nomes já resolvidos como
     parâmetro à parte), então não há risco de conflito com a lógica dinâmica existente.
+20. **Qualquer requisição direta podia se passar por qualquer e-mail — inclusive de outro
+    organizador — e ler/editar/excluir o torneio dele.** Descoberto depois de um torneio
+    aparecer criado sozinho, atribuído a um e-mail que ninguém logou naquele momento. Causa:
+    todas as rotas de dono/admin (`torneiosSave`, `torneiosList`, `torneiosGet`,
+    `torneiosDelete`, `pixCriar`, `pixVerificar`, `apitoCriarLink`, `inscricaoCriarLink`,
+    `torneiosUsuarioAdicionar/Remover`, `torneiosComissao`, `torneiosAprovar`, `configSet`,
+    `logList`, cupons admin) só liam um campo `email`/`ownerEmail`/`adminEmail` solto do
+    corpo/query e confiavam nele — nunca verificavam se quem mandou aquele POST realmente
+    tinha passado pelo login do Google com esse e-mail. **O login em si nunca verifica a
+    assinatura do JWT do Google** (`googleLoginCallback` só decodifica o `credential`, decisão
+    antiga e deliberada — só o CSRF do fluxo redirect protege contra forjar esse POST
+    específico de fora) — o que faltava era a parte de DEPOIS do login: nada amarrava as
+    chamadas de API seguintes a esse login de verdade. Corrigido com um token de sessão HMAC-
+    SHA256 (`SESSION_SECRET`, novo secret): `mintSessionToken`/`verificarSessionToken`/
+    `emailAutenticado` em `worker.ts` — emitido só em `googleLoginCallback` (a única rota com
+    proteção CSRF real) e exigido via header `Authorization: Bearer` em toda rota de dono/
+    admin, que agora extrai o e-mail do token verificado em vez de confiar num campo solto
+    (`solicitanteEmail = await emailAutenticado(request, env)`). `torneiosSave` também passou a
+    setar `ownerEmail` de um torneio novo a partir desse e-mail verificado, nunca mais do
+    `body.ownerEmail` do cliente. No front, `auth.sessionToken` é gravado no login (o próprio
+    `googleLoginCallback` já escreve ele no `localStorage` junto com email/nome/foto) e todo
+    fetch pra rota de dono/admin passa a usar `apiFetch()` (wrapper que gruda o header via
+    `authHeaders()` e, num 401, chama `sessaoExpirada()` — desloga só a conta, preserva
+    torneio/estado local, ao contrário de `logout()`). **Os links públicos (apito, inscrição)
+    não usam nada disso** — são um mecanismo à parte, token aleatório por recurso
+    (`tokenApito`/`inscricaoLink.token`), sem noção de login nenhuma; essa correção não mexe
+    neles. **Ressalva conhecida:** o raro fallback de popup do Google Identity Services
+    (`handleGoogleCredential`, usado só quando o navegador não segue o fluxo redirect padrão)
+    não emite `sessionToken` — sessões vindas daí tomam 401 na primeira ação autenticada e
+    precisam logar de novo pelo fluxo redirect. Aceito porque o próprio código já documentava
+    esse popup como fallback raro, e a alternativa (verificar a assinatura do JWT do Google via
+    JWKS pra também cobrir esse caminho) é bem mais complexa pro ganho marginal. **Qualquer rota
+    nova que precise saber quem está autenticado deve usar `emailAutenticado(request, env)`,
+    nunca ler `email`/`ownerEmail` direto do corpo ou da query.**
 
 ## Convenções
 

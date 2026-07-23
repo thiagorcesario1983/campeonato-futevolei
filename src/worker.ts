@@ -19,6 +19,11 @@ export interface Env {
   // mais cedo — o status do pagamento em si é sempre reconferido direto na API deles, então
   // o sistema continua seguro mesmo sem essa variável configurada.
   MP_WEBHOOK_SECRET?: string;
+  // Chave usada pra assinar o token de sessão emitido no login (HMAC-SHA256) — qualquer string
+  // aleatória longa serve, configurada como secret no painel Cloudflare. Sem essa variável, o
+  // login para de emitir token de sessão e nenhuma rota autenticada por dono/admin funciona
+  // (falha fechada: sem token válido, ninguém passa em emailAutenticado).
+  SESSION_SECRET?: string;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -292,6 +297,78 @@ function normEmail(v: unknown): string {
   return String(v || "").trim().toLowerCase();
 }
 
+/* ============================================================
+   SESSÃO DE LOGIN
+   Antes do login, o front-end só guardava {email, name, picture} decodificado do JWT do
+   Google e mandava esse e-mail cru em toda chamada de API — o servidor confiava nele sem
+   checar se quem mandou a requisição realmente passou pelo login (qualquer POST direto podia
+   se passar por qualquer e-mail, inclusive de outro organizador, e ler/editar/excluir o
+   torneio dele). Agora o login emite um token assinado (HMAC-SHA256 com SESSION_SECRET) só na
+   rota googleLoginCallback — protegida por CSRF (o cookie que o próprio script do Google seta
+   na página, comparado com o campo do POST de volta, ver ali) — e toda rota de dono/admin
+   passa a exigir esse token no header Authorization, extraindo o e-mail dele em vez de confiar
+   num campo solto no corpo/query. Os links públicos (apito, inscrição) não usam nada disso —
+   continuam protegidos só pelo token aleatório por recurso que já tinham antes.
+============================================================ */
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 dias
+
+function b64urlEncode(bytes: ArrayBuffer | Uint8Array): string {
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let bin = "";
+  for (const b of arr) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64urlDecode(str: string): Uint8Array {
+  const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));
+  const b64 = str.replace(/-/g, "+").replace(/_/g, "/") + pad;
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+async function chaveSessao(env: Env): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.SESSION_SECRET || ""),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"]
+  );
+}
+async function mintSessionToken(email: string, env: Env): Promise<string | null> {
+  if (!env.SESSION_SECRET) return null;
+  const payloadB64 = b64urlEncode(new TextEncoder().encode(JSON.stringify({ email: normEmail(email), exp: Date.now() + SESSION_TTL_MS })));
+  const chave = await chaveSessao(env);
+  const assinatura = await crypto.subtle.sign("HMAC", chave, new TextEncoder().encode(payloadB64));
+  return `${payloadB64}.${b64urlEncode(assinatura)}`;
+}
+async function verificarSessionToken(token: string, env: Env): Promise<string | null> {
+  if (!token || !env.SESSION_SECRET) return null;
+  const partes = token.split(".");
+  if (partes.length !== 2) return null;
+  const [payloadB64, assinaturaB64] = partes;
+  try {
+    const chave = await chaveSessao(env);
+    const ok = await crypto.subtle.verify("HMAC", chave, b64urlDecode(assinaturaB64).slice().buffer, new TextEncoder().encode(payloadB64));
+    if (!ok) return null;
+    const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(payloadB64)));
+    if (!payload?.email || typeof payload.exp !== "number" || payload.exp < Date.now()) return null;
+    return normEmail(payload.email);
+  } catch {
+    return null;
+  }
+}
+// Único ponto de entrada pra saber "quem está fazendo essa requisição" — sempre via o token
+// assinado no header Authorization, nunca por um campo email/ownerEmail solto no corpo/query
+// (que qualquer requisição poderia forjar). Retorna null se não tiver token, token inválido,
+// expirado, ou SESSION_SECRET não configurado (falha fechada: sem secret, ninguém autentica).
+async function emailAutenticado(request: Request, env: Env): Promise<string | null> {
+  const header = request.headers.get("Authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  return verificarSessionToken(match[1], env);
+}
+
 // Admin agora é uma allowlist de e-mails Google reais (variável ADMIN_EMAILS no Worker),
 // em vez de um e-mail fixo ligado à senha de teste "123456" (removida). Qualquer pessoa
 // continua podendo logar com sua própria conta Google normalmente — só quem está nessa
@@ -351,8 +428,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     return json({ error: "JSON inválido" }, 400);
   }
 
-  const solicitanteEmail = normEmail(body.ownerEmail);
-  if (!solicitanteEmail) return json({ error: "ownerEmail obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
   const id = body.id || crypto.randomUUID();
   const now = new Date().toISOString();
@@ -401,7 +478,10 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
     // nulo) quando o organizador realmente não informou nome nenhum.
     nome: body.nome || existing?.nome || "Torneio sem nome",
     status: body.status || "Criado",
-    ownerEmail: existing?.ownerEmail || body.ownerEmail || null,
+    // O dono de um torneio novo é sempre quem está autenticado na requisição — nunca um
+    // "ownerEmail" solto no corpo, que deixaria um usuário logado criar um torneio em nome de
+    // outra pessoa (a raiz do "torneio criado sem intervenção de ninguém" que motivou esse fix).
+    ownerEmail: existing?.ownerEmail || solicitanteEmail,
     ownerName: existing?.ownerName || body.ownerName || null,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
@@ -719,9 +799,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
 }
 
 async function torneiosList(request: Request, env: Env): Promise<Response> {
-  const url = new URL(request.url);
-  const solicitanteEmail = normEmail(url.searchParams.get("email"));
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
   const index = await getIndex(env);
   const meus = ehAdmin(solicitanteEmail, env)
@@ -733,9 +812,9 @@ async function torneiosList(request: Request, env: Env): Promise<Response> {
 async function torneiosGet(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const id = url.searchParams.get("id");
-  const solicitanteEmail = normEmail(url.searchParams.get("email"));
   if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
   const raw = await env.DB.get(`torneio:${id}`);
   if (!raw) return json({ error: "não encontrado" }, 404);
@@ -760,11 +839,11 @@ async function torneiosUsuarioAdicionar(request: Request, env: Env): Promise<Res
   } catch {
     return json({ error: "JSON inválido" }, 400);
   }
-  const solicitanteEmail = normEmail(body.email);
   const id = body.id;
   const novoEmail = normEmail(body.novoEmail);
   if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
   if (!novoEmail || !novoEmail.includes("@")) return json({ error: "Informe um e-mail válido" }, 400);
 
   const raw = await env.DB.get(`torneio:${id}`);
@@ -821,11 +900,11 @@ async function torneiosUsuarioRemover(request: Request, env: Env): Promise<Respo
   } catch {
     return json({ error: "JSON inválido" }, 400);
   }
-  const solicitanteEmail = normEmail(body.email);
   const id = body.id;
   const alvoEmail = normEmail(body.usuarioEmail);
   if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
   if (!alvoEmail) return json({ error: "usuarioEmail obrigatório" }, 400);
 
   const raw = await env.DB.get(`torneio:${id}`);
@@ -884,8 +963,8 @@ async function torneiosComissao(request: Request, env: Env): Promise<Response> {
   } catch {
     return json({ error: "JSON inválido" }, 400);
   }
-  const solicitanteEmail = normEmail(body.email);
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode controlar o repasse de comissão" }, 403);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) return json({ error: "Só o admin pode controlar o repasse de comissão" }, 403);
 
   const id = body.id;
   if (!id) return json({ error: "id obrigatório" }, 400);
@@ -976,9 +1055,8 @@ async function resolverCupom(env: Env, nomeDigitado: unknown): Promise<{ lista: 
 }
 
 async function cuponsList(request: Request, env: Env): Promise<Response> {
-  const url = new URL(request.url);
-  const solicitanteEmail = normEmail(url.searchParams.get("email"));
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode ver os cupons" }, 403);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) return json({ error: "Só o admin pode ver os cupons" }, 403);
   return json({ cupons: await getCuponsIndex(env) });
 }
 
@@ -989,8 +1067,8 @@ async function cuponsSalvar(request: Request, env: Env): Promise<Response> {
   } catch {
     return json({ error: "JSON inválido" }, 400);
   }
-  const solicitanteEmail = normEmail(body.email);
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode cadastrar cupons" }, 403);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) return json({ error: "Só o admin pode cadastrar cupons" }, 403);
 
   const nome = String(body.nome || "").trim();
   if (!nome) return json({ error: "Nome do cupom obrigatório" }, 400);
@@ -1048,8 +1126,8 @@ async function cuponsRemover(request: Request, env: Env): Promise<Response> {
   } catch {
     return json({ error: "JSON inválido" }, 400);
   }
-  const solicitanteEmail = normEmail(body.email);
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode remover cupons" }, 403);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) return json({ error: "Só o admin pode remover cupons" }, 403);
 
   const nomeNormalizado = normalizarNomeCupom(body.nome);
   const lista = await getCuponsIndex(env);
@@ -1066,8 +1144,8 @@ async function cuponsBloquear(request: Request, env: Env): Promise<Response> {
   } catch {
     return json({ error: "JSON inválido" }, 400);
   }
-  const solicitanteEmail = normEmail(body.email);
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode bloquear/desbloquear cupons" }, 403);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) return json({ error: "Só o admin pode bloquear/desbloquear cupons" }, 403);
 
   const nomeNormalizado = normalizarNomeCupom(body.nome);
   const lista = await getCuponsIndex(env);
@@ -1089,8 +1167,8 @@ async function cuponsEditarComissao(request: Request, env: Env): Promise<Respons
   } catch {
     return json({ error: "JSON inválido" }, 400);
   }
-  const solicitanteEmail = normEmail(body.email);
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode configurar a comissão dos cupons" }, 403);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) return json({ error: "Só o admin pode configurar a comissão dos cupons" }, 403);
 
   const comissaoPercentual = parseComissaoPercentual(body.comissaoPercentual);
   if (comissaoPercentual === false) {
@@ -1125,8 +1203,8 @@ async function torneiosAprovar(request: Request, env: Env): Promise<Response> {
     return json({ error: "JSON inválido" }, 400);
   }
 
-  const solicitanteEmail = normEmail(body.adminEmail);
-  if (!ehAdmin(solicitanteEmail, env)) {
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) {
     return json({ error: "Só o admin pode aprovar ou recusar torneios" }, 403);
   }
 
@@ -1382,9 +1460,9 @@ async function apitoCriarLink(request: Request, env: Env): Promise<Response> {
 
   const torneioId = body.id;
   const matchId = body.match;
-  const solicitanteEmail = normEmail(body.email);
   if (!torneioId || !matchId) return json({ error: "id e match são obrigatórios" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
   const raw = await env.DB.get(`torneio:${torneioId}`);
   if (!raw) return json({ error: "não encontrado" }, 404);
@@ -1549,17 +1627,14 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
 
 async function torneiosDelete(request: Request, env: Env): Promise<Response> {
   let id: string | null = null;
-  let solicitanteEmail = "";
   try {
     const body: any = await request.json();
     id = body?.id || null;
-    solicitanteEmail = normEmail(body?.ownerEmail);
   } catch {}
-  const url = new URL(request.url);
-  if (!id) id = url.searchParams.get("id");
-  if (!solicitanteEmail) solicitanteEmail = normEmail(url.searchParams.get("email"));
+  if (!id) id = new URL(request.url).searchParams.get("id");
   if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
   const index = await getIndex(env);
   const existing = index.find((t: any) => t.id === id);
@@ -1762,9 +1837,9 @@ async function pixCriar(request: Request, env: Env): Promise<Response> {
   }
 
   const id = body.id;
-  const solicitanteEmail = normEmail(body.email);
   if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
   const raw = await env.DB.get(`torneio:${id}`);
   if (!raw) return json({ error: "não encontrado" }, 404);
@@ -1915,9 +1990,9 @@ async function inscricaoCriarLink(request: Request, env: Env): Promise<Response>
   }
 
   const torneioId = body.id;
-  const solicitanteEmail = normEmail(body.email);
   if (!torneioId) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
   const raw = await env.DB.get(`torneio:${torneioId}`);
   if (!raw) return json({ error: "não encontrado" }, 404);
@@ -2324,9 +2399,9 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
   }
 
   const id = body.id;
-  const solicitanteEmail = normEmail(body.email);
   if (!id) return json({ error: "id obrigatório" }, 400);
-  if (!solicitanteEmail) return json({ error: "email obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
   const raw = await env.DB.get(`torneio:${id}`);
   if (!raw) return json({ error: "não encontrado" }, 404);
@@ -2382,8 +2457,9 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
    CONFIGURAÇÕES GLOBAIS DO APP (só o admin pode alterar)
 ============================================================ */
 async function configGet(request: Request, env: Env): Promise<Response> {
-  const url = new URL(request.url);
-  const solicitanteEmail = normEmail(url.searchParams.get("email"));
+  // Chamada no boot, antes de qualquer login (pra saber o googleClientId antes mesmo de
+  // desenhar o botão do Google) — sem token ainda é normal aqui, só volta isAdmin:false.
+  const solicitanteEmail = await emailAutenticado(request, env);
   const googleClientId = (await env.DB.get("config:google_client_id")) || null;
   const isAdmin = solicitanteEmail ? ehAdmin(solicitanteEmail, env) : false;
   // valorDiaria é pública (não só pro admin) — qualquer um precisa dela pra mostrar o preview de
@@ -2403,8 +2479,8 @@ async function configSet(request: Request, env: Env): Promise<Response> {
     return json({ error: "JSON inválido" }, 400);
   }
 
-  const solicitanteEmail = normEmail(body.email);
-  if (!ehAdmin(solicitanteEmail, env)) {
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) {
     return json({ error: "Só o admin pode alterar as configurações do app" }, 403);
   }
 
@@ -2471,7 +2547,10 @@ async function googleLoginCallback(request: Request, env: Env): Promise<Response
     return new Response("Credencial do Google sem e-mail.", { status: 400 });
   }
 
-  const auth = { email: payload.email, name: payload.name || "", picture: payload.picture || "" };
+  // Token de sessão assinado (ver bloco "SESSÃO DE LOGIN" acima) — é o que passa a autenticar
+  // de verdade as chamadas de API do dono/admin daqui pra frente, em vez do e-mail cru.
+  const sessionToken = await mintSessionToken(payload.email, env);
+  const auth = { email: payload.email, name: payload.name || "", picture: payload.picture || "", sessionToken };
   // JSON.stringify duas vezes: a primeira serializa o objeto auth, a segunda transforma esse
   // JSON num literal de string JS seguro pra colocar dentro do <script> abaixo. Escapa "<" à
   // parte porque nada impede alguém de nomear a própria conta Google com algo tipo
@@ -2582,9 +2661,8 @@ function listarTodosMatches(state: any): { matchId: string; m: any }[] {
 }
 
 async function logList(request: Request, env: Env): Promise<Response> {
-  const url = new URL(request.url);
-  const solicitanteEmail = normEmail(url.searchParams.get("email"));
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Só o admin pode ver os logs" }, 403);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!ehAdmin(solicitanteEmail || "", env)) return json({ error: "Só o admin pode ver os logs" }, 403);
   return json({ logs: await getLogs(env) });
 }
 

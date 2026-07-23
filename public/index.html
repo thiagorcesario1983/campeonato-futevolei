@@ -777,6 +777,35 @@ const AUTH_KEY = "futevolei_auth_v1";
 function ehAdmin(){
   return !!auth && !!auth.isAdmin;
 }
+// Header pra toda chamada às rotas de dono/admin — o servidor agora exige esse token assinado
+// (emitido no login) em vez de confiar num e-mail solto no corpo/query da requisição, senão
+// qualquer requisição direta podia se passar por qualquer e-mail (ver CLAUDE.md, correção da
+// brecha de autenticação). Sem token (ex: sessão antiga de antes dessa mudança, ou o raro
+// fallback de popup do Google, que não emite token), a requisição chega sem esse header e o
+// servidor responde 401 — quem chama trata isso pedindo login de novo.
+function authHeaders(){
+  return auth?.sessionToken ? { "Authorization": `Bearer ${auth.sessionToken}` } : {};
+}
+// Sessão inválida/expirada (ou o raro caso de login via popup, que não emite token nenhum):
+// desloga só a CONTA (preserva o torneio/estado local, ao contrário de logout()) e pede pra
+// entrar de novo — nunca perde dado nenhum, só a "credencial" de quem está mexendo.
+function sessaoExpirada(){
+  auth = null;
+  saveAuth(null);
+  showToast("Sessão expirada — faça login novamente.");
+  render();
+}
+// Wrapper fino sobre fetch() só pras rotas de dono/admin: grudam o header Authorization
+// automaticamente e tratam 401 (sessão inválida/expirada) num lugar só, em vez de repetir essa
+// checagem em cada chamador. Rotas públicas (apito, inscrição, placar de TV) continuam usando
+// fetch() puro — não têm noção de sessão nenhuma, são protegidas por token de recurso à parte.
+async function apiFetch(url, options){
+  options = options || {};
+  options.headers = Object.assign({}, options.headers, authHeaders());
+  const res = await fetch(url, options);
+  if(res.status === 401) sessaoExpirada();
+  return res;
+}
 function loadAuth(){
   try{ return JSON.parse(localStorage.getItem(AUTH_KEY)); }catch(e){ return null; }
 }
@@ -828,7 +857,7 @@ function cacheClientId(v){ localStorage.setItem(GCID_KEY, (v||"").trim()); }
 async function fetchAndCacheClientId(){
   try{
     const url = auth ? `/api/config-get?email=${encodeURIComponent(auth.email)}` : "/api/config-get";
-    const res = await fetch(url, { cache:"no-store" });
+    const res = await apiFetch(url, { cache:"no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     const novo = (data.googleClientId||"").trim();
@@ -862,7 +891,7 @@ async function salvarConfigAdmin({googleClientId, adminNotificationEmail, valorD
     if(googleClientId !== undefined) body.googleClientId = googleClientId;
     if(adminNotificationEmail !== undefined) body.adminNotificationEmail = adminNotificationEmail;
     if(valorDiaria !== undefined) body.valorDiaria = valorDiaria;
-    const res = await fetch("/api/config-set", {
+    const res = await apiFetch("/api/config-set", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify(body)
     });
@@ -914,6 +943,11 @@ function limparTorneioLocal(){
 function handleGoogleCredential(response){
   const payload = decodeJwt(response.credential);
   if(!payload) return;
+  // Esse caminho (fallback popup) nunca emite sessionToken — só o login via redirect
+  // (googleLoginCallback, protegido por CSRF) faz isso. Sem token, as ações autenticadas
+  // (salvar torneio, gerar Pix etc.) vão responder 401 e pedir login de novo — o usuário só
+  // segue de fato autenticado se cair no fluxo padrão (redirect), o que resolve sozinho no
+  // próximo carregamento normal da página. Ver bloco "SESSÃO DE LOGIN" em worker.ts.
   auth = { email: payload.email, name: payload.name, picture: payload.picture };
   saveAuth(auth);
   render();
@@ -1097,7 +1131,7 @@ function montarPayloadTorneio(){
 async function enviarTorneioAgora(payload, keepalive){
   enviosPendentes++;
   try{
-    const res = await fetch("/api/torneios-save", {
+    const res = await apiFetch("/api/torneios-save", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify(payload),
       keepalive: !!keepalive
@@ -1164,7 +1198,7 @@ async function fetchTorneiosList(){
   if(torneiosLoading) return;
   torneiosLoading = true;
   try{
-    const res = await fetch(`/api/torneios-list?email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
+    const res = await apiFetch(`/api/torneios-list?email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     torneiosList = data.torneios || [];
@@ -1187,7 +1221,7 @@ async function fetchLogsList(){
   if(logsLoading) return;
   logsLoading = true;
   try{
-    const res = await fetch(`/api/log-list?email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
+    const res = await apiFetch(`/api/log-list?email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     logsList = data.logs || [];
@@ -1203,7 +1237,7 @@ async function fetchCuponsList(){
   if(cuponsLoading) return;
   cuponsLoading = true;
   try{
-    const res = await fetch(`/api/cupons-list?email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
+    const res = await apiFetch(`/api/cupons-list?email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
     cuponsList = data.cupons || [];
@@ -1218,7 +1252,7 @@ async function fetchCuponsList(){
 async function criarCupom(payload){
   showLoading("Cadastrando cupom...");
   try{
-    const res = await fetch("/api/cupons-salvar", {
+    const res = await apiFetch("/api/cupons-salvar", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ email: auth.email, ...payload })
     });
@@ -1238,7 +1272,7 @@ async function removerCupom(nome){
   if(!confirm(`Remover o cupom "${nome}"? Torneios que já usaram esse cupom não são afetados.`)) return;
   showLoading("Removendo cupom...");
   try{
-    const res = await fetch("/api/cupons-remover", {
+    const res = await apiFetch("/api/cupons-remover", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ email: auth.email, nome })
     });
@@ -1256,7 +1290,7 @@ async function removerCupom(nome){
 async function alternarBloqueioCupom(nome, bloquear){
   showLoading(bloquear ? "Bloqueando cupom..." : "Desbloqueando cupom...");
   try{
-    const res = await fetch("/api/cupons-bloquear", {
+    const res = await apiFetch("/api/cupons-bloquear", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ email: auth.email, nome, bloquear })
     });
@@ -1282,7 +1316,7 @@ async function editarComissaoCupom(nome, comissaoAtual){
   }
   showLoading("Salvando comissão...");
   try{
-    const res = await fetch("/api/cupons-editar-comissao", {
+    const res = await apiFetch("/api/cupons-editar-comissao", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ email: auth.email, nome, comissaoPercentual })
     });
@@ -1311,7 +1345,7 @@ async function garantirDadosRelatorioCupons(){
 async function alternarComissaoRepassada(id, repassada){
   showLoading(repassada ? "Marcando como repassada..." : "Marcando como pendente...");
   try{
-    const res = await fetch("/api/torneios-comissao", {
+    const res = await apiFetch("/api/torneios-comissao", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ email: auth.email, id, repassada })
     });
@@ -1504,7 +1538,7 @@ async function criarNovoTorneio(nome, dataInicio, dataFim, cupomNome){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   showLoading("Enviando solicitação...");
   try{
-    const res = await fetch("/api/torneios-save", {
+    const res = await apiFetch("/api/torneios-save", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id:null, nome, status:"Criado", ownerEmail:auth.email, ownerName:auth.name, dataInicio, dataFim, cupomNome: cupomNome||null, state })
     });
@@ -1548,7 +1582,7 @@ async function gerarPixTorneio(){
   if(!state.cloudId) return;
   showLoading("Gerando Pix...");
   try{
-    const res = await fetch("/api/pix-criar", {
+    const res = await apiFetch("/api/pix-criar", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id: state.cloudId, email: auth.email })
     });
@@ -1581,7 +1615,7 @@ async function verificarPagamentoPix(silencioso){
   if(!state.cloudId) return;
   if(!silencioso) showLoading("Verificando pagamento direto com o Mercado Pago...");
   try{
-    const res = await fetch("/api/pix-verificar", {
+    const res = await apiFetch("/api/pix-verificar", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id: state.cloudId, email: auth.email })
     });
@@ -1621,7 +1655,7 @@ async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim, valor){
   const rotulo = decisao==="aprovado" ? "Aprovando" : (decisao==="recusado" ? "Recusando" : "Bloqueando");
   showLoading(rotulo + "...");
   try{
-    const res = await fetch("/api/torneios-aprovar", {
+    const res = await apiFetch("/api/torneios-aprovar", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id, adminEmail: auth.email, decisao, dataInicio, dataFim, valor })
     });
@@ -1663,7 +1697,7 @@ async function decidirAprovacaoTorneio(id, decisao, dataInicio, dataFim, valor){
 async function abrirTorneio(id){
   showLoading("Carregando torneio...");
   try{
-    const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(id)}&email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
+    const res = await apiFetch(`/api/torneios-get?id=${encodeURIComponent(id)}&email=${encodeURIComponent(auth.email)}`, { cache: "no-store" });
     if(res.status===403){ showToast("Esse torneio pertence a outra conta."); return; }
     if(!res.ok) throw new Error("resposta não-ok");
     const data = await res.json();
@@ -1807,7 +1841,7 @@ async function refreshTorneioAtual(chamadaInicial){
     return;
   }
   try{
-    const res = await fetch(`/api/torneios-get?id=${encodeURIComponent(state.cloudId)}&email=${encodeURIComponent(auth.email)}`, { cache:"no-store" });
+    const res = await apiFetch(`/api/torneios-get?id=${encodeURIComponent(state.cloudId)}&email=${encodeURIComponent(auth.email)}`, { cache:"no-store" });
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if(data && data.state){
@@ -1841,7 +1875,7 @@ async function excluirTorneio(id, nome){
   if(!confirm(`Excluir o torneio "${nome}"? Essa ação não pode ser desfeita.`)) return;
   showToast("Excluindo torneio...");
   try{
-    const res = await fetch("/api/torneios-delete", {
+    const res = await apiFetch("/api/torneios-delete", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id, ownerEmail: auth.email })
     });
@@ -1868,7 +1902,7 @@ async function adicionarUsuarioTorneio(novoEmail){
   if(!novoEmail || !novoEmail.includes("@")){ showToast("Informe um e-mail válido."); return; }
   showLoading("Adicionando usuário...");
   try{
-    const res = await fetch("/api/torneios-usuario-adicionar", {
+    const res = await apiFetch("/api/torneios-usuario-adicionar", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id: state.cloudId, email: auth.email, nome: auth.name, novoEmail })
     });
@@ -1889,7 +1923,7 @@ async function removerUsuarioTorneio(usuarioEmail){
   if(!confirm(`Remover o acesso de ${usuarioEmail} a este torneio?`)) return;
   showLoading("Removendo usuário...");
   try{
-    const res = await fetch("/api/torneios-usuario-remover", {
+    const res = await apiFetch("/api/torneios-usuario-remover", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id: state.cloudId, email: auth.email, usuarioEmail })
     });
@@ -1919,7 +1953,7 @@ async function migrarTorneioLocal(){
   showToast("Enviando torneio para a nuvem...");
   const payload = { id:null, nome, status: statusTorneio(), ownerEmail:auth.email, ownerName:auth.name, state };
   try{
-    const res = await fetch("/api/torneios-save", {
+    const res = await apiFetch("/api/torneios-save", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify(payload)
     });
@@ -2981,7 +3015,7 @@ async function compartilharLinkApito(matchId){
   if(!state.cloudId){ showToast("Salve o torneio na nuvem antes de compartilhar o link."); return; }
   showLoading("Gerando link...");
   try{
-    const res = await fetch("/api/apito-link", {
+    const res = await apiFetch("/api/apito-link", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id: state.cloudId, match: matchId, email: auth.email })
     });
@@ -3022,7 +3056,7 @@ async function gerarLinkInscricao(){
   if(!state.cloudId){ showToast("Salve o torneio na nuvem antes de gerar o link de inscrição."); return; }
   showLoading("Gerando link...");
   try{
-    const res = await fetch("/api/inscricao-link", {
+    const res = await apiFetch("/api/inscricao-link", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id: state.cloudId, email: auth.email })
     });
@@ -3039,7 +3073,7 @@ async function gerarLinkInscricao(){
 async function atualizarLinkInscricao(patch){
   if(!state.cloudId || !state.inscricaoLink) return;
   try{
-    const res = await fetch("/api/inscricao-link", {
+    const res = await apiFetch("/api/inscricao-link", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ id: state.cloudId, email: auth.email, ...patch })
     });
