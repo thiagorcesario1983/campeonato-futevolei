@@ -2124,6 +2124,7 @@ async function inscricaoCriar(request: Request, env: Env): Promise<Response> {
     status: "pendente",
     jogador1, jogador2,
     inscricao: null,
+    cabecaDeChave: false,
     atualizadoEm: Date.now()
   };
   dados.state.duplas.push(novaDupla);

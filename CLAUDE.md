@@ -111,7 +111,8 @@ e/ou confirmação de Pix quebrados silenciosamente:
 
 ## Modelo de dados (dentro de `state`, ver `defaultState()` no index.html)
 
-- `duplas`: `[{nome, tel1, tel2, nomeDefault}]`
+- `duplas`: `[{nome, tel1, tel2, nomeDefault, cabecaDeChave}]` — `cabecaDeChave` (booleano, opcional)
+  só é considerado no sorteio do formato "grupos" (ver item 22); ignorado em "eliminacao"
 - `formato`: `"grupos"` ou `"eliminacao"` — muda como os jogos da 1ª fase são organizados
 - `groupMatches` (formato grupos): `[{group, jogo, a, b, pa, pb, finalizado, wo}]`
 - `elimRodadas` (formato eliminação): `[{matches:[{a,b,pa,pb,finalizado,wo}], bye}]`
@@ -419,6 +420,16 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     continua reativável a qualquer momento pelo botão "Aprovar" normal, sem código extra.
     **Se algum dia precisar rodar esse worker localmente com o cron**: `wrangler dev
     --test-scheduled` expõe `/__scheduled` pra disparar manualmente sem esperar a hora virar.
+22. **Cabeça de chave, só no formato "grupos"** (`d.cabecaDeChave`, booleano por dupla, editável
+    na aba Duplas antes do sorteio): opcional — com 0 marcadas, `sortear()` sorteia 100%
+    aleatório, exatamente como sempre foi. Só quando a quantidade marcada bater **exatamente**
+    com `state.numGrupos` (uma por grupo — checado em `configuracaoValida`, bloqueando o botão
+    "Sortear" enquanto não bater) é que o sorteio muda: separa as cabeças de chave das demais
+    duplas, embaralha cada lista **separadamente**, distribui 1 cabeça de chave por grupo (sorteada
+    aleatoriamente entre os grupos, não em ordem fixa) e só depois preenche o resto dos grupos
+    com as demais duplas embaralhadas — garantindo que nenhum grupo fique com 2 cabeças de chave
+    nem sem nenhuma. Completamente ignorado no formato "eliminacao" (não existe a noção de
+    "grupo" ali, então a checkbox nem aparece nessa modalidade).
 
 ## Convenções
 
