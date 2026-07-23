@@ -6098,6 +6098,18 @@ function bindEvents(){
   main.querySelectorAll("input[data-cabeca-chave]").forEach(inp=>{
     inp.addEventListener("change", e=>{
       const i = Number(e.target.dataset.cabecaChave);
+      // Valida na hora de marcar (não só no clique de "Sortear"): não deixa passar da
+      // quantidade de grupos, já que o sorteio só sabe distribuir exatamente 1 cabeça de
+      // chave por grupo — marcar a mais deixaria a configuração sempre inválida até desmarcar.
+      if(e.target.checked){
+        const numGrupos = state.numGrupos || 4;
+        const jaMarcadas = state.duplas.filter(d=>d.cabecaDeChave).length;
+        if(jaMarcadas >= numGrupos){
+          e.target.checked = false;
+          showToast(`Já tem ${numGrupos} dupla(s) marcada(s) como cabeça de chave — no máximo, uma por grupo (${numGrupos} grupo(s)).`);
+          return;
+        }
+      }
       state.duplas[i].cabecaDeChave = e.target.checked;
       state.duplas[i].atualizadoEm = Date.now();
       save();
