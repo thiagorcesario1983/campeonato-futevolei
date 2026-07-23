@@ -3060,14 +3060,19 @@ async function compartilharLinkInscricao(){
   const url = urlInscricao();
   if(!url) return;
   const titulo = `Inscrição — ${state.cloudNome||"Campeonato de Futevôlei"}`;
+  // O texto combina título+link numa linha só — vários apps (WhatsApp incluso) ignoram o
+  // campo "title" do Web Share API e mostram só "text"/"url" separados; e no fallback de
+  // clipboard/prompt não existe campo de título nenhum. Sem isso, quem recebe o link colado
+  // não sabe de qual campeonato se trata até abrir.
+  const mensagem = `${titulo}\n${url}`;
   if(navigator.share){
-    try{ await navigator.share({ title:titulo, url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
+    try{ await navigator.share({ title:titulo, text:titulo, url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
   }
   try{
-    await navigator.clipboard.writeText(url);
+    await navigator.clipboard.writeText(mensagem);
     showToast("Link copiado! Envie para as duplas se inscreverem.");
   }catch(e){
-    prompt("Copie o link abaixo:", url);
+    prompt("Copie o texto abaixo:", mensagem);
   }
 }
 function acharDuplaPorId(id){ return state.duplas.find(d=>d.id===id); }
