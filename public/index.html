@@ -2876,9 +2876,14 @@ function arbReabrir(matchId){
   arbSalvarAgora();
   render();
 }
+// Placar não pode ser alterado com a partida finalizada, nem durante o tempo técnico — só
+// volta a ficar disponível quando o jogo é retomado (status volta pra "andamento").
+function pontuacaoBloqueada(status){
+  return status==="finalizada" || status==="tecnico";
+}
 function arbPonto(matchId, lado, delta){
   const arb = getArb(matchId);
-  if(arb.status==="finalizada") return;
+  if(pontuacaoBloqueada(arb.status)) return;
   const campo = lado==="a" ? "placarA" : "placarB";
   arb[campo] = Math.max(0, arb[campo]+delta);
   arb.atualizadoEm = Date.now();
@@ -5694,16 +5699,16 @@ function renderApito(){
     </div>
     <div class="ref-board">
       <div class="ref-team-col">
-        <button class="ref-score-btn plus" data-ponto="a" data-delta="1" ${arb.status==="finalizada"?"disabled":""}>+</button>
+        <button class="ref-score-btn plus" data-ponto="a" data-delta="1" ${pontuacaoBloqueada(arb.status)?"disabled":""}>+</button>
         <div class="ref-score-num">${arb.placarA}</div>
-        <button class="ref-score-btn minus" data-ponto="a" data-delta="-1" ${arb.status==="finalizada"?"disabled":""}>−</button>
+        <button class="ref-score-btn minus" data-ponto="a" data-delta="-1" ${pontuacaoBloqueada(arb.status)?"disabled":""}>−</button>
         <div class="ref-team-nome">${escapeHtml(a||"—")}</div>
       </div>
       <div class="ref-vs">×</div>
       <div class="ref-team-col">
-        <button class="ref-score-btn plus" data-ponto="b" data-delta="1" ${arb.status==="finalizada"?"disabled":""}>+</button>
+        <button class="ref-score-btn plus" data-ponto="b" data-delta="1" ${pontuacaoBloqueada(arb.status)?"disabled":""}>+</button>
         <div class="ref-score-num">${arb.placarB}</div>
-        <button class="ref-score-btn minus" data-ponto="b" data-delta="-1" ${arb.status==="finalizada"?"disabled":""}>−</button>
+        <button class="ref-score-btn minus" data-ponto="b" data-delta="-1" ${pontuacaoBloqueada(arb.status)?"disabled":""}>−</button>
         <div class="ref-team-nome">${escapeHtml(b||"—")}</div>
       </div>
     </div>
@@ -6793,16 +6798,16 @@ function renderApitoPublicoTela(){
     </div>
     <div class="ref-board">
       <div class="ref-team-col">
-        <button class="ref-score-btn plus" data-ap-ponto="a" data-delta="1" ${arb.status==="finalizada"?"disabled":""}>+</button>
+        <button class="ref-score-btn plus" data-ap-ponto="a" data-delta="1" ${pontuacaoBloqueada(arb.status)?"disabled":""}>+</button>
         <div class="ref-score-num">${arb.placarA}</div>
-        <button class="ref-score-btn minus" data-ap-ponto="a" data-delta="-1" ${arb.status==="finalizada"?"disabled":""}>−</button>
+        <button class="ref-score-btn minus" data-ap-ponto="a" data-delta="-1" ${pontuacaoBloqueada(arb.status)?"disabled":""}>−</button>
         <div class="ref-team-nome">${escapeHtml(c.a||"—")}</div>
       </div>
       <div class="ref-vs">×</div>
       <div class="ref-team-col">
-        <button class="ref-score-btn plus" data-ap-ponto="b" data-delta="1" ${arb.status==="finalizada"?"disabled":""}>+</button>
+        <button class="ref-score-btn plus" data-ap-ponto="b" data-delta="1" ${pontuacaoBloqueada(arb.status)?"disabled":""}>+</button>
         <div class="ref-score-num">${arb.placarB}</div>
-        <button class="ref-score-btn minus" data-ap-ponto="b" data-delta="-1" ${arb.status==="finalizada"?"disabled":""}>−</button>
+        <button class="ref-score-btn minus" data-ap-ponto="b" data-delta="-1" ${pontuacaoBloqueada(arb.status)?"disabled":""}>−</button>
         <div class="ref-team-nome">${escapeHtml(c.b||"—")}</div>
       </div>
     </div>

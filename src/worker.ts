@@ -1631,7 +1631,9 @@ async function apitoPost(request: Request, env: Env): Promise<Response> {
       arb.atualizadoEm = Date.now();
     }
   } else if (action === "ponto") {
-    if (arb.status !== "finalizada") {
+    // Placar não pode mudar com a partida finalizada nem durante o tempo técnico — só volta a
+    // aceitar pontos quando o jogo é retomado (status volta pra "andamento").
+    if (arb.status !== "finalizada" && arb.status !== "tecnico") {
       const lado = body.lado === "b" ? "b" : "a";
       const delta = body.delta === -1 ? -1 : 1;
       const campo = lado === "a" ? "placarA" : "placarB";
