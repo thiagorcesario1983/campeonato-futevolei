@@ -54,7 +54,23 @@ async function lerRespostaSmtp(reader: ReadableStreamDefaultReader<Uint8Array>):
   return buf;
 }
 
-async function enviarEmail(env: Env, to: string, subject: string, html: string): Promise<boolean> {
+// Quebra o base64 em linhas de 76 caracteres — padrão MIME (RFC 2045) pra Content-Transfer-
+// Encoding: base64; sem isso, uma imagem embutida vira uma única linha gigantesca no corpo do
+// e-mail, o que vários servidores/relays SMTP rejeitam ou corrompem (limite prático de ~998
+// caracteres por linha no protocolo).
+function quebrarBase64EmLinhas(b64: string): string {
+  const linhas: string[] = [];
+  for (let i = 0; i < b64.length; i += 76) linhas.push(b64.slice(i, i + 76));
+  return linhas.join("\r\n");
+}
+
+// imagemBase64PNG (opcional): PNG em base64 (sem o prefixo "data:image/png;base64,") embutido
+// inline no e-mail via multipart/related + Content-ID — o `html` deve referenciar
+// `<img src="cid:qrcode">` nesse caso. Usado pro QR code do Pix (criação de torneio e
+// confirmação de inscrição de dupla) — colar o base64 direto num <img src="data:..."> faria uma
+// única linha do corpo do e-mail passar de dezenas de milhares de caracteres, arriscando ser
+// rejeitado por servidores SMTP mais rígidos.
+async function enviarEmail(env: Env, to: string, subject: string, html: string, imagemBase64PNG?: string | null): Promise<boolean> {
   const host = env.SMTP_HOST, user = env.SMTP_USER, pass = env.SMTP_PASS;
   const port = Number(env.SMTP_PORT || "587");
   if (!host || !user || !pass || !to) return false;
@@ -102,14 +118,35 @@ async function enviarEmail(env: Env, to: string, subject: string, html: string):
     checar(await enviar("DATA"), ["354"]);
 
     const dataAtual = new Date().toUTCString();
-    const corpo =
+    const cabecalho =
       `From: Campeonato Futevôlei <${user}>\r\n` +
       `To: <${to}>\r\n` +
       `Subject: ${subject}\r\n` +
       `Date: ${dataAtual}\r\n` +
-      `MIME-Version: 1.0\r\n` +
-      `Content-Type: text/html; charset=UTF-8\r\n` +
-      `\r\n${html}\r\n.`;
+      `MIME-Version: 1.0\r\n`;
+    let corpo: string;
+    if (imagemBase64PNG) {
+      const boundary = `----=_Part_${crypto.randomUUID().replace(/-/g, "")}`;
+      corpo =
+        cabecalho +
+        `Content-Type: multipart/related; boundary="${boundary}"\r\n` +
+        `\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Type: text/html; charset=UTF-8\r\n` +
+        `\r\n${html}\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Type: image/png\r\n` +
+        `Content-Transfer-Encoding: base64\r\n` +
+        `Content-ID: <qrcode>\r\n` +
+        `Content-Disposition: inline; filename="qrcode.png"\r\n` +
+        `\r\n${quebrarBase64EmLinhas(imagemBase64PNG)}\r\n` +
+        `--${boundary}--\r\n.`;
+    } else {
+      corpo =
+        cabecalho +
+        `Content-Type: text/html; charset=UTF-8\r\n` +
+        `\r\n${html}\r\n.`;
+    }
     checar(await enviar(corpo), ["250"]);
 
     await enviar("QUIT").catch(() => {}); // não é crítico se o QUIT falhar
@@ -633,7 +670,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
         ? `<p>Esse campeonato foi liberado automaticamente, sem custo.</p>`
         : pagamentoResultante?.copiaCola
           ? `<p><b>Valor das diárias:</b> R$ ${valorEstim.toFixed(2).replace(".", ",")}${diasNovo ? ` (${diasNovo} diária${diasNovo > 1 ? "s" : ""})` : ""}</p>
-             <p>Pague via Pix usando o código copia-e-cola abaixo (ou escaneie o QR direto no app) para liberar o uso:</p>
+             <p>Pague via Pix escaneando o QR code abaixo, ou usando o código copia-e-cola:</p>
+             ${pagamentoResultante.qrCodeBase64 ? `<p><img src="cid:qrcode" alt="QR Code Pix" width="220" height="220" style="display:block;"></p>` : ""}
              <p style="word-break:break-all;font-family:monospace;background:#f4f4f4;padding:8px;border-radius:6px;">${pagamentoResultante.copiaCola}</p>
              <p>Assim que o pagamento for identificado, o campeonato é liberado automaticamente — a aprovação do admin acontece em paralelo, sem afetar o pagamento.</p>`
           : `<p>⏳ Ainda não foi possível gerar o Pix automaticamente — abra o app pra gerar o código manualmente. Você também recebe um novo e-mail assim que o admin revisar a solicitação.</p>`;
@@ -647,7 +685,8 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
          <b>Nome:</b> ${meta.nome}<br>
          <b>Início:</b> ${meta.dataInicio || "não informado"}<br>
          <b>Fim:</b> ${meta.dataFim || "não informado"}</p>
-         ${corpoPagamento}`
+         ${corpoPagamento}`,
+        pagamentoResultante?.qrCodeBase64 || null
       );
     }
   }
@@ -2052,6 +2091,19 @@ async function inscricaoCriar(request: Request, env: Env): Promise<Response> {
     ...extrairOrigemRequisicao(request),
     conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
   }]);
+
+  // Manda o Pix da inscrição por e-mail pros 2 jogadores (endereço que cada um preencheu no
+  // próprio formulário) — assim quem não voltar pra tela do Pix ainda recebe o QR/copia-cola.
+  const assuntoEmailInscricao = `Inscrição "${nomeDupla}" — campeonato [${dados.codigo}] "${dados.nome}"`;
+  const corpoEmailInscricao = (nomeJogador: string) => `<p>Olá, ${nomeJogador}!</p>
+     <p>Sua dupla <b>${nomeDupla}</b> foi inscrita no campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>).</p>
+     <p><b>Valor da inscrição:</b> R$ ${valorInscricao.toFixed(2).replace(".", ",")}</p>
+     <p>Pague via Pix escaneando o QR code abaixo, ou usando o código copia-e-cola:</p>
+     ${cobranca.qrCodeBase64 ? `<p><img src="cid:qrcode" alt="QR Code Pix" width="220" height="220" style="display:block;"></p>` : ""}
+     <p style="word-break:break-all;font-family:monospace;background:#f4f4f4;padding:8px;border-radius:6px;">${cobranca.copiaCola}</p>
+     <p>Assim que o pagamento for identificado, a inscrição da dupla é confirmada automaticamente.</p>`;
+  await enviarEmail(env, jogador1.email, assuntoEmailInscricao, corpoEmailInscricao(jogador1.nomeCompleto), cobranca.qrCodeBase64 || null);
+  await enviarEmail(env, jogador2.email, assuntoEmailInscricao, corpoEmailInscricao(jogador2.nomeCompleto), cobranca.qrCodeBase64 || null);
 
   return json({ ok: true, duplaId, inscricao: inscricaoResultado });
 }
