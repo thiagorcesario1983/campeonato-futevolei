@@ -2626,11 +2626,11 @@ function mensagemWhatsApp(nome){
   });
   // "do torneio "X"" em vez de "do X" — evita erro de concordância de gênero quando o nome
   // escolhido pelo organizador não é uma palavra masculina (ex: "Copa Verão").
-  const nomeTorneio = state.cloudNome || "Campeonato de Futevôlei";
+  const nomeTorneio = state.cloudNome || "Supremo FTV";
   return `Olá, dupla ${nome}! 🏐\n\nVocê está no Grupo ${letter} do torneio "${nomeTorneio}".\n\nSeus jogos da fase de grupos:\n${linhas.join("\n")}\n\nBoa sorte! 🏆`;
 }
 function mensagemMataMata(faseLabel, nome, oponente){
-  const nomeTorneio = state.cloudNome || "Campeonato de Futevôlei";
+  const nomeTorneio = state.cloudNome || "Supremo FTV";
   return `Olá, dupla ${nome}! 🏐\n\nSeu próximo jogo do torneio "${nomeTorneio}" (${faseLabel}) já está definido:\nvs ${oponente}\n\nBoa sorte! 🏆`;
 }
 function duplaIndexByName(nome){
@@ -3118,7 +3118,7 @@ function urlInscricao(){
 async function compartilharLinkInscricao(){
   const url = urlInscricao();
   if(!url) return;
-  const titulo = `Inscrição — ${state.cloudNome||"Campeonato de Futevôlei"}`;
+  const titulo = `Inscrição — ${state.cloudNome||"Supremo FTV"}`;
   // O texto combina título+link numa linha só — vários apps (WhatsApp incluso) ignoram o
   // campo "title" do Web Share API e mostram só "text"/"url" separados; e no fallback de
   // clipboard/prompt não existe campo de título nenhum. Sem isso, quem recebe o link colado
@@ -3363,7 +3363,7 @@ function renderStory(canvas, H){
     ctx.textAlign = "center";
     ctx.fillStyle = WHITE;
     ctx.font = "bold 50px Arial, sans-serif";
-    ctx.fillText(truncate(ctx, "🏐 " + (state.cloudNome || "Campeonato de Futevôlei"), W-100), W/2, headerH/2+16);
+    ctx.fillText(truncate(ctx, "🏐 " + (state.cloudNome || "Supremo FTV"), W-100), W/2, headerH/2+16);
   }
 
   let cursorY;
@@ -3796,7 +3796,7 @@ async function shareStoryImage(){
     const file = new File([blob], "campeonato-futevolei.png", {type:"image/png"});
     if(navigator.canShare && navigator.canShare({files:[file]})){
       try{
-        await navigator.share({files:[file], title:"Campeonato de Futevôlei"});
+        await navigator.share({files:[file], title:"Supremo FTV"});
       }catch(e){ /* usuário cancelou o compartilhamento */ }
     } else {
       showToast("Compartilhamento direto não é suportado aqui — usando download.");
@@ -6885,7 +6885,7 @@ function renderInscricaoPublicaForm(erro){
   const info = __inscricaoPublicaInfo;
   const valorTxt = typeof info.valorInscricao === "number" ? `R$ ${info.valorInscricao.toFixed(2).replace(".", ",")}` : "—";
   document.body.innerHTML = `<div class="ref-screen">
-    <div class="ref-top"><div class="ref-label">Inscrição — ${escapeHtml(info.nomeTorneio||"Campeonato de Futevôlei")}</div></div>
+    <div class="ref-top"><div class="ref-label">Inscrição — ${escapeHtml(info.nomeTorneio||"Supremo FTV")}</div></div>
     <div style="padding:16px 20px 40px;max-width:420px;margin:0 auto;">
       <div class="hint" style="margin-bottom:14px;">Inscrição da dupla · ${valorTxt} via Pix${info.vagasRestantes!=null ? ` · ${info.vagasRestantes} vaga(s) restante(s)` : ""}</div>
       ${erro ? `<div class="card" style="border-color:var(--coral);color:var(--coral);font-size:13px;margin-bottom:14px;">⚠️ ${escapeHtml(erro)}</div>` : ""}

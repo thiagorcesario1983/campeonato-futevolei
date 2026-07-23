@@ -124,7 +124,7 @@ async function enviarEmail(env: Env, to: string, subject: string, html: string, 
 
     const dataAtual = new Date().toUTCString();
     const cabecalho =
-      `From: Campeonato Futevôlei <${user}>\r\n` +
+      `From: Supremo FTV <${user}>\r\n` +
       `To: <${to}>\r\n` +
       `Subject: ${subject}\r\n` +
       `Date: ${dataAtual}\r\n` +
