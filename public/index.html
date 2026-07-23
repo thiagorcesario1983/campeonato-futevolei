@@ -198,6 +198,11 @@
   .tel-row{display:flex;gap:8px;}
   .tel-row input{font-family:'DM Mono',monospace;font-size:12.5px;}
   .tel-row input::placeholder{font-family:'Work Sans',sans-serif;}
+  .jogador-group{margin-bottom:10px;}
+  .jogador-group label{font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.02em;}
+  .jogador-group input{width:100%;margin-bottom:6px;}
+  .jogador-group input:last-child{margin-bottom:0;}
+  .jogador-group input[type=tel],.jogador-group input[type=email]{font-family:'DM Mono',monospace;font-size:12.5px;}
   .whats-list .dupla-card{padding:12px 14px;}
   .whats-list .g-name{font-weight:700;font-size:14px;margin-bottom:2px;}
   .whats-list .g-matches{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5;}
@@ -687,7 +692,7 @@ function criarDuplaVazia(nome){
 function defaultState(){
   return {
     tab: "resumo",
-    duplas: Array.from({length:6}, (_,i)=>criarDuplaVazia(`Dupla ${i+1}`)),
+    duplas: [], // torneio novo começa sem nenhuma dupla — o organizador adiciona manualmente ou via link de inscrição
     formato: "grupos", // "grupos" | "eliminacao" — escolhido antes do sorteio
     numGrupos: 4, // (formato "grupos") quantidade de grupos, deve dividir a qtde de duplas igualmente
     elimTarget: 4, // (formato "eliminacao") quantidade de duplas que avançam pro mata-mata (potência de 2)
@@ -1721,12 +1726,14 @@ function somenteLeitura(){
 }
 
 // Torneio já aprovado/pago, só esperando a data de início chegar: libera a aba Duplas
-// (cadastro de duplas, sortear e reiniciar torneio moram todas nela) e a aba Resumo (só
-// informativa, sem nenhuma ação que grave dado) antes da hora, pra dar tempo de organizar tudo
-// com antecedência — as outras abas (Jogos, Tabela, Mata-mata etc.) só liberam no dia. Não se
-// aplica a recusado/bloqueado/pagamento pendente: aí o torneio inteiro continua bloqueado como
-// antes, já que nem chegou a ser validado.
-const ABAS_LIBERADAS_ANTES_DO_INICIO = ["resumo", "sorteio"];
+// (cadastro de duplas, link de inscrição, sortear e reiniciar torneio moram todas nela), a aba
+// Resumo (só informativa, sem nenhuma ação que grave dado) e a aba Configurações (é lá que o
+// organizador define o valor da inscrição, precisa poder ajustar antes do início pra já
+// divulgar o link com o valor certo) antes da hora, pra dar tempo de organizar tudo com
+// antecedência — as outras abas (Jogos, Tabela, Mata-mata etc.) só liberam no dia. Não se aplica
+// a recusado/bloqueado/pagamento pendente: aí o torneio inteiro continua bloqueado como antes,
+// já que nem chegou a ser validado.
+const ABAS_LIBERADAS_ANTES_DO_INICIO = ["resumo", "sorteio", "configuracoes"];
 function torneioPreLiberado(){
   return !ehAdmin() && torneioEstaAtivo().motivo==="antes";
 }
@@ -4866,39 +4873,48 @@ function renderSorteio(){
     const ehInscricao = d.origem==="inscricao";
     // Duplas vindas do link público nunca podem ser removidas por aqui (só Bloquear) — sem
     // isso, o servidor não teria como distinguir "cliente ainda não viu essa inscrição" de
-    // "organizador removeu de propósito" no merge defensivo de torneiosSave.
+    // "organizador removeu de propósito" no merge defensivo de torneiosSave. Duplas adicionadas
+    // manualmente continuam podendo ser removidas normalmente.
     const podeRemover = !state.drawn && !ehInscricao;
+    const j1 = d.jogador1 || {};
+    const j2 = d.jogador2 || {};
     html += `<div class="dupla-card">
       <div class="top-row">
         <span class="num">${String(i+1).padStart(2,"0")}</span>
         <input type="text" data-dupla="${i}" data-field="nome" placeholder="Nome da dupla" value="${escapeHtml(d.nome)}">
         ${podeRemover?`<button class="ref-mini-btn ghost" data-remover-dupla="${i}" style="flex:0 0 auto;width:auto;padding:8px 10px;">🗑️</button>`:""}
       </div>
-      ${ehInscricao ? `
-      <div style="margin:4px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div style="margin:4px 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         ${badgeStatusDupla(statusReal)}
         ${statusReal!=="ativa"?`<button class="ref-mini-btn" data-aprovar-dupla="${d.id}" style="width:auto;padding:6px 10px;">✅ Aprovar</button>`:""}
         ${statusReal!=="bloqueada"?`<button class="ref-mini-btn ghost" data-bloquear-dupla="${d.id}" style="width:auto;padding:6px 10px;border-color:var(--coral);color:var(--coral);">🚫 Bloquear</button>`:""}
       </div>
-      <div class="hint" style="font-size:11.5px;margin-bottom:8px;line-height:1.5;">
-        ${escapeHtml(d.jogador1?.nomeCompleto||"")} · ${escapeHtml(d.jogador1?.email||"")}<br>
-        ${escapeHtml(d.jogador2?.nomeCompleto||"")} · ${escapeHtml(d.jogador2?.email||"")}
-      </div>` : ""}
-      <div class="tel-row">
-        <input type="tel" data-dupla="${i}" data-field="tel1" placeholder="Tel. jogador 1 (WhatsApp)" value="${escapeHtml(d.tel1||"")}">
-        <input type="tel" data-dupla="${i}" data-field="tel2" placeholder="Tel. jogador 2 (WhatsApp)" value="${escapeHtml(d.tel2||"")}">
+      <div class="jogador-group">
+        <label>Jogador 1</label>
+        <input type="text" data-dupla-jogador="${i}_1" data-field="nomeCompleto" placeholder="Nome completo" value="${escapeHtml(j1.nomeCompleto||"")}">
+        <input type="tel" data-dupla-jogador="${i}_1" data-field="tel" placeholder="Telefone (WhatsApp)" value="${escapeHtml(j1.tel||d.tel1||"")}">
+        <input type="email" data-dupla-jogador="${i}_1" data-field="email" placeholder="E-mail" value="${escapeHtml(j1.email||"")}">
+      </div>
+      <div class="jogador-group">
+        <label>Jogador 2</label>
+        <input type="text" data-dupla-jogador="${i}_2" data-field="nomeCompleto" placeholder="Nome completo" value="${escapeHtml(j2.nomeCompleto||"")}">
+        <input type="tel" data-dupla-jogador="${i}_2" data-field="tel" placeholder="Telefone (WhatsApp)" value="${escapeHtml(j2.tel||d.tel2||"")}">
+        <input type="email" data-dupla-jogador="${i}_2" data-field="email" placeholder="E-mail" value="${escapeHtml(j2.email||"")}">
       </div>
     </div>`;
   });
 
   if(!state.drawn){
     html += `<button class="btn secondary" id="btn-add-dupla" style="margin-bottom:14px;">➕ Adicionar dupla</button>`;
+    // Só informativo enquanto ainda está cadastrando duplas (o organizador pode estar no meio
+    // do cadastro, esperando mais inscrições chegarem) — não trava nada aqui. A validação de
+    // verdade (bloqueando o sorteio) acontece só no clique de "Sortear" (ver bindEvents).
     const cfg = configuracaoValida();
     if(!cfg.ok){
-      html += `<div class="card" style="border-color:var(--coral);color:var(--coral);font-size:12.5px;margin-bottom:14px;">⚠️ ${escapeHtml(cfg.msg)}</div>`;
+      html += `<div class="card" style="border-color:var(--sand-dark);color:var(--muted);font-size:12.5px;margin-bottom:14px;">ℹ️ ${escapeHtml(cfg.msg)}</div>`;
     }
     const labelBtn = state.formato==="eliminacao" ? "Sortear 1ª rodada 🏐" : "Sortear grupos 🏐";
-    html += `<button class="btn" id="btn-sortear" ${cfg.ok?"":'disabled style="opacity:.5;"'}>${labelBtn}</button>`;
+    html += `<button class="btn" id="btn-sortear">${labelBtn}</button>`;
   } else if(state.formato==="eliminacao"){
     html += `<div class="card" style="text-align:center;">
       <div style="font-weight:700;color:var(--heading);margin-bottom:4px;">✅ 1ª rodada sorteada</div>
@@ -5980,6 +5996,26 @@ function bindEvents(){
       });
     }
   });
+  main.querySelectorAll("input[data-dupla-jogador]").forEach(inp=>{
+    inp.addEventListener("input", e=>{
+      const [iStr, slot] = e.target.dataset.duplaJogador.split("_");
+      const i = Number(iStr);
+      const field = e.target.dataset.field;
+      const d = state.duplas[i];
+      if(!d) return;
+      const jogadorKey = slot==="1" ? "jogador1" : "jogador2";
+      if(!d[jogadorKey]) d[jogadorKey] = {};
+      d[jogadorKey][field] = e.target.value;
+      // Mantém tel1/tel2 sincronizados — WhatsApp/Telegram e as listas de jogos ainda leem
+      // esses campos "achatados", não o objeto jogador1/jogador2.
+      if(field==="tel"){
+        if(slot==="1") d.tel1 = e.target.value;
+        else d.tel2 = e.target.value;
+      }
+      d.atualizadoEm = Date.now();
+      save();
+    });
+  });
   const btnAddDupla = document.getElementById("btn-add-dupla");
   if(btnAddDupla) btnAddDupla.addEventListener("click", ()=>{
     state.duplas.push(criarDuplaVazia(`Dupla ${state.duplas.length+1}`));
@@ -6060,7 +6096,8 @@ function bindEvents(){
   });
   const btnSortear = document.getElementById("btn-sortear");
   if(btnSortear) btnSortear.addEventListener("click", async ()=>{
-    if(!configuracaoValida().ok){ showToast("Ajuste a configuração antes de sortear."); return; }
+    const cfgSortear = configuracaoValida();
+    if(!cfgSortear.ok){ showToast(cfgSortear.msg || "Ajuste a configuração antes de sortear."); return; }
     sortear(); render(); showToast(state.formato==="eliminacao" ? "1ª rodada sorteada!" : "Grupos sorteados!");
     await refreshTelegramStatus();
     await enviarTelegramTodos(true);
@@ -6733,19 +6770,25 @@ function renderInscricaoPublicaForm(erro){
       <div class="hint" style="margin-bottom:14px;">Inscrição da dupla · ${valorTxt} via Pix${info.vagasRestantes!=null ? ` · ${info.vagasRestantes} vaga(s) restante(s)` : ""}</div>
       ${erro ? `<div class="card" style="border-color:var(--coral);color:var(--coral);font-size:13px;margin-bottom:14px;">⚠️ ${escapeHtml(erro)}</div>` : ""}
 
-      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 1 — nome completo</label>
-      <input type="text" id="input-j1-nome" placeholder="Nome completo" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 1 — telefone</label>
-      <input type="tel" id="input-j1-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 1 — e-mail</label>
-      <input type="email" id="input-j1-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:18px;">
+      <div style="border:1.5px solid #3a5a44;border-radius:12px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">Jogador 1</div>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Nome completo</label>
+        <input type="text" id="input-j1-nome" placeholder="Nome completo" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Telefone</label>
+        <input type="tel" id="input-j1-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">E-mail</label>
+        <input type="email" id="input-j1-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
+      </div>
 
-      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 2 — nome completo</label>
-      <input type="text" id="input-j2-nome" placeholder="Nome completo" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 2 — telefone</label>
-      <input type="tel" id="input-j2-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Jogador 2 — e-mail</label>
-      <input type="email" id="input-j2-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:18px;">
+      <div style="border:1.5px solid #3a5a44;border-radius:12px;padding:14px;margin-bottom:18px;">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">Jogador 2</div>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Nome completo</label>
+        <input type="text" id="input-j2-nome" placeholder="Nome completo" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Telefone</label>
+        <input type="tel" id="input-j2-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">E-mail</label>
+        <input type="email" id="input-j2-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
+      </div>
 
       <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Nome da dupla</label>
       <input type="text" id="input-nome-dupla" placeholder="Sugerido a partir dos nomes acima" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:18px;">
