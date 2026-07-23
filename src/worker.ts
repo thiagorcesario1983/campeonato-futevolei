@@ -431,6 +431,14 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   const solicitanteEmail = await emailAutenticado(request, env);
   if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
 
+  // Snapshot do que o CLIENTE realmente mandou pras duplas, antes do merge defensivo abaixo
+  // mexer em body.state.duplas — usado só pra atribuir corretamente os logs de aprovação/
+  // bloqueio/remoção manual (ver mais abaixo). Sem isso, se o merge resgatar um status mais
+  // novo vindo do servidor (ex: outro dispositivo aprovando em paralelo), o "antes/depois"
+  // veria uma mudança que não foi essa requisição que fez, e atribuiria erroneamente a ação
+  // a quem só estava sincronizando outra coisa.
+  const duplasClienteOriginalPorId = new Map<string, any>((body.state?.duplas || []).map((d: any) => [d?.id, { status: d?.status, ativacaoVia: d?.ativacaoVia }]));
+
   const id = body.id || crypto.randomUUID();
   const now = new Date().toISOString();
   const index = await getIndex(env);
@@ -692,6 +700,64 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
           torneioCodigo: meta.codigo,
           descricao: `Dupla cadastrada manualmente: "${d.nome}"`,
           dados: { duplaId: d.id, nome: d.nome, origem: "manual", tel1: d.tel1 || null, tel2: d.tel2 || null, jogador1: d.jogador1 || null, jogador2: d.jogador2 || null },
+          ...origemLog,
+          conexao: conexaoLog
+        });
+      }
+    }
+  }
+  // Aprovação/bloqueio manual (botões "Aprovar"/"Bloquear" na aba Duplas) e exclusão de dupla —
+  // usa duplasClienteOriginalPorId (capturado ANTES do merge defensivo lá em cima) como "depois",
+  // nunca o body.state.duplas já mesclado: sem isso, o merge podia resgatar um status mais novo
+  // vindo de outro dispositivo (ex: outra aba aprovando em paralelo) e essa comparação atribuiria
+  // erroneamente a ação a quem só estava sincronizando outra coisa nesta requisição.
+  {
+    const duplasAntesPorId = new Map<string, any>((existingFull?.state?.duplas || []).map((d: any) => [d?.id, d]));
+    for (const [duplaId, depoisCliente] of duplasClienteOriginalPorId) {
+      if (!duplaId) continue;
+      const antes = duplasAntesPorId.get(duplaId);
+      if (!antes) continue; // dupla nova nesta requisição — já coberta pelo bloco acima ou por inscricaoCriar
+      const nomeAtual = (body.state?.duplas || []).find((d: any) => d?.id === duplaId)?.nome || antes.nome;
+      if (antes.status !== "ativa" && depoisCliente.status === "ativa" && depoisCliente.ativacaoVia === "manual") {
+        logsParaRegistrar.push({
+          tipo: "dupla_aprovada",
+          atorEmail: solicitanteEmail,
+          atorNome: body.ownerName || null,
+          torneioId: id,
+          torneioNome: meta.nome,
+          torneioCodigo: meta.codigo,
+          descricao: `Dupla aprovada manualmente: "${nomeAtual}"`,
+          dados: { duplaId, nome: nomeAtual },
+          ...origemLog,
+          conexao: conexaoLog
+        });
+      } else if (antes.status !== "bloqueada" && depoisCliente.status === "bloqueada") {
+        logsParaRegistrar.push({
+          tipo: "dupla_bloqueada",
+          atorEmail: solicitanteEmail,
+          atorNome: body.ownerName || null,
+          torneioId: id,
+          torneioNome: meta.nome,
+          torneioCodigo: meta.codigo,
+          descricao: `Dupla bloqueada manualmente: "${nomeAtual}"`,
+          dados: { duplaId, nome: nomeAtual },
+          ...origemLog,
+          conexao: conexaoLog
+        });
+      }
+    }
+    for (const [duplaId, antes] of duplasAntesPorId) {
+      if (!duplaId || antes?.origem !== "manual") continue;
+      if (!duplasClienteOriginalPorId.has(duplaId)) {
+        logsParaRegistrar.push({
+          tipo: "dupla_removida",
+          atorEmail: solicitanteEmail,
+          atorNome: body.ownerName || null,
+          torneioId: id,
+          torneioNome: meta.nome,
+          torneioCodigo: meta.codigo,
+          descricao: `Dupla removida: "${antes.nome}"`,
+          dados: { duplaId, nome: antes.nome },
           ...origemLog,
           conexao: conexaoLog
         });
@@ -2591,7 +2657,7 @@ location.replace("/");
 ============================================================ */
 interface LogEntry {
   id: string;
-  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario" | "inscricao_recebida" | "inscricao_paga" | "dupla_adicionada" | "inscricao_expirada";
+  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario" | "inscricao_recebida" | "inscricao_paga" | "dupla_adicionada" | "inscricao_expirada" | "dupla_aprovada" | "dupla_bloqueada" | "dupla_removida";
   quando: string;
   atorEmail: string | null;
   atorNome: string | null;
