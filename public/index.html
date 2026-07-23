@@ -339,6 +339,10 @@
   .bracket-row .team{flex:1;font-size:13.5px;font-weight:500;}
   .bracket-row .team.win{color:var(--grass);font-weight:700;}
   .bracket-row .team.tbd{color:var(--muted);font-style:italic;font-weight:400;}
+  /* Ícone de bandeira quadriculada ao lado de toda dupla vencedora — cobre os dois lugares que
+     usam essa mesma classe "team win" (jogos de grupo/eliminação e o bracket do mata-mata),
+     sem precisar duplicar HTML em cada render(). */
+  .team.win::after{content:" 🏁";}
 
   .champion-banner{
     background:linear-gradient(150deg,var(--coral),#C94A16);
