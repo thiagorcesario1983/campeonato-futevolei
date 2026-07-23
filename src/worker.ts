@@ -2077,6 +2077,23 @@ async function inscricaoCriar(request: Request, env: Env): Promise<Response> {
     conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
   }]);
 
+  // Avisa o organizador assim que a dupla se inscreve — independente do Pix ter sido gerado
+  // com sucesso ou não (por isso roda antes da tentativa abaixo, não depois).
+  if (dados.ownerEmail) {
+    await enviarEmail(
+      env,
+      dados.ownerEmail,
+      `Nova inscrição em [${dados.codigo}] "${dados.nome}": "${nomeDupla}"`,
+      `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
+       <p>Uma nova dupla se inscreveu no seu campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>):</p>
+       <p><b>Dupla:</b> ${nomeDupla}</p>
+       <p><b>Jogador 1:</b> ${jogador1.nomeCompleto} · ${jogador1.tel} · ${jogador1.email}</p>
+       <p><b>Jogador 2:</b> ${jogador2.nomeCompleto} · ${jogador2.tel} · ${jogador2.email}</p>
+       <p><b>Valor da inscrição:</b> R$ ${valorInscricao.toFixed(2).replace(".", ",")}</p>
+       <p>Assim que o Pix for confirmado, você recebe um novo e-mail avisando — a dupla já fica ativa automaticamente, sem precisar de aprovação manual.</p>`
+    );
+  }
+
   const origin = new URL(request.url).origin;
   const cobranca = await criarCobrancaMP(env, {
     valor: valorInscricao,
@@ -2171,6 +2188,17 @@ async function confirmarPagamentoInscricao(env: Env, torneioId: string, duplaId:
     dados: { duplaId, valor: dupla.inscricao.valor },
     ip: null, pais: null, regiao: null, cidade: null, conexao: null
   }]);
+
+  if (dados.ownerEmail) {
+    await enviarEmail(
+      env,
+      dados.ownerEmail,
+      `Pix recebido — dupla "${dupla.nome}" confirmada em [${dados.codigo}] "${dados.nome}"`,
+      `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
+       <p>O pagamento da inscrição da dupla <b>${dupla.nome}</b> foi confirmado e ela já está <b>ativa</b> no campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>).</p>
+       <p><b>Valor:</b> R$ ${Number(dupla.inscricao.valor || 0).toFixed(2).replace(".", ",")}</p>`
+    );
+  }
 
   return { status: dupla.status, inscricao: dupla.inscricao };
 }
