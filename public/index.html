@@ -4598,7 +4598,10 @@ const ROTULO_TIPO_LOG = {
   dupla_adicionada: "➕ Dupla adicionada",
   inscricao_recebida: "📝 Inscrição recebida",
   inscricao_paga: "💰 Inscrição paga",
-  inscricao_expirada: "⏰ Inscrição expirada"
+  inscricao_expirada: "⏰ Inscrição expirada",
+  dupla_aprovada: "✅ Dupla aprovada",
+  dupla_bloqueada: "🚫 Dupla bloqueada",
+  dupla_removida: "🗑️ Dupla removida"
 };
 const COR_TIPO_LOG = {
   acesso: { bg:"#E4E4E4", cor:"#5A5A5A" },
@@ -4609,7 +4612,10 @@ const COR_TIPO_LOG = {
   dupla_adicionada: { bg:"#F3E8FB", cor:"#7A3FA0" },
   inscricao_recebida: { bg:"#E3F1FB", cor:"#2C6E99" },
   inscricao_paga: { bg:"#DFF3E3", cor:"#1F7A3D" },
-  inscricao_expirada: { bg:"#FBE3E3", cor:"#A23B2E" }
+  inscricao_expirada: { bg:"#FBE3E3", cor:"#A23B2E" },
+  dupla_aprovada: { bg:"#DCEEE1", cor:"#2E6E42" },
+  dupla_bloqueada: { bg:"#F7DCD8", cor:"#A23B2E" },
+  dupla_removida: { bg:"#E4E4E4", cor:"#5A5A5A" }
 };
 function badgeTipoLog(tipo){
   const c = COR_TIPO_LOG[tipo] || COR_TIPO_LOG.acesso;

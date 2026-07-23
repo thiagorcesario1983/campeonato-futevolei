@@ -430,6 +430,22 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     com as demais duplas embaralhadas — garantindo que nenhum grupo fique com 2 cabeças de chave
     nem sem nenhuma. Completamente ignorado no formato "eliminacao" (não existe a noção de
     "grupo" ali, então a checkbox nem aparece nessa modalidade).
+23. **Log de aprovação/bloqueio/remoção manual de dupla** (`dupla_aprovada`, `dupla_bloqueada`,
+    `dupla_removida`, detectados em `torneiosSave`): mesma técnica de comparar "antes" (
+    `existingFull.state.duplas`) com "depois", mas aqui o "depois" **não pode ser**
+    `body.state.duplas` já mesclado — precisa ser um snapshot do que o cliente mandou de
+    verdade, capturado logo no início da função, **antes** do merge defensivo de duplas rodar
+    (`duplasClienteOriginalPorId`). Motivo: o merge pode resgatar um `status`/`ativacaoVia` mais
+    novo vindo do próprio servidor (ex: outro dispositivo aprovando em paralelo, ou o cron de
+    expiração do item 21 bloqueando uma inscrição) *dentro* de `body.state.duplas` antes da
+    comparação — se a comparação usasse esse valor já mesclado, atribuiria a ação a quem só
+    estava sincronizando outra coisa nesta requisição, e/ou duplicaria um log que outro caminho
+    (`inscricao_paga`, `inscricao_expirada`) já registrou. Com o snapshot pré-merge, só loga
+    quando a transição realmente veio do payload que ESSE cliente montou (ex: clicou em
+    "Aprovar"/"Bloquear"/🗑️ na própria tela). `dupla_aprovada` exige especificamente
+    `ativacaoVia==="manual"` (não dispara pra ativação automática via Pix, já coberta por
+    `inscricao_paga`); `dupla_removida` é restrito a `origem==="manual"` (duplas de inscrição
+    nunca são removidas de verdade, só bloqueadas — ver item 14).
 
 ## Convenções
 
