@@ -111,7 +111,8 @@ e/ou confirmação de Pix quebrados silenciosamente:
 
 ## Modelo de dados (dentro de `state`, ver `defaultState()` no index.html)
 
-- `duplas`: `[{nome, tel1, tel2, nomeDefault}]`
+- `duplas`: `[{nome, tel1, tel2, nomeDefault, cabecaDeChave}]` — `cabecaDeChave` (booleano, opcional)
+  só é considerado no sorteio do formato "grupos" (ver item 22); ignorado em "eliminacao"
 - `formato`: `"grupos"` ou `"eliminacao"` — muda como os jogos da 1ª fase são organizados
 - `groupMatches` (formato grupos): `[{group, jogo, a, b, pa, pb, finalizado, wo}]`
 - `elimRodadas` (formato eliminação): `[{matches:[{a,b,pa,pb,finalizado,wo}], bye}]`
@@ -401,6 +402,34 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     JWKS pra também cobrir esse caminho) é bem mais complexa pro ganho marginal. **Qualquer rota
     nova que precise saber quem está autenticado deve usar `emailAutenticado(request, env)`,
     nunca ler `email`/`ownerEmail` direto do corpo ou da query.**
+21. **Corrida de concorrência na última vaga do link de inscrição**: com o KV não-transacional,
+    duas inscrições simultâneas bem na última vaga podem, em tese, passar as duas pela checagem
+    de `inscricaoVagasOcupadas` e resultar em mais duplas do que o limite configurado. Aceito
+    como risco residual (raro, baixo volume) — fechar 100% exigiria um mecanismo atômico de
+    verdade (Durable Objects em vez de KV), complexidade desproporcional pro tamanho desse app.
+    O que foi implementado (mitiga o caso mais comum, que é bem mais provável que a corrida em
+    si): um **Cron Trigger** (`triggers.crons` em `wrangler.jsonc`, roda de hora em hora →
+    `scheduled()` no `worker.ts` → `expirarInscricoesPendentes`) que bloqueia sozinha (`status:
+    "bloqueada"`, nunca hard-delete — mesma regra de sempre pra `origem:"inscricao"`) toda dupla
+    inscrita pelo link público que ficou "pendente" (Pix não pago, nem aprovação manual) por
+    mais de 24h (`INSCRICAO_EXPIRACAO_MS`), liberando a vaga pro próximo interessado. Gera log
+    (`inscricao_expirada`, com os dados completos dos 2 jogadores) e manda e-mail pro
+    organizador avisando. **Escopado só a `origem === "inscricao"`** — dupla adicionada
+    manualmente pelo organizador (que também nasce "pendente") nunca expira sozinha, já que só
+    ele decide quando aprovar essa. Por nascer como "bloqueada" (não um status novo), a dupla
+    continua reativável a qualquer momento pelo botão "Aprovar" normal, sem código extra.
+    **Se algum dia precisar rodar esse worker localmente com o cron**: `wrangler dev
+    --test-scheduled` expõe `/__scheduled` pra disparar manualmente sem esperar a hora virar.
+22. **Cabeça de chave, só no formato "grupos"** (`d.cabecaDeChave`, booleano por dupla, editável
+    na aba Duplas antes do sorteio): opcional — com 0 marcadas, `sortear()` sorteia 100%
+    aleatório, exatamente como sempre foi. Só quando a quantidade marcada bater **exatamente**
+    com `state.numGrupos` (uma por grupo — checado em `configuracaoValida`, bloqueando o botão
+    "Sortear" enquanto não bater) é que o sorteio muda: separa as cabeças de chave das demais
+    duplas, embaralha cada lista **separadamente**, distribui 1 cabeça de chave por grupo (sorteada
+    aleatoriamente entre os grupos, não em ordem fixa) e só depois preenche o resto dos grupos
+    com as demais duplas embaralhadas — garantindo que nenhum grupo fique com 2 cabeças de chave
+    nem sem nenhuma. Completamente ignorado no formato "eliminacao" (não existe a noção de
+    "grupo" ali, então a checkbox nem aparece nessa modalidade).
 
 ## Convenções
 

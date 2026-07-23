@@ -690,6 +690,7 @@ function criarDuplaVazia(nome){
     origem:"manual", status:"pendente", ativacaoVia:null,
     jogador1:null, jogador2:null,
     inscricao:null,
+    cabecaDeChave:false,
     atualizadoEm: Date.now()
   };
 }
@@ -763,6 +764,7 @@ function migrarBracketAntigo(s){
       if(d.jogador1===undefined) d.jogador1 = null;
       if(d.jogador2===undefined) d.jogador2 = null;
       if(d.inscricao===undefined) d.inscricao = null;
+      if(d.cabecaDeChave===undefined) d.cabecaDeChave = false;
       if(!d.atualizadoEm) d.atualizadoEm = Date.now();
     });
   }
@@ -2048,14 +2050,30 @@ function sortear(){
     save();
     return;
   }
-  const nomes = duplasAtivas().map(d => (d.nome||"").trim() || "Dupla sem nome");
+  const ativas = duplasAtivas();
   const numGrupos = state.numGrupos || 4;
-  const tamanhoGrupo = nomes.length / numGrupos;
-  const embaralhado = shuffle(nomes);
   const letters = groupLetters(numGrupos);
-  const groups = [];
-  for(let g=0; g<numGrupos; g++){
-    groups.push(embaralhado.slice(g*tamanhoGrupo, (g+1)*tamanhoGrupo));
+  const nomeDe = d => (d.nome||"").trim() || "Dupla sem nome";
+  const nomesCabecas = shuffle(ativas.filter(d=>d.cabecaDeChave).map(nomeDe));
+  const groups = Array.from({length:numGrupos}, ()=>[]);
+  if(nomesCabecas.length===numGrupos){
+    // 1 cabeça de chave por grupo (garantido por configuracaoValida — só sorteia com essa
+    // função se a quantidade bater certinho com o nº de grupos), sorteada aleatoriamente entre
+    // eles. As demais duplas são distribuídas em partes iguais, também aleatoriamente.
+    nomesCabecas.forEach((nome,i)=> groups[i].push(nome));
+    const nomesResto = shuffle(ativas.filter(d=>!d.cabecaDeChave).map(nomeDe));
+    const tamanhoResto = nomesResto.length / numGrupos;
+    for(let g=0; g<numGrupos; g++){
+      groups[g].push(...nomesResto.slice(g*tamanhoResto, (g+1)*tamanhoResto));
+    }
+  } else {
+    // Nenhuma cabeça de chave marcada — sorteio 100% aleatório, como sempre foi.
+    const nomes = ativas.map(nomeDe);
+    const tamanhoGrupo = nomes.length / numGrupos;
+    const embaralhado = shuffle(nomes);
+    for(let g=0; g<numGrupos; g++){
+      groups[g].push(...embaralhado.slice(g*tamanhoGrupo, (g+1)*tamanhoGrupo));
+    }
   }
   const groupMatchesPorGrupo = groups.map((g, gi)=>{
     const jogos = [];
@@ -2108,6 +2126,13 @@ function configuracaoValida(){
   if(n % g !== 0) return {ok:false, msg:`${n} duplas ativas não dividem igualmente em ${g} grupos.${sufixoPendentes} Ajuste a quantidade de duplas ou de grupos.`};
   const tamanho = n/g;
   if(tamanho < 3) return {ok:false, msg:`Cada grupo ficaria com só ${tamanho} dupla(s) ativa(s). São necessárias pelo menos 3 duplas por grupo.${sufixoPendentes}`};
+  // Cabeça de chave é opcional (0 marcada = sorteio 100% aleatório, como sempre foi) — mas se
+  // usar, precisa ser uma exatamente por grupo, senão não dá pra garantir 1 em cada um sem
+  // deixar sobrando ou faltando cabeça pra algum grupo.
+  const numCabecas = duplasAtivas().filter(d=>d.cabecaDeChave).length;
+  if(numCabecas > 0 && numCabecas !== g){
+    return {ok:false, msg:`${numCabecas} dupla(s) marcada(s) como cabeça de chave, mas são ${g} grupos — marque exatamente ${g} (uma por grupo), ou nenhuma, pra sorteio totalmente aleatório.`};
+  }
   return {ok:true, msg:""};
 }
 
@@ -2601,11 +2626,11 @@ function mensagemWhatsApp(nome){
   });
   // "do torneio "X"" em vez de "do X" — evita erro de concordância de gênero quando o nome
   // escolhido pelo organizador não é uma palavra masculina (ex: "Copa Verão").
-  const nomeTorneio = state.cloudNome || "Campeonato de Futevôlei";
+  const nomeTorneio = state.cloudNome || "Supremo FTV";
   return `Olá, dupla ${nome}! 🏐\n\nVocê está no Grupo ${letter} do torneio "${nomeTorneio}".\n\nSeus jogos da fase de grupos:\n${linhas.join("\n")}\n\nBoa sorte! 🏆`;
 }
 function mensagemMataMata(faseLabel, nome, oponente){
-  const nomeTorneio = state.cloudNome || "Campeonato de Futevôlei";
+  const nomeTorneio = state.cloudNome || "Supremo FTV";
   return `Olá, dupla ${nome}! 🏐\n\nSeu próximo jogo do torneio "${nomeTorneio}" (${faseLabel}) já está definido:\nvs ${oponente}\n\nBoa sorte! 🏆`;
 }
 function duplaIndexByName(nome){
@@ -3093,7 +3118,7 @@ function urlInscricao(){
 async function compartilharLinkInscricao(){
   const url = urlInscricao();
   if(!url) return;
-  const titulo = `Inscrição — ${state.cloudNome||"Campeonato de Futevôlei"}`;
+  const titulo = `Inscrição — ${state.cloudNome||"Supremo FTV"}`;
   // O texto combina título+link numa linha só — vários apps (WhatsApp incluso) ignoram o
   // campo "title" do Web Share API e mostram só "text"/"url" separados; e no fallback de
   // clipboard/prompt não existe campo de título nenhum. Sem isso, quem recebe o link colado
@@ -3338,7 +3363,7 @@ function renderStory(canvas, H){
     ctx.textAlign = "center";
     ctx.fillStyle = WHITE;
     ctx.font = "bold 50px Arial, sans-serif";
-    ctx.fillText(truncate(ctx, "🏐 " + (state.cloudNome || "Campeonato de Futevôlei"), W-100), W/2, headerH/2+16);
+    ctx.fillText(truncate(ctx, "🏐 " + (state.cloudNome || "Supremo FTV"), W-100), W/2, headerH/2+16);
   }
 
   let cursorY;
@@ -3771,7 +3796,7 @@ async function shareStoryImage(){
     const file = new File([blob], "campeonato-futevolei.png", {type:"image/png"});
     if(navigator.canShare && navigator.canShare({files:[file]})){
       try{
-        await navigator.share({files:[file], title:"Campeonato de Futevôlei"});
+        await navigator.share({files:[file], title:"Supremo FTV"});
       }catch(e){ /* usuário cancelou o compartilhamento */ }
     } else {
       showToast("Compartilhamento direto não é suportado aqui — usando download.");
@@ -4569,14 +4594,22 @@ const ROTULO_TIPO_LOG = {
   torneio_criado: "🆕 Torneio criado",
   duplas_sorteadas: "🎲 Duplas sorteadas",
   resultado_registrado: "🏐 Resultado registrado",
-  permissao_usuario: "👤 Permissão Usuários"
+  permissao_usuario: "👤 Permissão Usuários",
+  dupla_adicionada: "➕ Dupla adicionada",
+  inscricao_recebida: "📝 Inscrição recebida",
+  inscricao_paga: "💰 Inscrição paga",
+  inscricao_expirada: "⏰ Inscrição expirada"
 };
 const COR_TIPO_LOG = {
   acesso: { bg:"#E4E4E4", cor:"#5A5A5A" },
   torneio_criado: { bg:"#DCEEE1", cor:"#2E6E42" },
   duplas_sorteadas: { bg:"#FCEFD8", cor:"#9A6B1E" },
   resultado_registrado: { bg:"#DCE7F5", cor:"#2C5C99" },
-  permissao_usuario: { bg:"#EDE1F5", cor:"#6B3FA0" }
+  permissao_usuario: { bg:"#EDE1F5", cor:"#6B3FA0" },
+  dupla_adicionada: { bg:"#F3E8FB", cor:"#7A3FA0" },
+  inscricao_recebida: { bg:"#E3F1FB", cor:"#2C6E99" },
+  inscricao_paga: { bg:"#DFF3E3", cor:"#1F7A3D" },
+  inscricao_expirada: { bg:"#FBE3E3", cor:"#A23B2E" }
 };
 function badgeTipoLog(tipo){
   const c = COR_TIPO_LOG[tipo] || COR_TIPO_LOG.acesso;
@@ -4921,7 +4954,7 @@ function renderSorteio(){
       html += `<div class="card">
         <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Quantidade de grupos</label>
         <input type="number" min="1" step="1" id="input-num-grupos" value="${state.numGrupos}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
-        <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (1, 2, 4, 8...) e dividir a quantidade de duplas em partes iguais, com no mínimo 3 duplas por grupo. Os 2 primeiros de cada grupo avançam para o mata-mata.</div>
+        <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (1, 2, 4, 8...) e dividir a quantidade de duplas em partes iguais, com no mínimo 3 duplas por grupo. Os 2 primeiros de cada grupo avançam para o mata-mata. Marque duplas como <b>🌱 Cabeça de chave</b> na lista abaixo (uma por grupo, opcional) pra garantir que elas caiam em grupos diferentes no sorteio.</div>
       </div>`;
     }
   }
@@ -4951,6 +4984,10 @@ function renderSorteio(){
         ${statusReal!=="ativa"?`<button class="ref-mini-btn" data-aprovar-dupla="${d.id}" style="width:auto;padding:6px 10px;">✅ Aprovar</button>`:""}
         ${statusReal!=="bloqueada"?`<button class="ref-mini-btn ghost" data-bloquear-dupla="${d.id}" style="width:auto;padding:6px 10px;border-color:var(--coral);color:var(--coral);">🚫 Bloquear</button>`:""}
       </div>
+      ${!state.drawn && state.formato!=="eliminacao" ? `<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--heading);margin-bottom:10px;">
+        <input type="checkbox" data-cabeca-chave="${i}" ${d.cabecaDeChave?"checked":""} style="width:auto;">
+        🌱 Cabeça de chave
+      </label>` : ""}
       <div class="jogador-group">
         <label>Jogador 1</label>
         <input type="text" data-dupla-jogador="${i}_1" data-field="nomeCompleto" placeholder="Nome completo" value="${escapeHtml(j1.nomeCompleto||"")}">
@@ -6058,6 +6095,15 @@ function bindEvents(){
       });
     }
   });
+  main.querySelectorAll("input[data-cabeca-chave]").forEach(inp=>{
+    inp.addEventListener("change", e=>{
+      const i = Number(e.target.dataset.cabecaChave);
+      state.duplas[i].cabecaDeChave = e.target.checked;
+      state.duplas[i].atualizadoEm = Date.now();
+      save();
+      render();
+    });
+  });
   main.querySelectorAll("input[data-dupla-jogador]").forEach(inp=>{
     inp.addEventListener("input", e=>{
       const [iStr, slot] = e.target.dataset.duplaJogador.split("_");
@@ -6839,7 +6885,7 @@ function renderInscricaoPublicaForm(erro){
   const info = __inscricaoPublicaInfo;
   const valorTxt = typeof info.valorInscricao === "number" ? `R$ ${info.valorInscricao.toFixed(2).replace(".", ",")}` : "—";
   document.body.innerHTML = `<div class="ref-screen">
-    <div class="ref-top"><div class="ref-label">Inscrição — ${escapeHtml(info.nomeTorneio||"Campeonato de Futevôlei")}</div></div>
+    <div class="ref-top"><div class="ref-label">Inscrição — ${escapeHtml(info.nomeTorneio||"Supremo FTV")}</div></div>
     <div style="padding:16px 20px 40px;max-width:420px;margin:0 auto;">
       <div class="hint" style="margin-bottom:14px;">Inscrição da dupla · ${valorTxt} via Pix${info.vagasRestantes!=null ? ` · ${info.vagasRestantes} vaga(s) restante(s)` : ""}</div>
       ${erro ? `<div class="card" style="border-color:var(--coral);color:var(--coral);font-size:13px;margin-bottom:14px;">⚠️ ${escapeHtml(erro)}</div>` : ""}
