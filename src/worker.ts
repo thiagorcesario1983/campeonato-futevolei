@@ -526,14 +526,15 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
         continue;
       }
       // Presente nos dois lados: quem tem "atualizadoEm" mais recente vence, só nos campos que
-      // podem ter um segundo escritor (status/inscricao — mutados pelo webhook/verificação de
-      // pagamento). Nome/telefones/dados dos jogadores são editados só pelo organizador, sem
-      // concorrência, então sempre vêm do payload do cliente.
+      // podem ter um segundo escritor (status/inscricao/ativacaoVia — mutados pelo webhook/
+      // verificação de pagamento). Nome/telefones/dados dos jogadores são editados só pelo
+      // organizador, sem concorrência, então sempre vêm do payload do cliente.
       const atualizadoServidor = duplaServidor.atualizadoEm || 0;
       const atualizadoCliente = duplaCliente.atualizadoEm || 0;
       if (atualizadoServidor > atualizadoCliente) {
         duplaCliente.status = duplaServidor.status;
         duplaCliente.inscricao = duplaServidor.inscricao;
+        duplaCliente.ativacaoVia = duplaServidor.ativacaoVia;
         duplaCliente.atualizadoEm = duplaServidor.atualizadoEm;
       }
     }
@@ -588,6 +589,29 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
           torneioCodigo: meta.codigo,
           descricao: `Jogo finalizado: ${m.a || "?"} ${m.pa ?? "-"} x ${m.pb ?? "-"} ${m.b || "?"}${m.wo ? " (W.O.)" : ""}`,
           dados: { matchId, a: m.a, b: m.b, pa: m.pa, pb: m.pb, wo: m.wo || null },
+          ...origemLog,
+          conexao: conexaoLog
+        });
+      }
+    }
+  }
+  // Registra toda dupla cadastrada MANUALMENTE (o cadastro por inscrição pública já tem seu
+  // próprio log completo, com todos os dados dos 2 jogadores, em inscricaoCriar — evita
+  // duplicar o mesmo evento aqui quando o merge acima resgata uma inscrição que este cliente
+  // ainda não conhecia).
+  {
+    const duplasAntesPorId = new Map((existingFull?.state?.duplas || []).map((d: any) => [d?.id, d]));
+    for (const d of body.state?.duplas || []) {
+      if (d?.origem === "manual" && d?.id && !duplasAntesPorId.has(d.id)) {
+        logsParaRegistrar.push({
+          tipo: "dupla_adicionada",
+          atorEmail: solicitanteEmail,
+          atorNome: body.ownerName || null,
+          torneioId: id,
+          torneioNome: meta.nome,
+          torneioCodigo: meta.codigo,
+          descricao: `Dupla cadastrada manualmente: "${d.nome}"`,
+          dados: { duplaId: d.id, nome: d.nome, origem: "manual", tel1: d.tel1 || null, tel2: d.tel2 || null, jogador1: d.jogador1 || null, jogador2: d.jogador2 || null },
           ...origemLog,
           conexao: conexaoLog
         });
@@ -2036,6 +2060,23 @@ async function inscricaoCriar(request: Request, env: Env): Promise<Response> {
     return json({ error: "Falha ao salvar", detail: String(e?.message || e) }, 500);
   }
 
+  // Registra a dupla no log assim que ela é criada — antes de tentar o Pix, não depois. Se o
+  // Pix falhar (ver "!cobranca.ok" abaixo, que retorna cedo), a dupla já existe e o organizador
+  // precisa desse rastro pra saber que alguém tentou se inscrever mesmo sem confirmação de
+  // pagamento — mesmo padrão de "toda dupla cadastrada, manual ou por inscrição, vai pro log".
+  await registrarLogs(env, [{
+    tipo: "inscricao_recebida",
+    atorEmail: null,
+    atorNome: `${jogador1.nomeCompleto} / ${jogador2.nomeCompleto}`,
+    torneioId,
+    torneioNome: dados.nome,
+    torneioCodigo: dados.codigo,
+    descricao: `Nova inscrição: "${nomeDupla}"`,
+    dados: { duplaId, nomeDupla, origem: "inscricao", jogador1, jogador2 },
+    ...extrairOrigemRequisicao(request),
+    conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
+  }]);
+
   const origin = new URL(request.url).origin;
   const cobranca = await criarCobrancaMP(env, {
     valor: valorInscricao,
@@ -2079,19 +2120,6 @@ async function inscricaoCriar(request: Request, env: Env): Promise<Response> {
     // ainda consegue ver que alguém tentou se inscrever e resolver manualmente.
   }
 
-  await registrarLogs(env, [{
-    tipo: "inscricao_recebida",
-    atorEmail: null,
-    atorNome: `${jogador1.nomeCompleto} / ${jogador2.nomeCompleto}`,
-    torneioId,
-    torneioNome: dados.nome,
-    torneioCodigo: dados.codigo,
-    descricao: `Nova inscrição: "${nomeDupla}"`,
-    dados: { duplaId, nomeDupla },
-    ...extrairOrigemRequisicao(request),
-    conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
-  }]);
-
   // Manda o Pix da inscrição por e-mail pros 2 jogadores (endereço que cada um preencheu no
   // próprio formulário) — assim quem não voltar pra tela do Pix ainda recebe o QR/copia-cola.
   const assuntoEmailInscricao = `Inscrição "${nomeDupla}" — campeonato [${dados.codigo}] "${dados.nome}"`;
@@ -2123,6 +2151,7 @@ async function confirmarPagamentoInscricao(env: Env, torneioId: string, duplaId:
 
   dupla.inscricao = { ...(dupla.inscricao || {}), status: "pago", paymentId: pagamentoMP.id, pagoEm: new Date().toISOString() };
   dupla.status = "ativa";
+  dupla.ativacaoVia = "pix";
   dupla.atualizadoEm = Date.now();
 
   try {
@@ -2454,7 +2483,7 @@ location.replace("/");
 ============================================================ */
 interface LogEntry {
   id: string;
-  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario" | "inscricao_recebida" | "inscricao_paga";
+  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario" | "inscricao_recebida" | "inscricao_paga" | "dupla_adicionada";
   quando: string;
   atorEmail: string | null;
   atorNome: string | null;

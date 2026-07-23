@@ -682,7 +682,12 @@ function criarDuplaVazia(nome){
   return {
     id: crypto.randomUUID(),
     nome, tel1:"", tel2:"", nomeDefault:true,
-    origem:"manual", status:"ativa",
+    // Nasce "pendente" mesmo sendo cadastro manual — o organizador precisa aprovar
+    // explicitamente (botão Aprovar) antes dela entrar no sorteio, igual a uma inscrição
+    // pública ainda não paga. "ativacaoVia" registra COMO ela foi ativada depois
+    // ("manual" pelo botão Aprovar, ou "pix" quando o pagamento da inscrição é confirmado
+    // sozinho) — é independente de "origem" (que registra só COMO ela foi cadastrada).
+    origem:"manual", status:"pendente", ativacaoVia:null,
     jogador1:null, jogador2:null,
     inscricao:null,
     atualizadoEm: Date.now()
@@ -754,6 +759,7 @@ function migrarBracketAntigo(s){
       if(!d.id) d.id = crypto.randomUUID();
       if(!d.origem) d.origem = "manual";
       if(!d.status) d.status = "ativa";
+      if(d.ativacaoVia===undefined) d.ativacaoVia = null;
       if(d.jogador1===undefined) d.jogador1 = null;
       if(d.jogador2===undefined) d.jogador2 = null;
       if(d.inscricao===undefined) d.inscricao = null;
@@ -3039,8 +3045,9 @@ function urlInscricao(){
 async function compartilharLinkInscricao(){
   const url = urlInscricao();
   if(!url) return;
+  const titulo = `Inscrição — ${state.cloudNome||"Campeonato de Futevôlei"}`;
   if(navigator.share){
-    try{ await navigator.share({ title:"Inscrição de dupla", url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
+    try{ await navigator.share({ title:titulo, url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
   }
   try{
     await navigator.clipboard.writeText(url);
@@ -3054,6 +3061,7 @@ function aprovarDupla(id){
   const d = acharDuplaPorId(id);
   if(!d) return;
   d.status = "ativa";
+  d.ativacaoVia = "manual";
   d.atualizadoEm = Date.now();
   save(); render();
   showToast(`"${d.nome}" aprovada.`);
@@ -4796,10 +4804,11 @@ function renderContatoBlock(i, slot, tel, baseMsg, trackKey){
   </div>`;
 }
 
-function badgeStatusDupla(status){
+function badgeStatusDupla(status, ativacaoVia){
   if(status==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente pagamento</span>`;
   if(status==="bloqueada") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">🚫 Bloqueada</span>`;
-  return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativa</span>`;
+  const viaTxt = ativacaoVia==="pix" ? " · via Pix" : ativacaoVia==="manual" ? " · aprovação manual" : "";
+  return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativa${viaTxt}</span>`;
 }
 
 function renderCardInscricaoLink(){
@@ -4885,7 +4894,7 @@ function renderSorteio(){
         ${podeRemover?`<button class="ref-mini-btn ghost" data-remover-dupla="${i}" style="flex:0 0 auto;width:auto;padding:8px 10px;">🗑️</button>`:""}
       </div>
       <div style="margin:4px 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        ${badgeStatusDupla(statusReal)}
+        ${badgeStatusDupla(statusReal, d.ativacaoVia)}
         ${statusReal!=="ativa"?`<button class="ref-mini-btn" data-aprovar-dupla="${d.id}" style="width:auto;padding:6px 10px;">✅ Aprovar</button>`:""}
         ${statusReal!=="bloqueada"?`<button class="ref-mini-btn ghost" data-bloquear-dupla="${d.id}" style="width:auto;padding:6px 10px;border-color:var(--coral);color:var(--coral);">🚫 Bloquear</button>`:""}
       </div>
@@ -6765,7 +6774,7 @@ function renderInscricaoPublicaForm(erro){
   const info = __inscricaoPublicaInfo;
   const valorTxt = typeof info.valorInscricao === "number" ? `R$ ${info.valorInscricao.toFixed(2).replace(".", ",")}` : "—";
   document.body.innerHTML = `<div class="ref-screen">
-    <div class="ref-top"><div class="ref-label">${escapeHtml(info.nomeTorneio||"Inscrição")}</div></div>
+    <div class="ref-top"><div class="ref-label">Inscrição — ${escapeHtml(info.nomeTorneio||"Campeonato de Futevôlei")}</div></div>
     <div style="padding:16px 20px 40px;max-width:420px;margin:0 auto;">
       <div class="hint" style="margin-bottom:14px;">Inscrição da dupla · ${valorTxt} via Pix${info.vagasRestantes!=null ? ` · ${info.vagasRestantes} vaga(s) restante(s)` : ""}</div>
       ${erro ? `<div class="card" style="border-color:var(--coral);color:var(--coral);font-size:13px;margin-bottom:14px;">⚠️ ${escapeHtml(erro)}</div>` : ""}
