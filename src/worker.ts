@@ -2590,7 +2590,7 @@ location.replace("/");
 ============================================================ */
 interface LogEntry {
   id: string;
-  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario" | "inscricao_recebida" | "inscricao_paga" | "dupla_adicionada";
+  tipo: "acesso" | "torneio_criado" | "duplas_sorteadas" | "resultado_registrado" | "permissao_usuario" | "inscricao_recebida" | "inscricao_paga" | "dupla_adicionada" | "inscricao_expirada";
   quando: string;
   atorEmail: string | null;
   atorNome: string | null;
@@ -2690,6 +2690,78 @@ async function logAcesso(request: Request, env: Env): Promise<Response> {
     conexao: typeof body.conexao === "string" && body.conexao ? body.conexao.slice(0, 40) : null
   }]);
   return json({ ok: true });
+}
+
+const INSCRICAO_EXPIRACAO_MS = 1000 * 60 * 60 * 24; // 24h
+
+// Rodada pelo Cron Trigger (ver "scheduled" abaixo e triggers.crons em wrangler.jsonc), de hora
+// em hora: bloqueia sozinha toda dupla vinda do link público de inscrição que ficou "pendente"
+// (Pix não pago nem aprovação manual) por mais de 24h — libera a vaga pro próximo interessado
+// sem precisar o organizador ficar de olho. Vira "bloqueada", igual ao botão manual — nunca é
+// hard-deletada (mesma regra de sempre pra duplas origem "inscricao") e continua reversível via
+// o botão "Aprovar" normal, caso o organizador queira abrir exceção depois. Escopado só a
+// origem "inscricao": dupla adicionada manualmente pelo organizador (também nasce "pendente")
+// não expira sozinha — só ele decide quando aprovar essa.
+async function expirarInscricoesPendentes(env: Env): Promise<void> {
+  const index = await getIndex(env);
+  const agora = Date.now();
+
+  for (const meta of index) {
+    let dados: any;
+    try {
+      const raw = await env.DB.get(`torneio:${meta.id}`);
+      if (!raw) continue;
+      dados = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(dados?.state?.duplas) || !dados.state.duplas.length) continue;
+
+    let mudou = false;
+    const expiradas: any[] = [];
+    for (const d of dados.state.duplas) {
+      if (d?.origem !== "inscricao" || d?.status !== "pendente") continue;
+      const criadoEm = d.inscricao?.criadoEm ? new Date(d.inscricao.criadoEm).getTime() : (d.atualizadoEm || 0);
+      if (!criadoEm || agora - criadoEm < INSCRICAO_EXPIRACAO_MS) continue;
+
+      d.status = "bloqueada";
+      d.atualizadoEm = agora;
+      mudou = true;
+      expiradas.push(d);
+    }
+    if (!mudou) continue;
+
+    try {
+      await env.DB.put(`torneio:${meta.id}`, JSON.stringify(dados));
+    } catch {
+      continue; // não registra log/e-mail de algo que não foi salvo de verdade
+    }
+
+    for (const d of expiradas) {
+      await registrarLogs(env, [{
+        tipo: "inscricao_expirada",
+        atorEmail: null,
+        atorNome: d.nome || null,
+        torneioId: meta.id,
+        torneioNome: dados.nome,
+        torneioCodigo: dados.codigo,
+        descricao: `Inscrição expirada (24h sem pagamento/aprovação): "${d.nome}"`,
+        dados: { duplaId: d.id, nome: d.nome, jogador1: d.jogador1 || null, jogador2: d.jogador2 || null },
+        ip: null, pais: null, regiao: null, cidade: null, conexao: null
+      }]);
+
+      if (dados.ownerEmail) {
+        await enviarEmail(
+          env,
+          dados.ownerEmail,
+          `Inscrição expirada em [${dados.codigo}] "${dados.nome}": "${d.nome}"`,
+          `<p>Olá${dados.ownerName ? ", " + dados.ownerName : ""}!</p>
+           <p>A inscrição da dupla <b>${d.nome}</b> no campeonato <b>${dados.nome}</b> (código <b>${dados.codigo}</b>) passou 24h sem o Pix ser pago nem aprovação manual, e foi bloqueada automaticamente — a vaga já está livre pra outra dupla se inscrever.</p>
+           <p>Se essa dupla ainda quiser entrar (ex: mandou comprovante de pagamento atrasado), é só abrir a aba Duplas e clicar em "Aprovar" normalmente.</p>`
+        );
+      }
+    }
+  }
 }
 
 /* ============================================================
@@ -2813,5 +2885,11 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
+  },
+
+  // Cron Trigger (ver triggers.crons em wrangler.jsonc, roda de hora em hora): expira sozinha
+  // inscrições pendentes há mais de 24h (ver expirarInscricoesPendentes acima).
+  async scheduled(_event: any, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(expirarInscricoesPendentes(env));
   }
 };

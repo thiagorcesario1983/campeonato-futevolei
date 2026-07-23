@@ -401,6 +401,24 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     JWKS pra também cobrir esse caminho) é bem mais complexa pro ganho marginal. **Qualquer rota
     nova que precise saber quem está autenticado deve usar `emailAutenticado(request, env)`,
     nunca ler `email`/`ownerEmail` direto do corpo ou da query.**
+21. **Corrida de concorrência na última vaga do link de inscrição**: com o KV não-transacional,
+    duas inscrições simultâneas bem na última vaga podem, em tese, passar as duas pela checagem
+    de `inscricaoVagasOcupadas` e resultar em mais duplas do que o limite configurado. Aceito
+    como risco residual (raro, baixo volume) — fechar 100% exigiria um mecanismo atômico de
+    verdade (Durable Objects em vez de KV), complexidade desproporcional pro tamanho desse app.
+    O que foi implementado (mitiga o caso mais comum, que é bem mais provável que a corrida em
+    si): um **Cron Trigger** (`triggers.crons` em `wrangler.jsonc`, roda de hora em hora →
+    `scheduled()` no `worker.ts` → `expirarInscricoesPendentes`) que bloqueia sozinha (`status:
+    "bloqueada"`, nunca hard-delete — mesma regra de sempre pra `origem:"inscricao"`) toda dupla
+    inscrita pelo link público que ficou "pendente" (Pix não pago, nem aprovação manual) por
+    mais de 24h (`INSCRICAO_EXPIRACAO_MS`), liberando a vaga pro próximo interessado. Gera log
+    (`inscricao_expirada`, com os dados completos dos 2 jogadores) e manda e-mail pro
+    organizador avisando. **Escopado só a `origem === "inscricao"`** — dupla adicionada
+    manualmente pelo organizador (que também nasce "pendente") nunca expira sozinha, já que só
+    ele decide quando aprovar essa. Por nascer como "bloqueada" (não um status novo), a dupla
+    continua reativável a qualquer momento pelo botão "Aprovar" normal, sem código extra.
+    **Se algum dia precisar rodar esse worker localmente com o cron**: `wrangler dev
+    --test-scheduled` expõe `/__scheduled` pra disparar manualmente sem esperar a hora virar.
 
 ## Convenções
 

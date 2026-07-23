@@ -24,5 +24,12 @@
       "binding": "DB",
       "id": "e5f15195f2084b19ad39ad13111b5151"
     }
-  ]
+  ],
+  // Roda de hora em hora (ver export `scheduled` em src/worker.ts): bloqueia sozinha toda
+  // dupla vinda de inscrição pública que ficou "pendente" (sem Pix pago nem aprovação manual)
+  // por mais de 24h, liberando a vaga pro próximo interessado — e-mail e log de atividade
+  // registram cada expiração.
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
 }
