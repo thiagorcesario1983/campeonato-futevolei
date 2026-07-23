@@ -6835,6 +6835,10 @@ function renderInscricaoPublicaForm(erro){
 
       <button class="btn primary" id="btn-inscricao-enviar" style="width:100%;">Continuar pro Pix</button>
     </div>
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-msg" id="loading-msg"></div>
+    </div>
   </div>`;
 
   const sugerirNomeDupla = ()=>{
@@ -6879,7 +6883,8 @@ async function enviarInscricaoPublica(){
   }
 
   const btn = document.getElementById("btn-inscricao-enviar");
-  if(btn){ btn.disabled = true; btn.textContent = "Enviando..."; }
+  if(btn) btn.disabled = true;
+  showLoading("Enviando inscrição...");
   try{
     const res = await fetch("/api/inscricao", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -6894,6 +6899,8 @@ async function enviarInscricaoPublica(){
     renderInscricaoPublicaPix();
   }catch(e){
     renderInscricaoPublicaForm("Sem conexão — tente de novo.");
+  }finally{
+    hideLoading();
   }
 }
 
