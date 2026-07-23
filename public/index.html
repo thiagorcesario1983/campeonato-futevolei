@@ -1422,6 +1422,20 @@ function valorMascaradoParaNumero(texto){
   return Number(digits) / 100;
 }
 
+// Máscara padrão de telefone celular brasileiro, digitada da esquerda pra direita, no formato
+// "(11) 90000-0000" (9º dígito) — ou "(11) 0000-0000" (fixo, 10 dígitos) enquanto o usuário
+// ainda não completou o 11º dígito. Limita em 11 dígitos (DDD + 9 dígitos).
+function formatarTelefoneBR(digitosStr){
+  const digits = (digitosStr || "").replace(/\D/g,"").slice(0,11);
+  if(digits.length===0) return "";
+  if(digits.length<=2) return `(${digits}`;
+  const ddd = digits.slice(0,2);
+  const resto = digits.slice(2);
+  if(resto.length<=4) return `(${ddd}) ${resto}`;
+  if(digits.length<=10) return `(${ddd}) ${resto.slice(0,4)}-${resto.slice(4)}`;
+  return `(${ddd}) ${resto.slice(0,5)}-${resto.slice(5)}`;
+}
+
 // cupomInfo é opcional — só é usado na tela de criação de torneio (a de Aprovações passa só
 // as datas, sem cupom, já que ali o cupom já foi decidido lá atrás, na criação).
 function textoPreviewValorDiarias(dataInicio, dataFim, cupomInfo){
@@ -5329,7 +5343,7 @@ function renderConfiguracoes(){
     </div>
     <div class="card tg-settings">
       <label>Valor da inscrição por dupla (R$)</label>
-      <input type="number" min="0" step="0.01" id="input-valor-inscricao" placeholder="ex: 50.00" value="${state.valorInscricao!=null ? state.valorInscricao : ""}">
+      <input type="text" inputmode="numeric" id="input-valor-inscricao" placeholder="R$ 0,00" value="${state.valorInscricao!=null ? formatarCentavosBRL(String(Math.round(state.valorInscricao*100))) : ""}">
       <div class="hint">Cobrado via Pix de cada dupla que se inscrever pelo link público (aba Duplas). Deixe em branco pra não cobrar inscrição.</div>
     </div>
     ${renderUsuariosPermitidosCard()}`;
@@ -6012,6 +6026,11 @@ function bindEvents(){
       const field = e.target.dataset.field;
       const d = state.duplas[i];
       if(!d) return;
+      if(field==="tel"){
+        e.target.value = formatarTelefoneBR(e.target.value);
+        const pos = e.target.value.length;
+        e.target.setSelectionRange(pos, pos);
+      }
       const jogadorKey = slot==="1" ? "jogador1" : "jogador2";
       if(!d[jogadorKey]) d[jogadorKey] = {};
       d[jogadorKey][field] = e.target.value;
@@ -6152,11 +6171,18 @@ function bindEvents(){
   if(inputBot) inputBot.addEventListener("input", e=>{ state.telegramBot = e.target.value; save(); });
 
   const inputValorInscricao = document.getElementById("input-valor-inscricao");
-  if(inputValorInscricao) inputValorInscricao.addEventListener("input", e=>{
-    const v = e.target.value;
-    state.valorInscricao = v==="" ? null : Math.max(0, Number(v));
-    save();
-  });
+  if(inputValorInscricao){
+    inputValorInscricao.addEventListener("focus", e=> e.target.select());
+    inputValorInscricao.addEventListener("input", e=>{
+      const digits = e.target.value.replace(/\D/g,"");
+      e.target.value = formatarCentavosBRL(digits);
+      const pos = e.target.value.length;
+      e.target.setSelectionRange(pos, pos);
+      const v = valorMascaradoParaNumero(e.target.value);
+      state.valorInscricao = v>0 ? v : null;
+      save();
+    });
+  }
 
   const btnAdicionarUsuario = document.getElementById("btn-adicionar-usuario");
   const inputNovoUsuario = document.getElementById("input-novo-usuario");
@@ -6816,6 +6842,14 @@ function renderInscricaoPublicaForm(erro){
   document.getElementById("input-j1-nome").addEventListener("input", sugerirNomeDupla);
   document.getElementById("input-j2-nome").addEventListener("input", sugerirNomeDupla);
   document.getElementById("input-nome-dupla").addEventListener("input", ()=>{ __inscricaoPublicaNomeDuplaEditado = true; });
+  ["input-j1-tel","input-j2-tel"].forEach(id=>{
+    const el = document.getElementById(id);
+    el.addEventListener("input", e=>{
+      e.target.value = formatarTelefoneBR(e.target.value);
+      const pos = e.target.value.length;
+      e.target.setSelectionRange(pos, pos);
+    });
+  });
 
   document.getElementById("btn-inscricao-enviar").addEventListener("click", enviarInscricaoPublica);
 }
