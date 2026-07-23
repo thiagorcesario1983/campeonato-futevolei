@@ -4569,14 +4569,22 @@ const ROTULO_TIPO_LOG = {
   torneio_criado: "🆕 Torneio criado",
   duplas_sorteadas: "🎲 Duplas sorteadas",
   resultado_registrado: "🏐 Resultado registrado",
-  permissao_usuario: "👤 Permissão Usuários"
+  permissao_usuario: "👤 Permissão Usuários",
+  dupla_adicionada: "➕ Dupla adicionada",
+  inscricao_recebida: "📝 Inscrição recebida",
+  inscricao_paga: "💰 Inscrição paga",
+  inscricao_expirada: "⏰ Inscrição expirada"
 };
 const COR_TIPO_LOG = {
   acesso: { bg:"#E4E4E4", cor:"#5A5A5A" },
   torneio_criado: { bg:"#DCEEE1", cor:"#2E6E42" },
   duplas_sorteadas: { bg:"#FCEFD8", cor:"#9A6B1E" },
   resultado_registrado: { bg:"#DCE7F5", cor:"#2C5C99" },
-  permissao_usuario: { bg:"#EDE1F5", cor:"#6B3FA0" }
+  permissao_usuario: { bg:"#EDE1F5", cor:"#6B3FA0" },
+  dupla_adicionada: { bg:"#F3E8FB", cor:"#7A3FA0" },
+  inscricao_recebida: { bg:"#E3F1FB", cor:"#2C6E99" },
+  inscricao_paga: { bg:"#DFF3E3", cor:"#1F7A3D" },
+  inscricao_expirada: { bg:"#FBE3E3", cor:"#A23B2E" }
 };
 function badgeTipoLog(tipo){
   const c = COR_TIPO_LOG[tipo] || COR_TIPO_LOG.acesso;
