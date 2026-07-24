@@ -744,7 +744,9 @@ function defaultState(){
     apitoMatchId: null,
     valorInscricao: null, // valor da inscrição por dupla, definido pelo organizador (aba Configurações) — null até ser configurado
     inscricaoLink: null, // {token, ativo, vagas} — token do link público de inscrição, gerado sob demanda (ver /api/inscricao-link)
-    patrocinadores: [] // [{id, nome, logo}] — logo em data URL (PNG), aparece no Placar de TV e na imagem de Stories
+    patrocinadores: [], // [{id, nome, logo}] — logo em data URL (PNG), aparece no Placar de TV e na imagem de Stories
+    circuitoIds: [], // ids dos circuitos que incluem este torneio — campo espelho, só o servidor escreve (ver /api/circuito-atualizar); nunca editado pelo cliente
+    circuitoResultadoEnviadoEm: null // marca do último resultado já enviado pro(s) circuito(s) acima (ver verificarEnvioResultadoCircuito) — evita reenviar o mesmo resultado a cada save()
   };
 }
 
@@ -844,6 +846,7 @@ function save(){
   if(auth && !somenteLeitura()){
     marcarSyncPendente();
     syncTorneio();
+    verificarEnvioResultadoCircuito();
   }
 }
 
@@ -1041,6 +1044,12 @@ const APROVACOES_POR_PAGINA = 5;
 let syncTimer = null;
 let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" | "cupons" — só usada quando ehAdmin()
 let mostrarFormNovoTorneio = false;
+// Diferente de telaAdmin, disponível pra QUALQUER organizador (não só ehAdmin()) — circuito
+// agrupa torneios do próprio organizador, não é uma função administrativa do app.
+let telaCircuitos = null; // null | "lista" | id do circuito aberto
+let circuitosList = null;
+let circuitosLoading = false;
+let mostrarFormNovoCircuito = false;
 let adminNotificationEmailCache = "";
 let valorDiariaCache = 70; // valor da diária configurável pelo admin — atualizado via /api/config-get
 let cuponsList = null;
@@ -1371,6 +1380,83 @@ async function alternarComissaoRepassada(id, repassada){
     render();
   }catch(e){
     showToast(e.message || "Falha ao atualizar comissão.");
+  }finally{
+    hideLoading();
+  }
+}
+
+/* ---------- Circuitos (ranking multi-torneio) ---------- */
+async function fetchCircuitosList(){
+  if(circuitosLoading) return;
+  circuitosLoading = true;
+  try{
+    const res = await apiFetch("/api/circuitos-list", { cache: "no-store" });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    circuitosList = data.circuitos || [];
+  }catch(e){
+    circuitosList = [];
+    showToast("Não foi possível carregar os circuitos.");
+  }
+  circuitosLoading = false;
+  render();
+}
+
+async function criarCircuito(payload){
+  showLoading("Criando circuito...");
+  try{
+    const res = await apiFetch("/api/circuito-criar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao criar circuito");
+    mostrarFormNovoCircuito = false;
+    showToast("Circuito criado!");
+    await fetchCircuitosList();
+  }catch(e){
+    showToast(e.message || "Falha ao criar circuito.");
+  }finally{
+    hideLoading();
+  }
+}
+
+async function atualizarCircuito(id, patch){
+  showLoading("Salvando...");
+  try{
+    const res = await apiFetch("/api/circuito-atualizar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id, ...patch })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao salvar circuito");
+    if(circuitosList){
+      const idx = circuitosList.findIndex(c=>c.id===id);
+      if(idx>=0) circuitosList[idx] = data.circuito;
+    }
+    render();
+  }catch(e){
+    showToast(e.message || "Falha ao salvar circuito.");
+  }finally{
+    hideLoading();
+  }
+}
+
+async function excluirCircuito(id, nome){
+  if(!confirm(`Excluir o circuito "${nome}"? Os torneios vinculados não são afetados, só deixam de fazer parte do circuito.`)) return;
+  showLoading("Excluindo...");
+  try{
+    const res = await apiFetch("/api/circuito-excluir", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao excluir circuito");
+    telaCircuitos = "lista";
+    showToast("Circuito excluído.");
+    await fetchCircuitosList();
+  }catch(e){
+    showToast(e.message || "Falha ao excluir circuito.");
   }finally{
     hideLoading();
   }
@@ -1755,6 +1841,7 @@ function abrirTorneioComDados(data){
   state.cupomAplicado = data.cupomAplicado || null;
   state.ownerEmail = data.ownerEmail || null;
   state.usuariosPermitidos = data.usuariosPermitidos || [];
+  state.circuitoIds = data.circuitoIds || [];
   state.tab = "resumo";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   telegramStatus = {};
@@ -1883,6 +1970,7 @@ async function refreshTorneioAtual(chamadaInicial){
       state.cupomAplicado = data.cupomAplicado || null;
       state.ownerEmail = data.ownerEmail || null;
       state.usuariosPermitidos = data.usuariosPermitidos || [];
+      state.circuitoIds = data.circuitoIds || [];
       state.tab = tabAtual;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       telegramStatus = {};
@@ -2634,6 +2722,96 @@ function champion(){
 // afetar faseAtual()/statusTorneio() existentes.
 function torneioTotalmenteFinalizado(){
   return !!champion() && (!state.terceiroLugar || !!state.terceiro?.finalizado);
+}
+
+// Monta as colocações de UMA dupla pro envio ao circuito — um item por JOGADOR (não por dupla),
+// já que o ranking soma pontos por indivíduo (chave CPF), não por dupla (jogadores trocam de
+// parceiro entre torneios). Dupla sem jogador1/jogador2 detalhado vira um único item com o
+// próprio nome da dupla e cpf null (aparece no resultado deste torneio, mas nunca agrega com
+// outro torneio — ver CLAUDE.md).
+function colocacoesParaDupla(nomeDupla, posicao){
+  const idx = duplaIndexByName(nomeDupla);
+  const dupla = idx>=0 ? state.duplas[idx] : null;
+  const jogadores = [dupla?.jogador1, dupla?.jogador2].filter(j=> j && (j.nomeCompleto||"").trim());
+  if(!jogadores.length){
+    return [{ posicao, duplaNome: nomeDupla, jogadorNome: nomeDupla, cpf: null }];
+  }
+  return jogadores.map(j=> ({ posicao, duplaNome: nomeDupla, jogadorNome: j.nomeCompleto.trim(), cpf: j.cpf ? j.cpf.replace(/\D/g,"") || null : null }));
+}
+
+// Resolve a colocação final do torneio usando as mesmas funções já testadas de bracket
+// (champion/semifinalLosers/terceiroWinner) — nunca reimplementa essa lógica, só lê o
+// resultado dela (ver decisão de arquitetura documentada no worker.ts, seção Circuito).
+function montarColocacoesCircuito(){
+  const colocacoes = [];
+  const jaColocados = new Set();
+
+  const campeaoNome = champion();
+  if(!campeaoNome) return colocacoes;
+  colocacoes.push(...colocacoesParaDupla(campeaoNome, 1));
+  jaColocados.add(campeaoNome);
+
+  const rounds = totalRoundsBracket();
+  const [a,b] = bracketTeamsForRound(rounds-1)[0] || [null,null];
+  const viceNome = a===campeaoNome ? b : a;
+  if(viceNome){
+    colocacoes.push(...colocacoesParaDupla(viceNome, 2));
+    jaColocados.add(viceNome);
+  }
+
+  const [sl1, sl2] = semifinalLosers();
+  if(state.terceiroLugar){
+    const terceiroNome = terceiroWinner();
+    if(terceiroNome){
+      const quartoNome = terceiroNome===sl1 ? sl2 : sl1;
+      colocacoes.push(...colocacoesParaDupla(terceiroNome, 3));
+      jaColocados.add(terceiroNome);
+      if(quartoNome){
+        colocacoes.push(...colocacoesParaDupla(quartoNome, 4));
+        jaColocados.add(quartoNome);
+      }
+    }
+  } else {
+    [sl1, sl2].filter(Boolean).forEach(nome=>{
+      colocacoes.push(...colocacoesParaDupla(nome, 3));
+      jaColocados.add(nome);
+    });
+  }
+
+  duplasAtivas().forEach(d=>{
+    const nome = (d.nome||"").trim() || "Dupla sem nome";
+    if(jaColocados.has(nome)) return;
+    colocacoes.push(...colocacoesParaDupla(nome, "participacao"));
+  });
+
+  return colocacoes;
+}
+
+// Dispara sozinho quando o torneio termina de verdade e está vinculado a algum circuito
+// (state.circuitoIds, campo espelho escrito só pelo servidor). Fire-and-forget: não bloqueia
+// a UI nem o save(), não é fluxo crítico como pagamento — só loga erro no console se falhar.
+// Idempotente do lado do servidor (circuitoResultadoTorneio sempre sobrescreve o resultado
+// daquele torneio), então a marca local serve só pra não bater na rede a cada save() sem
+// necessidade enquanto nada muda.
+async function verificarEnvioResultadoCircuito(){
+  if(!state.cloudId || !state.circuitoIds?.length) return;
+  if(!torneioTotalmenteFinalizado()) return;
+  const marcaAtual = `${state.circuitoIds.slice().sort().join(",")}|${champion()}|${state.terceiro?.finalizado?"1":"0"}`;
+  if(state.circuitoResultadoEnviadoEm === marcaAtual) return;
+  const colocacoes = montarColocacoesCircuito();
+  if(!colocacoes.length) return;
+  try{
+    const res = await apiFetch("/api/circuito-resultado-torneio", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ torneioId: state.cloudId, colocacoes })
+    });
+    if(res.ok){
+      state.circuitoResultadoEnviadoEm = marcaAtual;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+  }catch(e){
+    console.error("Falha ao enviar resultado pro circuito:", e && e.message ? e.message : e);
+  }
 }
 function nomeRodada(r, totalRounds){
   const restantes = totalRounds - r; // 1 = final, 2 = semifinal, 3 = quartas...
@@ -4280,6 +4458,13 @@ function renderTorneiosScreen(){
     return html;
   }
 
+  // Diferente das telas acima, disponível pra QUALQUER organizador — circuito agrupa torneios
+  // do próprio organizador, não é uma função administrativa (ver CLAUDE.md).
+  if(telaCircuitos){
+    html += renderCircuitosScreen();
+    return html;
+  }
+
   html += `<div class="section-title">Torneios</div>
     <div class="section-sub">${ehAdmin() ? "👑 Modo admin — exibindo os torneios de todas as contas." : "Torneios criados por você."}</div>`;
 
@@ -4303,7 +4488,10 @@ function renderTorneiosScreen(){
       </div>
     </div>`;
   } else {
-    html += `<button class="btn" id="btn-novo-torneio" style="margin-bottom:18px;">➕ Criar novo torneio</button>`;
+    html += `<div style="display:flex;gap:8px;margin-bottom:18px;">
+      <button class="btn" id="btn-novo-torneio" style="flex:1;">➕ Criar novo torneio</button>
+      <button class="btn secondary" id="btn-abrir-circuitos" style="flex:1;">🏆 Circuitos</button>
+    </div>`;
   }
 
   const localOrfao = !state.cloudId && state.drawn;
@@ -4371,6 +4559,114 @@ function renderTorneiosScreen(){
       }
     }
   }
+  return html;
+}
+
+function renderCircuitosScreen(){
+  if(circuitosList===null && !circuitosLoading) fetchCircuitosList();
+
+  if(telaCircuitos==="lista"){
+    return renderCircuitosListaScreen();
+  }
+  const circuito = (circuitosList||[]).find(c=>c.id===telaCircuitos);
+  if(!circuito){
+    return `<div class="card empty">Carregando circuito...</div>
+      <button class="btn ghost" id="btn-voltar-circuitos" style="margin-top:10px;">← Voltar</button>`;
+  }
+  return renderCircuitoDetalheScreen(circuito);
+}
+
+function renderCircuitosListaScreen(){
+  let html = `<button class="btn ghost" id="btn-voltar-circuitos" style="width:auto;padding:6px 12px;margin-bottom:10px;">← Voltar</button>
+    <div class="section-title">🏆 Circuitos</div>
+    <div class="section-sub">Agrupe torneios seus num circuito pra somar pontos por colocação final e gerar um ranking público entre eles.</div>`;
+
+  if(mostrarFormNovoCircuito){
+    html += `<div class="card" style="border:1.5px solid var(--ocean);">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do circuito</label>
+      <input type="text" id="input-novo-circuito-nome" placeholder="ex: Circuito Verão 2026" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <div class="hint" style="margin-bottom:8px;">Pontos por colocação (editável depois a qualquer momento):</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Campeão</label><input type="number" id="input-pt-campeao" value="100" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Vice</label><input type="number" id="input-pt-vice" value="70" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">3º lugar</label><input type="number" id="input-pt-terceiro" value="50" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">4º lugar</label><input type="number" id="input-pt-quarto" value="40" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div style="grid-column:span 2;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Participação (demais duplas)</label><input type="number" id="input-pt-participacao" value="10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="btn-cancelar-novo-circuito" style="flex:1;">Cancelar</button>
+        <button class="btn" id="btn-confirmar-novo-circuito" style="flex:1;">Criar</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<button class="btn" id="btn-novo-circuito" style="margin-bottom:18px;">➕ Criar novo circuito</button>`;
+  }
+
+  if(circuitosList===null){
+    html += `<div class="card empty">Carregando circuitos...</div>`;
+  } else if(!circuitosList.length){
+    html += `<div class="card empty"><span class="ball-icon">🏆</span>Nenhum circuito criado ainda.</div>`;
+  } else {
+    circuitosList.slice().sort((a,b)=> (b.updatedAt||"").localeCompare(a.updatedAt||"")).forEach(c=>{
+      const qtdTorneios = (c.torneioIds||[]).length;
+      html += `<div class="torneio-item" data-abrir-circuito="${c.id}">
+        <div class="row">
+          <span class="nome">${escapeHtml(c.nome)}</span>
+        </div>
+        <div class="sub" style="margin-top:2px;">${qtdTorneios} torneio${qtdTorneios!==1?"s":""} vinculado${qtdTorneios!==1?"s":""}</div>
+      </div>`;
+    });
+  }
+  return html;
+}
+
+function renderCircuitoDetalheScreen(circuito){
+  const meusTorneios = (torneiosList||[]).slice().sort((a,b)=> (a.nome||"").localeCompare(b.nome||""));
+  const vinculados = new Set(circuito.torneioIds||[]);
+  const linkPublico = `${location.origin}${location.pathname}?ranking=1&circuito=${circuito.id}`;
+
+  let html = `<button class="btn ghost" id="btn-voltar-circuitos" style="width:auto;padding:6px 12px;margin-bottom:10px;">← Voltar</button>
+    <div class="section-title">${escapeHtml(circuito.nome)}</div>
+
+    <div class="card">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do circuito</label>
+      <input type="text" id="input-circuito-nome" data-circuito="${circuito.id}" value="${escapeHtml(circuito.nome)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:14px;">
+      <div class="hint" style="margin-bottom:8px;">Pontos por colocação:</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Campeão</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-campeao" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.campeao}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Vice</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-vice" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.vice}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">3º lugar</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-terceiro" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.terceiroLugar}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">4º lugar</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-quarto" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.quartoLugar}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div style="grid-column:span 2;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Participação (demais duplas)</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-participacao" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.participacao}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">🔗 Ranking público</div>
+      <div class="hint" style="margin-bottom:10px;">Qualquer pessoa com este link vê o ranking somado, sem precisar logar.</div>
+      <button class="btn secondary" id="btn-copiar-link-circuito" data-link="${escapeHtml(linkPublico)}" style="width:100%;">Copiar link do ranking</button>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">Torneios neste circuito</div>
+      <div class="hint" style="margin-bottom:10px;">Marque quais dos seus torneios entram no cálculo do ranking. Jogadores sem CPF cadastrado não somam pontos entre torneios diferentes.</div>`;
+
+  if(!meusTorneios.length){
+    html += `<div class="sub">Você ainda não tem torneios criados.</div>`;
+  } else {
+    meusTorneios.forEach(t=>{
+      const resultado = circuito.resultados && circuito.resultados[t.id];
+      html += `<label style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--sand);font-size:13px;">
+        <input type="checkbox" data-circuito-torneio="${t.id}" data-circuito="${circuito.id}" ${vinculados.has(t.id)?"checked":""} style="width:auto;">
+        <span style="flex:1;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
+        ${resultado ? `<span class="sub" style="font-size:11px;">✅ resultado computado</span>` : ""}
+      </label>`;
+    });
+  }
+
+  html += `</div>
+    <button class="btn ghost" id="btn-excluir-circuito" data-circuito="${circuito.id}" data-nome="${escapeHtml(circuito.nome)}" style="border-color:var(--coral);color:var(--coral);">🗑️ Excluir circuito</button>`;
+
   return html;
 }
 
@@ -5999,6 +6295,88 @@ function bindEvents(){
       if(preview) preview.textContent = textoPreviewValorDiarias(inputInicio?.value, inputFim?.value);
     });
   });
+  const btnAbrirCircuitos = document.getElementById("btn-abrir-circuitos");
+  if(btnAbrirCircuitos) btnAbrirCircuitos.addEventListener("click", ()=>{
+    telaCircuitos = "lista";
+    render();
+  });
+  const btnVoltarCircuitos = document.getElementById("btn-voltar-circuitos");
+  if(btnVoltarCircuitos) btnVoltarCircuitos.addEventListener("click", ()=>{
+    telaCircuitos = telaCircuitos==="lista" ? null : "lista";
+    render();
+  });
+  const btnNovoCircuito = document.getElementById("btn-novo-circuito");
+  if(btnNovoCircuito) btnNovoCircuito.addEventListener("click", ()=>{
+    mostrarFormNovoCircuito = true;
+    render();
+  });
+  const btnCancelarNovoCircuito = document.getElementById("btn-cancelar-novo-circuito");
+  if(btnCancelarNovoCircuito) btnCancelarNovoCircuito.addEventListener("click", ()=>{
+    mostrarFormNovoCircuito = false;
+    render();
+  });
+  const btnConfirmarNovoCircuito = document.getElementById("btn-confirmar-novo-circuito");
+  if(btnConfirmarNovoCircuito) btnConfirmarNovoCircuito.addEventListener("click", ()=>{
+    const nome = (document.getElementById("input-novo-circuito-nome").value||"").trim();
+    if(!nome){ showToast("Dê um nome para o circuito."); return; }
+    const pontuacaoTabela = {
+      campeao: Number(document.getElementById("input-pt-campeao").value) || 0,
+      vice: Number(document.getElementById("input-pt-vice").value) || 0,
+      terceiroLugar: Number(document.getElementById("input-pt-terceiro").value) || 0,
+      quartoLugar: Number(document.getElementById("input-pt-quarto").value) || 0,
+      participacao: Number(document.getElementById("input-pt-participacao").value) || 0
+    };
+    criarCircuito({ nome, pontuacaoTabela });
+  });
+  main.querySelectorAll("[data-abrir-circuito]").forEach(item=>{
+    item.addEventListener("click", ()=>{
+      telaCircuitos = item.dataset.abrirCircuito;
+      render();
+    });
+  });
+  const inputCircuitoNome = document.getElementById("input-circuito-nome");
+  if(inputCircuitoNome) inputCircuitoNome.addEventListener("change", e=>{
+    const nome = e.target.value.trim();
+    if(!nome){ showToast("O nome do circuito não pode ficar em branco."); render(); return; }
+    atualizarCircuito(e.target.dataset.circuito, { nome });
+  });
+  main.querySelectorAll(".input-circuito-pt").forEach(input=>{
+    input.addEventListener("change", e=>{
+      const circuitoId = e.target.dataset.circuito;
+      const pontuacaoTabela = {
+        campeao: Number(document.getElementById("input-circuito-pt-campeao").value) || 0,
+        vice: Number(document.getElementById("input-circuito-pt-vice").value) || 0,
+        terceiroLugar: Number(document.getElementById("input-circuito-pt-terceiro").value) || 0,
+        quartoLugar: Number(document.getElementById("input-circuito-pt-quarto").value) || 0,
+        participacao: Number(document.getElementById("input-circuito-pt-participacao").value) || 0
+      };
+      atualizarCircuito(circuitoId, { pontuacaoTabela });
+    });
+  });
+  const btnCopiarLinkCircuito = document.getElementById("btn-copiar-link-circuito");
+  if(btnCopiarLinkCircuito) btnCopiarLinkCircuito.addEventListener("click", async ()=>{
+    const url = btnCopiarLinkCircuito.dataset.link;
+    if(navigator.share){
+      try{ await navigator.share({ title:"Ranking do circuito", url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
+    }
+    try{
+      await navigator.clipboard.writeText(url);
+      showToast("Link copiado!");
+    }catch(e){
+      prompt("Copie o link abaixo:", url);
+    }
+  });
+  main.querySelectorAll("[data-circuito-torneio]").forEach(checkbox=>{
+    checkbox.addEventListener("change", ()=>{
+      const circuitoId = checkbox.dataset.circuito;
+      const torneioIds = Array.from(main.querySelectorAll(`[data-circuito-torneio][data-circuito="${circuitoId}"]:checked`)).map(c=>c.dataset.circuitoTorneio);
+      atualizarCircuito(circuitoId, { torneioIds });
+    });
+  });
+  const btnExcluirCircuito = document.getElementById("btn-excluir-circuito");
+  if(btnExcluirCircuito) btnExcluirCircuito.addEventListener("click", ()=>{
+    excluirCircuito(btnExcluirCircuito.dataset.circuito, btnExcluirCircuito.dataset.nome);
+  });
   const btnNovoCupom = document.getElementById("btn-novo-cupom");
   if(btnNovoCupom) btnNovoCupom.addEventListener("click", ()=>{
     mostrarFormNovoCupom = true;
@@ -6749,6 +7127,50 @@ function iniciarPlacarTV(torneioId, matchId){
   setInterval(atualizar, 1200);
 }
 
+// Página pública do ranking do circuito (?ranking=1&circuito={id}) — mesmo padrão isolado das
+// outras páginas públicas (apito/inscrição/placar de TV): substitui document.body inteiro, sem
+// tabbar/login, busca só o necessário via rota pública (/api/circuito-ranking).
+function iniciarRankingPublico(circuitoId){
+  document.body.innerHTML = `<div class="ref-screen">
+    <div class="ref-top"><div class="ref-label" id="ranking-titulo">🏆 Ranking do circuito</div></div>
+    <div style="padding:16px 20px 40px;max-width:480px;margin:0 auto;" id="ranking-conteudo"><div class="hint">Carregando ranking...</div></div>
+  </div>`;
+
+  function renderRankingPublico(data){
+    const titulo = document.getElementById("ranking-titulo");
+    if(titulo) titulo.textContent = `🏆 ${data.circuitoNome || "Ranking do circuito"}`;
+    const el = document.getElementById("ranking-conteudo");
+    if(!el) return;
+    if(!data.ranking || !data.ranking.length){
+      el.innerHTML = `<div class="card empty">Nenhum resultado computado ainda neste circuito.</div>`;
+      return;
+    }
+    el.innerHTML = data.ranking.map((r,i)=> `<div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+      <div style="font-weight:800;font-size:18px;color:var(--heading);width:30px;text-align:center;">${i+1}º</div>
+      <div style="flex:1;">
+        <div style="font-weight:700;">${escapeHtml(r.jogadorNome||"—")}</div>
+        <div class="sub" style="font-size:11px;">${r.torneiosDisputados} torneio${r.torneiosDisputados!==1?"s":""} disputado${r.torneiosDisputados!==1?"s":""}</div>
+      </div>
+      <div style="font-weight:800;font-size:16px;color:var(--ocean);">${r.pontos} pts</div>
+    </div>`).join("");
+  }
+
+  async function atualizar(){
+    try{
+      const res = await fetch(`/api/circuito-ranking?circuito=${encodeURIComponent(circuitoId)}`, { cache:"no-store" });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      renderRankingPublico(data);
+    }catch(e){
+      const el = document.getElementById("ranking-conteudo");
+      if(el) el.innerHTML = `<div class="card" style="border-color:var(--coral);color:var(--coral);">⚠️ Não foi possível carregar o ranking: ${escapeHtml(e && e.message ? e.message : String(e))}</div>`;
+    }
+  }
+
+  atualizar();
+  setInterval(atualizar, 30000);
+}
+
 function iniciarPlacarMultiploTV(torneioId, matchIds){
   document.body.innerHTML = `<div class="tv-screen" id="tv-screen"><div class="tv-loading">🏐 Carregando placares...</div></div>`;
 
@@ -7249,6 +7671,8 @@ const __apitarFlag = __urlParams.get("apitar");
 const __apitarMatch = __urlParams.get("match");
 const __apitarToken = __urlParams.get("token");
 const __inscreverFlag = __urlParams.get("inscrever");
+const __rankingFlag = __urlParams.get("ranking");
+const __circuitoId = __urlParams.get("circuito");
 
 if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
   iniciarApitoPublico({
@@ -7265,6 +7689,8 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
   iniciarPlacarTV(__tvTorneioId, __tvMatchId);
 } else if(__tvMultiIds && __tvTorneioId){
   iniciarPlacarMultiploTV(__tvTorneioId, __tvMultiIds.split(","));
+} else if(__rankingFlag && __circuitoId){
+  iniciarRankingPublico(__circuitoId);
 } else {
   document.querySelectorAll("#nav-torneio button").forEach(btn=>{
     btn.addEventListener("click", ()=>{

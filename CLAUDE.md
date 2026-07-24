@@ -468,6 +468,46 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     que já existe pra tel/e-mail: entrada manual do organizador continua sem validação forçada.
     Campo totalmente opcional em ambos os caminhos; ausência de CPF nunca bloqueia nada, só
     impede aquele jogador de agregar pontos entre torneios diferentes no ranking.
+26. **Ranking por circuito** (`Circuito` em `worker.ts`, KV `circuitos:index` — lista completa
+    numa chave só, mesmo padrão leve de Cupons, sem par índice+detalhe): agrupa torneios
+    escolhidos manualmente pelo organizador (não automático por "mesmo dono") e soma pontos por
+    colocação final de cada JOGADOR (não dupla — chave de agregação é o CPF, ver item 25, já que
+    jogadores trocam de parceiro entre torneios de um mesmo circuito).
+    - **Decisão de arquitetura mais importante**: o servidor nunca re-deriva quem é campeão/
+      vice/3º/4º lugar. Essa resolução já existe no cliente (`champion()`/`semifinalLosers()`/
+      `terceiroWinner()`, historicamente cheia de bugs sutis de bye/empate técnico — itens 2 e
+      15) e é reaproveitada tal como está (`montarColocacoesCircuito()`); o cliente só faz um
+      POST do resultado já resolvido (`/api/circuito-resultado-torneio`), e o servidor apenas
+      valida o formato e guarda. Reimplementar a resolução de chaveamento no worker duplicaria
+      o mesmo risco histórico.
+    - **Pontos não são gravados no resultado** — só a posição (1/2/3/4/"participacao"). A
+      multiplicação pela tabela de pontos (`pontuacaoTabela`, editável a qualquer momento)
+      acontece ao vivo dentro de `circuitoRanking()` (rota pública), então mudar a tabela
+      recalcula sozinho todo o histórico, sem precisar de um botão "recalcular".
+    - **CPF é o único critério de agregação** — entradas sem CPF aparecem no resultado daquele
+      torneio específico mas nunca somam com outro torneio. CPF nunca é devolvido completo pela
+      rota pública (`mascararCPF`), só como chave de agregação interna.
+    - **Ponto de entrada não pode usar o mecanismo `telaAdmin`/`nav-admin` existente** (Cupons/
+      Aprovações/Config/Log) porque esse é gated por `ehAdmin()` (admin GLOBAL do app via
+      `ADMIN_EMAILS`) — circuito precisa estar disponível pra QUALQUER organizador agrupar os
+      próprios torneios. Por isso ganhou uma variável de tela própria (`telaCircuitos`, solta,
+      não gated por `ehAdmin()`) dentro da própria `renderTorneiosScreen()` — que, como as
+      outras, só é renderizada quando `!state.cloudId` (fora de um torneio aberto); entrar num
+      torneio e sair de novo ("Trocar torneio") não zera `telaCircuitos` sozinho, mesmo
+      comportamento já existente de `telaAdmin` hoje.
+    - **`torneioIds` do circuito tem um campo espelho em cada torneio** (`torneio.circuitoIds`,
+      top-level no registro completo — ao lado de `pagamento`, não dentro de `state` —, escrito
+      só por `circuito-atualizar`, nunca pelo cliente): `torneiosSave` sempre preserva esse campo
+      a partir do registro existente, ignorando o que vier em `body.state.circuitoIds`, mesmo
+      padrão de proteção já usado pra `pagamento` (item 1). Ao linkar um torneio a um circuito,
+      o servidor exige que o solicitante tenha `temAcessoTorneio` daquele torneio específico —
+      sem essa checagem, o dono de um circuito poderia colar o id de um torneio de outro
+      organizador e vazar nomes/CPFs das duplas dele no ranking público.
+    - Envio automático (`verificarEnvioResultadoCircuito`, chamada em `save()`) dispara sempre
+      que `torneioTotalmenteFinalizado()` (item 25) for true e o torneio estiver vinculado a
+      algum circuito — fire-and-forget, idempotente do lado do servidor (sempre sobrescreve o
+      resultado daquele torneio), com uma marca local (`circuitoResultadoEnviadoEm`) só pra não
+      bater na rede a cada `save()` sem necessidade.
 
 ## Convenções
 
