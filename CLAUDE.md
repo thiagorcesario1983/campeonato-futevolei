@@ -457,6 +457,16 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     canvas inteiro (`drawStoryCanvas()`) — como esse redesenho roda a mesma lógica de
     medir-e-redimensionar do zero, a altura final do Story já sai contando com a faixa de
     patrocinadores, sem precisar de nenhum código extra pra isso.
+    **Bug corrigido**: o fluxo original pedia o nome do patrocinador via `prompt()` nativo do
+    navegador — se isso fosse cancelado ou bloqueado silenciosamente (comum em PWA instalado/
+    navegador in-app), o upload abortava sem nenhum aviso (`if(!nome){ e.target.value=""; return; }`),
+    dando a impressão de que a logo "sumia" depois de escolhida. Substituído por um formulário
+    inline dentro do próprio card (`novoPatrocinadorLogo`/`editandoPatrocinadorId`, mesmo padrão
+    de "criar novo X" usado em Circuitos/Cupons/Torneios) — a logo é processada e mostrada em
+    preview imediatamente, o nome é digitado num `<input>` normal, e só o clique em "Salvar"
+    grava em `state.patrocinadores`. O mesmo formulário também virou o fluxo de edição (botão
+    ✏️ ao lado do 🗑️ em cada patrocinador já cadastrado): pré-preenche o nome, permite trocar só
+    a imagem (mantendo o nome) ou só o nome (mantendo a imagem já salva).
 25. **CPF opcional em `jogador1`/`jogador2`** (`{nomeCompleto, tel, email, cpf}`, editável tanto
     no formulário manual da aba Duplas quanto no formulário de inscrição pública): existe hoje só
     pra dar suporte ao ranking por circuito (item 26) — precisa de uma chave estável de

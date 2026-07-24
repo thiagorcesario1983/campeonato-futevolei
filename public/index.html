@@ -1179,6 +1179,13 @@ let telaCircuitos = null; // null | "lista" | id do circuito aberto
 let circuitosList = null;
 let circuitosLoading = false;
 let mostrarFormNovoCircuito = false;
+// Logo já processada (data URL), aguardando o organizador confirmar o nome antes de entrar em
+// state.patrocinadores — substituiu um prompt() nativo (bloqueante e sem nenhum feedback de erro
+// se o navegador recusasse/cancelasse silenciosamente, o que fazia o upload "sumir" sem aviso).
+// Mesmo formulário inline serve tanto pra adicionar (editandoPatrocinadorId null) quanto pra
+// editar um patrocinador já existente (nome e/ou logo).
+let novoPatrocinadorLogo = null;
+let editandoPatrocinadorId = null;
 let adminNotificationEmailCache = "";
 let valorDiariaCache = 70; // valor da diária configurável pelo admin — atualizado via /api/config-get
 let cuponsList = null;
@@ -3502,6 +3509,7 @@ async function compartilharLinkInscricao(){
   }
 }
 function acharDuplaPorId(id){ return state.duplas.find(d=>d.id===id); }
+function acharPatrocinadorPorId(id){ return state.patrocinadores.find(p=>p.id===id); }
 function aprovarDupla(id){
   const d = acharDuplaPorId(id);
   if(!d) return;
@@ -5956,17 +5964,29 @@ function renderConfiguracoes(){
     </div>
     <div class="card tg-settings">
       <label>Patrocinadores</label>
-      ${state.patrocinadores.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
-        ${state.patrocinadores.map(p=>`<div style="display:flex;align-items:center;gap:10px;background:var(--sand);border-radius:10px;padding:6px 10px;">
+      ${state.patrocinadores.filter(p=>p.id!==editandoPatrocinadorId).length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+        ${state.patrocinadores.filter(p=>p.id!==editandoPatrocinadorId).map(p=>`<div style="display:flex;align-items:center;gap:10px;background:var(--sand);border-radius:10px;padding:6px 10px;">
           <img src="${p.logo}" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;">
           <span style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.nome)}</span>
-          <button class="ref-mini-btn ghost" data-remover-patrocinador="${p.id}" style="width:auto;flex:0 0 auto;padding:6px 10px;">🗑️</button>
+          <button class="ref-mini-btn ghost" data-editar-patrocinador="${p.id}" style="width:auto;flex:0 0 auto;padding:6px 8px;">✏️</button>
+          <button class="ref-mini-btn ghost" data-remover-patrocinador="${p.id}" style="width:auto;flex:0 0 auto;padding:6px 8px;">🗑️</button>
         </div>`).join("")}
       </div>` : ""}
-      <label class="btn secondary" style="text-align:center;margin:0;">
-        ➕ Adicionar patrocinador
+      ${(novoPatrocinadorLogo || editandoPatrocinadorId) ? `<div style="display:flex;align-items:center;gap:10px;background:var(--sand);border-radius:10px;padding:8px 10px;margin-bottom:10px;">
+        <img src="${novoPatrocinadorLogo || acharPatrocinadorPorId(editandoPatrocinadorId)?.logo || ""}" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;">
+        <input type="text" id="input-novo-patrocinador-nome" placeholder="Nome do patrocinador" value="${editandoPatrocinadorId ? escapeHtml(acharPatrocinadorPorId(editandoPatrocinadorId)?.nome||"") : ""}" style="flex:1;min-width:0;" autofocus>
+      </div>
+      <label class="btn ghost" style="text-align:center;margin:0 0 8px;display:block;">
+        🔄 ${editandoPatrocinadorId ? "Trocar imagem" : "Escolher outra imagem"}
         <input type="file" accept="image/*" id="input-patrocinador-logo" style="display:none;">
       </label>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="btn-cancelar-patrocinador" style="flex:1;">Cancelar</button>
+        <button class="btn" id="btn-confirmar-patrocinador" style="flex:1;">Salvar</button>
+      </div>` : `<label class="btn secondary" style="text-align:center;margin:0;">
+        ➕ Adicionar patrocinador
+        <input type="file" accept="image/*" id="input-patrocinador-logo" style="display:none;">
+      </label>`}
       <div class="hint">Logo do patrocinador aparece no Placar de TV e na imagem de Stories enquanto este torneio estiver aberto.</div>
     </div>
     <div class="card tg-settings">
@@ -6813,18 +6833,45 @@ function bindEvents(){
   if(inputPatrocinadorLogo) inputPatrocinadorLogo.addEventListener("change", async e=>{
     const file = e.target.files && e.target.files[0];
     if(!file) return;
-    const nome = (prompt("Nome do patrocinador (aparece só como identificação da logo):")||"").trim();
-    if(!nome){ e.target.value = ""; return; }
     showToast("Processando logo...");
     try{
-      const logo = await processarLogoPatrocinador(file);
-      state.patrocinadores.push({ id: crypto.randomUUID(), nome, logo });
-      save(); render();
-      showToast("Patrocinador adicionado!");
+      novoPatrocinadorLogo = await processarLogoPatrocinador(file);
+      render();
     }catch(err){
       showToast("Não foi possível usar essa imagem.");
     }
-    e.target.value = "";
+  });
+  main.querySelectorAll("[data-editar-patrocinador]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      editandoPatrocinadorId = btn.dataset.editarPatrocinador;
+      novoPatrocinadorLogo = null;
+      render();
+    });
+  });
+  const btnCancelarPatrocinador = document.getElementById("btn-cancelar-patrocinador");
+  if(btnCancelarPatrocinador) btnCancelarPatrocinador.addEventListener("click", ()=>{
+    novoPatrocinadorLogo = null;
+    editandoPatrocinadorId = null;
+    render();
+  });
+  const btnConfirmarPatrocinador = document.getElementById("btn-confirmar-patrocinador");
+  if(btnConfirmarPatrocinador) btnConfirmarPatrocinador.addEventListener("click", ()=>{
+    const nome = (document.getElementById("input-novo-patrocinador-nome").value||"").trim();
+    if(!nome){ showToast("Dê um nome para o patrocinador."); return; }
+    if(editandoPatrocinadorId){
+      const p = acharPatrocinadorPorId(editandoPatrocinadorId);
+      if(p){
+        p.nome = nome;
+        if(novoPatrocinadorLogo) p.logo = novoPatrocinadorLogo;
+      }
+      showToast("Patrocinador atualizado!");
+    } else {
+      state.patrocinadores.push({ id: crypto.randomUUID(), nome, logo: novoPatrocinadorLogo });
+      showToast("Patrocinador adicionado!");
+    }
+    novoPatrocinadorLogo = null;
+    editandoPatrocinadorId = null;
+    save(); render();
   });
   main.querySelectorAll("[data-remover-patrocinador]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
