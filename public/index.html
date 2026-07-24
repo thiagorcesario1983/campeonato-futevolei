@@ -39,6 +39,28 @@
     --heading:#205527; /* usada em títulos/labels — mesma cor de sempre no modo claro */
     --radius:16px;
     --shadow: 0 10px 24px -12px rgba(22,36,26,.35);
+    /* Selos de "pendente"/"aguardando" usavam um par âmbar/pêssego (removido — ver CLAUDE.md).
+       Verde mais opaco/dessaturado que --ocean/--grass, só pra não parecer "aprovado" de
+       verdade enquanto ainda está esperando alguma coisa. */
+    --pending-bg:#E7F0E5;
+    --pending-text:#4B6B4F;
+    /* Fundo suave pareado com --coral (badges "ao vivo"/"em andamento") — antes era um pêssego
+       meio alaranjado (#FDF1E7), trocado por um tom realmente na família do coral. */
+    --coral-bg:#FDEDE8;
+    /* Menu lateral (sidebar): propositalmente FIXO escuro, independente de --theme (claro/
+       escuro do resto do app) — pedido explícito de ficar fiel ao layout de referência (menu
+       lateral escuro tipo "control room"). Por isso as variáveis daqui são todas fixas, nunca
+       reaproveitando --ocean/--ocean-deep (que mudam de valor conforme o tema claro/escuro do
+       resto do app) — inclusive --sidebar-accent-deep existe só pra isso, o gradiente do badge
+       do logo não pode variar se o usuário alternar o tema geral do app. */
+    --sidebar-bg:#08090c;
+    --sidebar-bg-hover:#13161d;
+    --sidebar-bg-active:#0e1712;
+    --sidebar-border:#181c24;
+    --sidebar-text:#eef1f5;
+    --sidebar-text-muted:#7a8290;
+    --sidebar-accent:#1FE075;
+    --sidebar-accent-deep:#0a5c34; /* fixo (não segue --ocean/--ocean-deep do tema claro/escuro) — só pro gradiente do badge do logo */
   }
   /* Modo escuro: mesmas variáveis, valores adaptados pra contraste em fundo escuro. Como o app
      inteiro já usa var(--sand)/var(--white)/var(--ink) etc. em vez de cores fixas, só trocar
@@ -55,6 +77,9 @@
     --muted:#B5B5B5;
     --heading:#4DFF7E; /* verde neon — as versões antigas (mesmo tom do fundo) ficavam ilegíveis no escuro */
     --shadow: 0 10px 24px -12px rgba(0,0,0,.8);
+    --pending-bg:rgba(77,255,126,.14);
+    --pending-text:#8FE0A6;
+    --coral-bg:rgba(255,122,92,.16);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -81,16 +106,93 @@
     display:flex;
     flex-direction:column;
   }
-  @media (min-width:481px){
+  .app-content{
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+  }
+  @media (min-width:481px) and (max-width:900px){
+    /* Larguras médias (tablet) continuam no esquema de menu retrátil (drawer) — só a partir
+       de 901px o menu vira coluna fixa (ver bloco de desktop abaixo). Sem overflow:hidden
+       aqui: isso quebrava o "position:sticky" do header nessa largura, porque vira um
+       ancestral com scroll próprio (mesmo sem scrollbar) e o app real rola no body/html,
+       não dentro do .app. */
     body{padding:24px 0;}
-    /* Sem overflow:hidden aqui: isso quebrava o "position:sticky" do menu inferior nessa
-       largura, porque vira um ancestral com scroll próprio (mesmo sem scrollbar) e o app
-       real rola no body/html, não dentro do .app. Os cantos arredondados agora são feitos
-       diretamente no header (topo) e no nav.tabbar (base), que são os únicos filhos com
-       fundo próprio que encostam nas bordas do card. */
-    .app{min-height:calc(100vh - 48px); border-radius:28px;}
-    header{border-radius:28px 28px 0 0;}
-    nav.tabbar{border-radius:0 0 28px 28px;}
+    .app{min-height:calc(100vh - 48px); border-radius:28px; overflow:hidden;}
+  }
+  /* ---------- Menu lateral (sidebar) ---------- */
+  .sidebar-backdrop{
+    position:fixed; inset:0; z-index:35;
+    background:rgba(0,0,0,.55);
+    opacity:0; pointer-events:none;
+    transition:opacity .25s ease;
+  }
+  .sidebar-backdrop.show{ opacity:1; pointer-events:auto; }
+  .sidebar{
+    position:fixed; top:0; left:0; bottom:0; z-index:40;
+    width:270px; max-width:82vw;
+    background:var(--sidebar-bg);
+    border-right:1px solid var(--sidebar-border);
+    display:flex; flex-direction:column;
+    transform:translateX(-100%);
+    transition:transform .28s ease;
+  }
+  .sidebar.mobile-open{ transform:translateX(0); box-shadow:0 0 40px rgba(0,0,0,.5); }
+  .sidebar-brand{
+    display:flex; align-items:center; gap:10px;
+    padding:18px 14px; border-bottom:1px solid var(--sidebar-border);
+    flex-shrink:0;
+  }
+  .sidebar-logo{
+    width:34px; height:34px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 30% 30%, var(--sidebar-accent) 0%, var(--sidebar-accent-deep) 100%);
+    box-shadow:0 0 0 1px rgba(255,255,255,.08);
+    font-size:16px; line-height:1;
+  }
+  .sidebar-brand-text{ flex:1; min-width:0; overflow:hidden; }
+  .sidebar-brand-title{
+    font-family:'Bebas Neue',sans-serif; font-size:17px; letter-spacing:.02em;
+    color:var(--sidebar-text); line-height:1.15; white-space:nowrap;
+  }
+  .sidebar-brand-sub{
+    font-size:9.5px; text-transform:uppercase; letter-spacing:.08em; font-weight:600;
+    color:var(--sidebar-text-muted); margin-top:2px; white-space:nowrap;
+  }
+  .sidebar-close{
+    background:none; border:none; color:var(--sidebar-text-muted);
+    font-size:16px; cursor:pointer; padding:4px 6px; flex-shrink:0; line-height:1;
+  }
+  .sidebar-nav-scroll{ flex:1; overflow-y:auto; padding:10px 0 6px; }
+  .sidebar-collapse-btn{
+    display:none;
+    align-items:center; justify-content:center;
+    background:none; border:none; border-top:1px solid var(--sidebar-border);
+    color:var(--sidebar-text-muted); cursor:pointer; padding:12px; width:100%; flex-shrink:0;
+  }
+  .sidebar-collapse-btn svg{ width:18px; height:18px; transition:transform .2s ease; }
+  @media (min-width:901px){
+    body{padding:0;}
+    .stage{align-items:stretch;}
+    .app{
+      max-width:100%; min-height:100vh; box-shadow:none;
+      flex-direction:row; background:var(--sand);
+    }
+    .sidebar{
+      position:sticky; top:0; height:100vh;
+      transform:none; flex-shrink:0;
+    }
+    .sidebar-backdrop{ display:none; }
+    .sidebar-close{ display:none; }
+    .sidebar-collapse-btn{ display:flex; }
+    .sidebar.desktop-collapsed{ width:76px; }
+    .sidebar.desktop-collapsed .sidebar-brand-text{ display:none; }
+    .sidebar.desktop-collapsed nav.tabbar button{ justify-content:center; padding:10px 4px; }
+    .sidebar.desktop-collapsed nav.tabbar button .lbl{ display:none; }
+    .sidebar.desktop-collapsed .sidebar-collapse-btn svg{ transform:rotate(180deg); }
+    .app-content{ min-width:0; }
+    header{ border-radius:0; }
   }
 
   /* ---------- Header ---------- */
@@ -99,7 +201,7 @@
     background-size: cover;
     background-position: center;
     color:var(--white);
-    padding:22px 20px 26px;
+    padding:22px 20px 26px 62px;
     position:relative;
     overflow:hidden;
   }
@@ -124,11 +226,19 @@
     display:flex;align-items:center;justify-content:center;
   }
   .theme-toggle-icon:active{background:rgba(255,255,255,.3);}
+  .hamburger-btn{
+    position:absolute;top:16px;left:16px;z-index:2;
+    width:38px;height:38px;border-radius:50%;
+    background:rgba(255,255,255,.18);border:none;color:var(--white);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .hamburger-btn:active{background:rgba(255,255,255,.3);}
+  .hamburger-btn svg{width:20px;height:20px;}
 
   /* ---------- Content ---------- */
   main{
     flex:1;
-    padding:18px 18px 90px;
+    padding:18px 18px 24px;
   }
   .section-title{
     font-family:'Bebas Neue',sans-serif;
@@ -147,7 +257,7 @@
   /* ---------- Cards ---------- */
   .card{
     background:var(--white);
-    border:1px solid #EDE7D8;
+    border:1px solid var(--sand-dark);
     border-radius:var(--radius);
     padding:14px 16px;
     margin-bottom:12px;
@@ -219,7 +329,7 @@
     font-size:10.5px;font-weight:700;text-align:center;border-radius:8px;padding:5px 6px;
   }
   .tg-status.ok{background:#E3F4FC;color:#0E7FB8;}
-  .tg-status.pending{background:#FDF1E7;color:var(--coral);}
+  .tg-status.pending{background:var(--coral-bg);color:var(--coral);}
   .tg-settings{margin-bottom:14px;}
   .tg-settings label{font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;}
   .tg-settings .hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;}
@@ -265,7 +375,7 @@
 
   .group-card{
     border-radius:var(--radius);
-    border:1px solid #EDE7D8;
+    border:1px solid var(--sand-dark);
     margin-bottom:10px;
     overflow:hidden;
   }
@@ -331,7 +441,7 @@
   }
   .round-label:first-child{margin-top:0;}
   .bracket-match{
-    background:var(--white);border:1px solid #EDE7D8;border-radius:12px;
+    background:var(--white);border:1px solid var(--sand-dark);border-radius:12px;
     padding:10px 12px;margin-bottom:10px;
   }
   .bracket-match .lbl{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:6px;}
@@ -345,7 +455,7 @@
   .team.win::after{content:" 🏁";}
 
   .champion-banner{
-    background:linear-gradient(150deg,var(--coral),#C94A16);
+    background:linear-gradient(150deg,var(--grass),var(--ocean-deep));
     color:var(--white);border-radius:var(--radius);
     padding:22px 16px;text-align:center;margin-bottom:16px;
   }
@@ -357,36 +467,34 @@
   }
   .empty .ball-icon{font-size:30px;display:block;margin-bottom:8px;}
 
-  /* ---------- Bottom nav ---------- */
+  /* ---------- Nav do menu lateral (antes era barra inferior — ver .sidebar acima) ---------- */
+  .sidebar-nav-scroll::-webkit-scrollbar{width:5px;}
+  .sidebar-nav-scroll::-webkit-scrollbar-track{background:transparent;}
+  .sidebar-nav-scroll::-webkit-scrollbar-thumb{background:var(--sidebar-border);border-radius:4px;}
   nav.tabbar{
-    position:sticky;bottom:0;left:0;right:0;
-    background:var(--white);border-top:1px solid #EDE7D8;
-    display:flex;justify-content:flex-start;
-    overflow-x:auto;-webkit-overflow-scrolling:touch;
-    padding:8px 4px calc(8px + env(safe-area-inset-bottom));
-    z-index:10;
-    scrollbar-width:thin;
-    scrollbar-color:var(--sand-dark) transparent;
+    display:flex;flex-direction:column;gap:2px;padding:4px 10px;
   }
-  nav.tabbar::-webkit-scrollbar{height:5px;}
-  nav.tabbar::-webkit-scrollbar-track{background:transparent;}
-  nav.tabbar::-webkit-scrollbar-thumb{background:var(--sand-dark);border-radius:4px;}
   nav.tabbar button{
-    flex:0 0 auto;min-width:64px;background:none;border:none;display:flex;flex-direction:column;
-    align-items:center;gap:3px;padding:6px 6px;cursor:pointer;color:var(--muted);
-    font-family:'Work Sans',sans-serif;
+    display:flex;flex-direction:row;align-items:center;gap:12px;
+    width:100%;background:none;border:none;border-left:3px solid transparent;border-radius:8px;
+    padding:9px 12px;cursor:pointer;color:var(--sidebar-text-muted);
+    font-family:'Work Sans',sans-serif;text-align:left;position:relative;
+    transition:background .15s ease,color .15s ease,border-color .15s ease;
   }
-  nav.tabbar button svg{width:20px;height:20px;}
-  nav.tabbar button .lbl{font-size:10px;font-weight:600;white-space:nowrap;}
-  nav.tabbar button.active{color:var(--coral);}
-  nav.tabbar button{position:relative;}
+  nav.tabbar button svg{width:19px;height:19px;flex-shrink:0;}
+  nav.tabbar button .lbl{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  nav.tabbar button:hover{background:var(--sidebar-bg-hover);color:var(--sidebar-text);}
+  nav.tabbar button.active{
+    background:var(--sidebar-bg-active);color:var(--sidebar-text);
+    border-left-color:var(--sidebar-accent);font-weight:700;
+  }
+  nav.tabbar button.active svg{color:var(--sidebar-accent);}
   nav.tabbar button.tab-bloqueada{opacity:.35;}
   .nav-badge{
-    position:absolute;top:2px;right:calc(50% - 22px);
+    margin-left:auto;flex-shrink:0;
     background:var(--coral);color:#fff;font-family:'DM Mono',monospace;
-    font-size:9.5px;font-weight:700;min-width:16px;height:16px;border-radius:8px;
-    display:none;align-items:center;justify-content:center;padding:0 3px;
-    box-shadow:0 0 0 2px var(--white);
+    font-size:10px;font-weight:700;min-width:17px;height:17px;border-radius:9px;
+    display:none;align-items:center;justify-content:center;padding:0 4px;
   }
   .nav-badge.show{display:flex;}
 
@@ -425,7 +533,7 @@
   }
   .live-score-badge{
     display:inline-block;font-size:11px;font-weight:700;color:var(--coral);
-    background:#FDF1E7;padding:3px 10px;border-radius:20px;margin:6px 0 2px;
+    background:var(--coral-bg);padding:3px 10px;border-radius:20px;margin:6px 0 2px;
   }
 
   /* ---------- Fluxo de Jogos (auditoria) ---------- */
@@ -481,7 +589,7 @@
     font-size:10.5px;font-weight:700;border-radius:20px;padding:4px 10px;white-space:nowrap;flex-shrink:0;
   }
   .status-pill.criado{background:#E3F4FC;color:#0E7FB8;}
-  .status-pill.andamento{background:#FDF1E7;color:var(--coral);}
+  .status-pill.andamento{background:var(--coral-bg);color:var(--coral);}
   .status-pill.finalizado{background:#E2EFDA;color:var(--grass);}
   .btn-excluir{
     background:none;border:none;color:#C0392B;font-size:11px;font-weight:600;
@@ -581,6 +689,12 @@
   .tv-footer{margin-top:6vh;}
   .tv-timer{font-family:'DM Mono',monospace;font-size:clamp(30px,5vw,60px);font-weight:600;}
   .tv-status{font-size:clamp(14px,2vw,20px);letter-spacing:.08em;text-transform:uppercase;opacity:.75;margin-top:6px;}
+  .tv-sponsors{
+    position:absolute;left:0;right:0;bottom:0;
+    display:flex;align-items:center;justify-content:center;gap:clamp(16px,3vw,32px);flex-wrap:wrap;
+    padding:14px 20px;background:rgba(0,0,0,.28);
+  }
+  .tv-sponsors img{height:clamp(26px,4vh,54px);width:auto;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));}
 
   /* ---------- Placar para TV — múltiplos jogos numa grade ---------- */
   .tv-multi-grid{position:absolute;inset:16px;display:grid;gap:12px;}
@@ -632,34 +746,55 @@
 <body>
 <div class="stage">
   <div class="app">
-    <header id="app-header">
-      <button class="theme-toggle-icon" id="btn-theme-icon" aria-label="Alternar modo claro/escuro">🌙</button>
-      <h1 id="header-title">Futevôlei</h1>
-      <div id="torneio-bar"></div>
-    </header>
-    <main id="main"></main>
-    <div class="toast" id="toast"></div>
-    <div class="loading-overlay" id="loading-overlay">
-      <div class="spinner"></div>
-      <div class="loading-msg" id="loading-msg"></div>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="sidebar-logo">🏐</span>
+        <div class="sidebar-brand-text">
+          <div class="sidebar-brand-title">Supremo FTV</div>
+          <div class="sidebar-brand-sub">Painel do torneio</div>
+        </div>
+        <button class="sidebar-close" id="btn-sidebar-close" aria-label="Fechar menu">✕</button>
+      </div>
+      <div class="sidebar-nav-scroll">
+        <nav class="tabbar" id="nav-torneio">
+          <button data-tab="resumo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="lbl">Resumo</span></button>
+          <button data-tab="sorteio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 9h.01M16 9h.01M8 15l4-3 4 3"/></svg><span class="lbl">Duplas</span></button>
+          <button data-tab="jogos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Jogos</span></button>
+          <button data-tab="classificacao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V10M12 19V4M20 19v-6"/></svg><span class="lbl">Tabela</span></button>
+          <button data-tab="matamata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h4v4H4zM4 15h4v4H4zM16 10h4v4h-4zM8 7h4v0M8 17h4v0M12 7v6M12 13v4M12 12h4"/></svg><span class="lbl">Mata-mata</span><span class="nav-badge" id="nav-badge-matamata"></span></button>
+          <button data-tab="fluxo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="9" y="15" width="6" height="6" rx="1"/><path d="M6 9v3a3 3 0 0 0 3 3M18 9v3a3 3 0 0 1-3 3"/></svg><span class="lbl">Fluxo Jogos</span></button>
+          <button data-tab="placar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="lbl">Placar</span></button>
+          <button data-tab="configuracoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
+        </nav>
+        <nav class="tabbar" id="nav-admin" style="display:none;">
+          <button data-tela-admin="lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg><span class="lbl">Torneios</span></button>
+          <button data-tela-admin="aprovacoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg><span class="lbl">Aprovações</span></button>
+          <button data-tela-admin="cupons"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V8z"/><path d="M9 6v10" stroke-dasharray="2 2"/></svg><span class="lbl">Cupons</span></button>
+          <button data-tela-admin="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
+          <button data-tela-admin="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="lbl">Log</span></button>
+        </nav>
+      </div>
+      <button class="sidebar-collapse-btn" id="btn-sidebar-collapse" aria-label="Recolher menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+    </aside>
+    <div class="app-content" id="app-content">
+      <header id="app-header">
+        <button class="hamburger-btn" id="btn-hamburger" aria-label="Abrir menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <button class="theme-toggle-icon" id="btn-theme-icon" aria-label="Alternar modo claro/escuro">🌙</button>
+        <h1 id="header-title">Futevôlei</h1>
+        <div id="torneio-bar"></div>
+      </header>
+      <main id="main"></main>
+      <div class="toast" id="toast"></div>
+      <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-msg" id="loading-msg"></div>
+      </div>
     </div>
-    <nav class="tabbar" id="nav-torneio">
-      <button data-tab="resumo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="lbl">Resumo</span></button>
-      <button data-tab="sorteio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 9h.01M16 9h.01M8 15l4-3 4 3"/></svg><span class="lbl">Duplas</span></button>
-      <button data-tab="jogos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Jogos</span></button>
-      <button data-tab="classificacao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V10M12 19V4M20 19v-6"/></svg><span class="lbl">Tabela</span></button>
-      <button data-tab="matamata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h4v4H4zM4 15h4v4H4zM16 10h4v4h-4zM8 7h4v0M8 17h4v0M12 7v6M12 13v4M12 12h4"/></svg><span class="lbl">Mata-mata</span><span class="nav-badge" id="nav-badge-matamata"></span></button>
-      <button data-tab="fluxo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="9" y="15" width="6" height="6" rx="1"/><path d="M6 9v3a3 3 0 0 0 3 3M18 9v3a3 3 0 0 1-3 3"/></svg><span class="lbl">Fluxo Jogos</span></button>
-      <button data-tab="placar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="lbl">Placar</span></button>
-      <button data-tab="configuracoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
-    </nav>
-    <nav class="tabbar" id="nav-admin" style="display:none;">
-      <button data-tela-admin="lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg><span class="lbl">Torneios</span></button>
-      <button data-tela-admin="aprovacoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg><span class="lbl">Aprovações</span></button>
-      <button data-tela-admin="cupons"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V8z"/><path d="M9 6v10" stroke-dasharray="2 2"/></svg><span class="lbl">Cupons</span></button>
-      <button data-tela-admin="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
-      <button data-tela-admin="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="lbl">Log</span></button>
-    </nav>
   </div>
 </div>
 
@@ -737,7 +872,10 @@ function defaultState(){
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
     apitoMatchId: null,
     valorInscricao: null, // valor da inscrição por dupla, definido pelo organizador (aba Configurações) — null até ser configurado
-    inscricaoLink: null // {token, ativo, vagas} — token do link público de inscrição, gerado sob demanda (ver /api/inscricao-link)
+    inscricaoLink: null, // {token, ativo, vagas} — token do link público de inscrição, gerado sob demanda (ver /api/inscricao-link)
+    patrocinadores: [], // [{id, nome, logo}] — logo em data URL (PNG), aparece no Placar de TV e na imagem de Stories
+    circuitoIds: [], // ids dos circuitos que incluem este torneio — campo espelho, só o servidor escreve (ver /api/circuito-atualizar); nunca editado pelo cliente
+    circuitoResultadoEnviadoEm: null // marca do último resultado já enviado pro(s) circuito(s) acima (ver verificarEnvioResultadoCircuito) — evita reenviar o mesmo resultado a cada save()
   };
 }
 
@@ -772,6 +910,7 @@ function migrarBracketAntigo(s){
       if(!d.atualizadoEm) d.atualizadoEm = Date.now();
     });
   }
+  if(s && !Array.isArray(s.patrocinadores)) s.patrocinadores = [];
   return s;
 }
 
@@ -836,6 +975,7 @@ function save(){
   if(auth && !somenteLeitura()){
     marcarSyncPendente();
     syncTorneio();
+    verificarEnvioResultadoCircuito();
   }
 }
 
@@ -1033,6 +1173,12 @@ const APROVACOES_POR_PAGINA = 5;
 let syncTimer = null;
 let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" | "cupons" — só usada quando ehAdmin()
 let mostrarFormNovoTorneio = false;
+// Diferente de telaAdmin, disponível pra QUALQUER organizador (não só ehAdmin()) — circuito
+// agrupa torneios do próprio organizador, não é uma função administrativa do app.
+let telaCircuitos = null; // null | "lista" | id do circuito aberto
+let circuitosList = null;
+let circuitosLoading = false;
+let mostrarFormNovoCircuito = false;
 let adminNotificationEmailCache = "";
 let valorDiariaCache = 70; // valor da diária configurável pelo admin — atualizado via /api/config-get
 let cuponsList = null;
@@ -1368,6 +1514,83 @@ async function alternarComissaoRepassada(id, repassada){
   }
 }
 
+/* ---------- Circuitos (ranking multi-torneio) ---------- */
+async function fetchCircuitosList(){
+  if(circuitosLoading) return;
+  circuitosLoading = true;
+  try{
+    const res = await apiFetch("/api/circuitos-list", { cache: "no-store" });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    circuitosList = data.circuitos || [];
+  }catch(e){
+    circuitosList = [];
+    showToast("Não foi possível carregar os circuitos.");
+  }
+  circuitosLoading = false;
+  render();
+}
+
+async function criarCircuito(payload){
+  showLoading("Criando circuito...");
+  try{
+    const res = await apiFetch("/api/circuito-criar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao criar circuito");
+    mostrarFormNovoCircuito = false;
+    showToast("Circuito criado!");
+    await fetchCircuitosList();
+  }catch(e){
+    showToast(e.message || "Falha ao criar circuito.");
+  }finally{
+    hideLoading();
+  }
+}
+
+async function atualizarCircuito(id, patch){
+  showLoading("Salvando...");
+  try{
+    const res = await apiFetch("/api/circuito-atualizar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id, ...patch })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao salvar circuito");
+    if(circuitosList){
+      const idx = circuitosList.findIndex(c=>c.id===id);
+      if(idx>=0) circuitosList[idx] = data.circuito;
+    }
+    render();
+  }catch(e){
+    showToast(e.message || "Falha ao salvar circuito.");
+  }finally{
+    hideLoading();
+  }
+}
+
+async function excluirCircuito(id, nome){
+  if(!confirm(`Excluir o circuito "${nome}"? Os torneios vinculados não são afetados, só deixam de fazer parte do circuito.`)) return;
+  showLoading("Excluindo...");
+  try{
+    const res = await apiFetch("/api/circuito-excluir", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao excluir circuito");
+    telaCircuitos = "lista";
+    showToast("Circuito excluído.");
+    await fetchCircuitosList();
+  }catch(e){
+    showToast(e.message || "Falha ao excluir circuito.");
+  }finally{
+    hideLoading();
+  }
+}
+
 function linhasRelatorioCupons(){
   const cupons = cuponsList || [];
   const cupomPorNome = {};
@@ -1474,6 +1697,17 @@ function formatarTelefoneBR(digitosStr){
   if(resto.length<=4) return `(${ddd}) ${resto}`;
   if(digits.length<=10) return `(${ddd}) ${resto.slice(0,4)}-${resto.slice(4)}`;
   return `(${ddd}) ${resto.slice(0,5)}-${resto.slice(5)}`;
+}
+// Máscara só visual (000.000.000-00) — a validação de verdade (dígito verificador) acontece
+// só no servidor, no caminho de inscrição pública (worker.ts, validarCPF), já que o CPF é
+// opcional e usado só pra somar pontos entre torneios de um circuito (ver CLAUDE.md).
+function formatarCPF(digitosStr){
+  const digits = (digitosStr || "").replace(/\D/g,"").slice(0,11);
+  if(digits.length===0) return "";
+  if(digits.length<=3) return digits;
+  if(digits.length<=6) return `${digits.slice(0,3)}.${digits.slice(3)}`;
+  if(digits.length<=9) return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6)}`;
+  return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6,9)}-${digits.slice(9)}`;
 }
 
 // cupomInfo é opcional — só é usado na tela de criação de torneio (a de Aprovações passa só
@@ -1736,6 +1970,7 @@ function abrirTorneioComDados(data){
   state.cupomAplicado = data.cupomAplicado || null;
   state.ownerEmail = data.ownerEmail || null;
   state.usuariosPermitidos = data.usuariosPermitidos || [];
+  state.circuitoIds = data.circuitoIds || [];
   state.tab = "resumo";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   telegramStatus = {};
@@ -1864,6 +2099,7 @@ async function refreshTorneioAtual(chamadaInicial){
       state.cupomAplicado = data.cupomAplicado || null;
       state.ownerEmail = data.ownerEmail || null;
       state.usuariosPermitidos = data.usuariosPermitidos || [];
+      state.circuitoIds = data.circuitoIds || [];
       state.tab = tabAtual;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       telegramStatus = {};
@@ -2013,6 +2249,32 @@ function processarImagemTopo(file){
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL("image/jpeg", 0.78));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Logo de patrocinador: diferente do banner de topo, mantém PNG (preserva fundo transparente,
+// comum em logo) e usa uma dimensão máxima bem menor (é exibido pequeno, lado a lado com outros).
+function processarLogoPatrocinador(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error("Falha ao ler o arquivo"));
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=>reject(new Error("Arquivo não é uma imagem válida"));
+      img.onload = ()=>{
+        const maxDim = 240;
+        const scale = Math.min(1, maxDim/Math.max(img.width, img.height));
+        const w = Math.round(img.width*scale);
+        const h = Math.round(img.height*scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/png"));
       };
       img.src = reader.result;
     };
@@ -2583,6 +2845,102 @@ function champion(){
   if(!rounds) return null;
   const w = bracketWinnersForRound(rounds-1);
   return w[0] || null;
+}
+// Diferente de champion() sozinho, também considera a disputa de 3º lugar (quando habilitada)
+// — usado só pra decidir quando enviar o resultado final pro ranking por circuito, nunca deve
+// afetar faseAtual()/statusTorneio() existentes.
+function torneioTotalmenteFinalizado(){
+  return !!champion() && (!state.terceiroLugar || !!state.terceiro?.finalizado);
+}
+
+// Monta as colocações de UMA dupla pro envio ao circuito — um item por JOGADOR (não por dupla),
+// já que o ranking soma pontos por indivíduo (chave CPF), não por dupla (jogadores trocam de
+// parceiro entre torneios). Dupla sem jogador1/jogador2 detalhado vira um único item com o
+// próprio nome da dupla e cpf null (aparece no resultado deste torneio, mas nunca agrega com
+// outro torneio — ver CLAUDE.md).
+function colocacoesParaDupla(nomeDupla, posicao){
+  const idx = duplaIndexByName(nomeDupla);
+  const dupla = idx>=0 ? state.duplas[idx] : null;
+  const jogadores = [dupla?.jogador1, dupla?.jogador2].filter(j=> j && (j.nomeCompleto||"").trim());
+  if(!jogadores.length){
+    return [{ posicao, duplaNome: nomeDupla, jogadorNome: nomeDupla, cpf: null }];
+  }
+  return jogadores.map(j=> ({ posicao, duplaNome: nomeDupla, jogadorNome: j.nomeCompleto.trim(), cpf: j.cpf ? j.cpf.replace(/\D/g,"") || null : null }));
+}
+
+// Resolve a colocação final do torneio usando as mesmas funções já testadas de bracket
+// (champion/semifinalLosers/terceiroWinner) — nunca reimplementa essa lógica, só lê o
+// resultado dela (ver decisão de arquitetura documentada no worker.ts, seção Circuito).
+function montarColocacoesCircuito(){
+  const colocacoes = [];
+  const jaColocados = new Set();
+
+  const campeaoNome = champion();
+  if(!campeaoNome) return colocacoes;
+  colocacoes.push(...colocacoesParaDupla(campeaoNome, 1));
+  jaColocados.add(campeaoNome);
+
+  const rounds = totalRoundsBracket();
+  const [a,b] = bracketTeamsForRound(rounds-1)[0] || [null,null];
+  const viceNome = a===campeaoNome ? b : a;
+  if(viceNome){
+    colocacoes.push(...colocacoesParaDupla(viceNome, 2));
+    jaColocados.add(viceNome);
+  }
+
+  const [sl1, sl2] = semifinalLosers();
+  if(state.terceiroLugar){
+    const terceiroNome = terceiroWinner();
+    if(terceiroNome){
+      const quartoNome = terceiroNome===sl1 ? sl2 : sl1;
+      colocacoes.push(...colocacoesParaDupla(terceiroNome, 3));
+      jaColocados.add(terceiroNome);
+      if(quartoNome){
+        colocacoes.push(...colocacoesParaDupla(quartoNome, 4));
+        jaColocados.add(quartoNome);
+      }
+    }
+  } else {
+    [sl1, sl2].filter(Boolean).forEach(nome=>{
+      colocacoes.push(...colocacoesParaDupla(nome, 3));
+      jaColocados.add(nome);
+    });
+  }
+
+  duplasAtivas().forEach(d=>{
+    const nome = (d.nome||"").trim() || "Dupla sem nome";
+    if(jaColocados.has(nome)) return;
+    colocacoes.push(...colocacoesParaDupla(nome, "participacao"));
+  });
+
+  return colocacoes;
+}
+
+// Dispara sozinho quando o torneio termina de verdade e está vinculado a algum circuito
+// (state.circuitoIds, campo espelho escrito só pelo servidor). Fire-and-forget: não bloqueia
+// a UI nem o save(), não é fluxo crítico como pagamento — só loga erro no console se falhar.
+// Idempotente do lado do servidor (circuitoResultadoTorneio sempre sobrescreve o resultado
+// daquele torneio), então a marca local serve só pra não bater na rede a cada save() sem
+// necessidade enquanto nada muda.
+async function verificarEnvioResultadoCircuito(){
+  if(!state.cloudId || !state.circuitoIds?.length) return;
+  if(!torneioTotalmenteFinalizado()) return;
+  const marcaAtual = `${state.circuitoIds.slice().sort().join(",")}|${champion()}|${state.terceiro?.finalizado?"1":"0"}`;
+  if(state.circuitoResultadoEnviadoEm === marcaAtual) return;
+  const colocacoes = montarColocacoesCircuito();
+  if(!colocacoes.length) return;
+  try{
+    const res = await apiFetch("/api/circuito-resultado-torneio", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ torneioId: state.cloudId, colocacoes })
+    });
+    if(res.ok){
+      state.circuitoResultadoEnviadoEm = marcaAtual;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+  }catch(e){
+    console.error("Falha ao enviar resultado pro circuito:", e && e.message ? e.message : e);
+  }
 }
 function nomeRodada(r, totalRounds){
   const restantes = totalRounds - r; // 1 = final, 2 = semifinal, 3 = quartas...
@@ -3405,7 +3763,52 @@ function renderStory(canvas, H){
       : drawGroupMatchesSection(ctx, W, groupsBottom+50);
   }
 
+  cursorY = drawSponsorsSection(ctx, W, cursorY+60);
   return cursorY + 140;
+}
+
+// Faixa de logos de patrocinadores no rodapé do Story — mesmo cache-e-redesenha-sozinho de
+// getStoryHeaderImage (carregar uma data URL em Image() é assíncrono; enquanto não carregou,
+// essa chamada não desenha nada e o próprio onload manda redesenhar o canvas inteiro).
+let __sponsorImgCache = {};
+function getSponsorImage(patrocinador){
+  const cache = __sponsorImgCache[patrocinador.id];
+  if(cache && cache.src === patrocinador.logo) return cache.img;
+  const img = new Image();
+  __sponsorImgCache[patrocinador.id] = { src: patrocinador.logo, img: null };
+  img.onload = ()=>{ __sponsorImgCache[patrocinador.id].img = img; drawStoryCanvas(); };
+  img.src = patrocinador.logo;
+  return null;
+}
+function drawSponsorsSection(ctx, W, startY){
+  if(!state.patrocinadores?.length) return startY;
+  const imgs = state.patrocinadores.map(getSponsorImage).filter(Boolean);
+  if(!imgs.length) return startY; // nenhuma logo carregada ainda — o onload acima redesenha sozinho
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.font = "600 26px Arial, sans-serif";
+  ctx.fillText("PATROCÍNIO", W/2, startY);
+
+  const gap = 40, maxRowW = W - 160;
+  let alturaLogo = 90;
+  let larguras = imgs.map(img => (img.width/img.height) * alturaLogo);
+  let totalW = larguras.reduce((a,b)=>a+b, 0) + gap*(imgs.length-1);
+  if(totalW > maxRowW){
+    const escala = maxRowW / totalW;
+    alturaLogo *= escala;
+    larguras = larguras.map(w => w*escala);
+    totalW = maxRowW;
+  }
+
+  const rowY = startY + 50;
+  let x = W/2 - totalW/2;
+  imgs.forEach((img, i)=>{
+    const w = larguras[i];
+    ctx.drawImage(img, x, rowY, w, alturaLogo);
+    x += w + gap;
+  });
+  return rowY + alturaLogo + 20;
 }
 
 function drawGroupsSection(ctx, W, startY){
@@ -3879,6 +4282,7 @@ function render(){
   const nav = document.getElementById("nav-torneio");
   const navAdmin = document.getElementById("nav-admin");
   const torneioBar = document.getElementById("torneio-bar");
+  const btnHamburger = document.getElementById("btn-hamburger");
   stopRefTick();
   atualizarHeader();
 
@@ -3886,11 +4290,14 @@ function render(){
     nav.style.display = "none";
     navAdmin.style.display = "none";
     torneioBar.innerHTML = "";
+    if(btnHamburger) btnHamburger.style.display = "none";
+    fecharSidebarMobile();
     main.innerHTML = renderLoginScreen();
     bindEvents();
     setTimeout(initGoogleSignIn, 50);
     return;
   }
+  if(btnHamburger) btnHamburger.style.display = "flex";
 
   if(!state.cloudId){
     nav.style.display = "none";
@@ -4086,13 +4493,13 @@ function badgeAprovacao(t){
   if(st==="aprovado") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Aprovado</span>`;
   if(st==="recusado") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">❌ Recusado</span>`;
   if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
-  return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente</span>`;
+  return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">⏳ Pendente</span>`;
 }
 function badgePagamento(t){
   const st = t.pagamentoStatus || "nao_solicitado";
   if(st==="pago") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">💰 Pago</span>`;
   if(st==="isento") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">🎁 Grátis</span>`;
-  if(st==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">💳 Pix pendente</span>`;
+  if(st==="pendente") return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">💳 Pix pendente</span>`;
   return "";
 }
 // Status "geral" do torneio pra tela de Torneios (lista) — igual à prioridade usada em
@@ -4113,7 +4520,7 @@ function badgeStatusGeral(t){
   if(st==="recusado") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">❌ Recusado</span>`;
   if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
   if(st==="expirado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">⏱️ Expirado</span>`;
-  return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente</span>`;
+  return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">⏳ Pendente</span>`;
 }
 const ROTULO_STATUS_GERAL = { todos:"Todos", pendente:"Pendente", aprovado:"Aprovado", recusado:"Recusado", bloqueado:"Bloqueado", expirado:"Expirado" };
 function formatarDataBR(iso){
@@ -4184,6 +4591,13 @@ function renderTorneiosScreen(){
     return html;
   }
 
+  // Diferente das telas acima, disponível pra QUALQUER organizador — circuito agrupa torneios
+  // do próprio organizador, não é uma função administrativa (ver CLAUDE.md).
+  if(telaCircuitos){
+    html += renderCircuitosScreen();
+    return html;
+  }
+
   html += `<div class="section-title">Torneios</div>
     <div class="section-sub">${ehAdmin() ? "👑 Modo admin — exibindo os torneios de todas as contas." : "Torneios criados por você."}</div>`;
 
@@ -4207,7 +4621,10 @@ function renderTorneiosScreen(){
       </div>
     </div>`;
   } else {
-    html += `<button class="btn" id="btn-novo-torneio" style="margin-bottom:18px;">➕ Criar novo torneio</button>`;
+    html += `<div style="display:flex;gap:8px;margin-bottom:18px;">
+      <button class="btn" id="btn-novo-torneio" style="flex:1;">➕ Criar novo torneio</button>
+      <button class="btn secondary" id="btn-abrir-circuitos" style="flex:1;">🏆 Circuitos</button>
+    </div>`;
   }
 
   const localOrfao = !state.cloudId && state.drawn;
@@ -4275,6 +4692,114 @@ function renderTorneiosScreen(){
       }
     }
   }
+  return html;
+}
+
+function renderCircuitosScreen(){
+  if(circuitosList===null && !circuitosLoading) fetchCircuitosList();
+
+  if(telaCircuitos==="lista"){
+    return renderCircuitosListaScreen();
+  }
+  const circuito = (circuitosList||[]).find(c=>c.id===telaCircuitos);
+  if(!circuito){
+    return `<div class="card empty">Carregando circuito...</div>
+      <button class="btn ghost" id="btn-voltar-circuitos" style="margin-top:10px;">← Voltar</button>`;
+  }
+  return renderCircuitoDetalheScreen(circuito);
+}
+
+function renderCircuitosListaScreen(){
+  let html = `<button class="btn ghost" id="btn-voltar-circuitos" style="width:auto;padding:6px 12px;margin-bottom:10px;">← Voltar</button>
+    <div class="section-title">🏆 Circuitos</div>
+    <div class="section-sub">Agrupe torneios seus num circuito pra somar pontos por colocação final e gerar um ranking público entre eles.</div>`;
+
+  if(mostrarFormNovoCircuito){
+    html += `<div class="card" style="border:1.5px solid var(--ocean);">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do circuito</label>
+      <input type="text" id="input-novo-circuito-nome" placeholder="ex: Circuito Verão 2026" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <div class="hint" style="margin-bottom:8px;">Pontos por colocação (editável depois a qualquer momento):</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Campeão</label><input type="number" id="input-pt-campeao" value="100" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Vice</label><input type="number" id="input-pt-vice" value="70" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">3º lugar</label><input type="number" id="input-pt-terceiro" value="50" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">4º lugar</label><input type="number" id="input-pt-quarto" value="40" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div style="grid-column:span 2;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Participação (demais duplas)</label><input type="number" id="input-pt-participacao" value="10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="btn-cancelar-novo-circuito" style="flex:1;">Cancelar</button>
+        <button class="btn" id="btn-confirmar-novo-circuito" style="flex:1;">Criar</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<button class="btn" id="btn-novo-circuito" style="margin-bottom:18px;">➕ Criar novo circuito</button>`;
+  }
+
+  if(circuitosList===null){
+    html += `<div class="card empty">Carregando circuitos...</div>`;
+  } else if(!circuitosList.length){
+    html += `<div class="card empty"><span class="ball-icon">🏆</span>Nenhum circuito criado ainda.</div>`;
+  } else {
+    circuitosList.slice().sort((a,b)=> (b.updatedAt||"").localeCompare(a.updatedAt||"")).forEach(c=>{
+      const qtdTorneios = (c.torneioIds||[]).length;
+      html += `<div class="torneio-item" data-abrir-circuito="${c.id}">
+        <div class="row">
+          <span class="nome">${escapeHtml(c.nome)}</span>
+        </div>
+        <div class="sub" style="margin-top:2px;">${qtdTorneios} torneio${qtdTorneios!==1?"s":""} vinculado${qtdTorneios!==1?"s":""}</div>
+      </div>`;
+    });
+  }
+  return html;
+}
+
+function renderCircuitoDetalheScreen(circuito){
+  const meusTorneios = (torneiosList||[]).slice().sort((a,b)=> (a.nome||"").localeCompare(b.nome||""));
+  const vinculados = new Set(circuito.torneioIds||[]);
+  const linkPublico = `${location.origin}${location.pathname}?ranking=1&circuito=${circuito.id}`;
+
+  let html = `<button class="btn ghost" id="btn-voltar-circuitos" style="width:auto;padding:6px 12px;margin-bottom:10px;">← Voltar</button>
+    <div class="section-title">${escapeHtml(circuito.nome)}</div>
+
+    <div class="card">
+      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do circuito</label>
+      <input type="text" id="input-circuito-nome" data-circuito="${circuito.id}" value="${escapeHtml(circuito.nome)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:14px;">
+      <div class="hint" style="margin-bottom:8px;">Pontos por colocação:</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Campeão</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-campeao" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.campeao}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Vice</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-vice" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.vice}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">3º lugar</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-terceiro" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.terceiroLugar}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">4º lugar</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-quarto" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.quartoLugar}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div style="grid-column:span 2;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Participação (demais duplas)</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-participacao" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.participacao}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">🔗 Ranking público</div>
+      <div class="hint" style="margin-bottom:10px;">Qualquer pessoa com este link vê o ranking somado, sem precisar logar.</div>
+      <button class="btn secondary" id="btn-copiar-link-circuito" data-link="${escapeHtml(linkPublico)}" style="width:100%;">Copiar link do ranking</button>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">Torneios neste circuito</div>
+      <div class="hint" style="margin-bottom:10px;">Marque quais dos seus torneios entram no cálculo do ranking. Jogadores sem CPF cadastrado não somam pontos entre torneios diferentes.</div>`;
+
+  if(!meusTorneios.length){
+    html += `<div class="sub">Você ainda não tem torneios criados.</div>`;
+  } else {
+    meusTorneios.forEach(t=>{
+      const resultado = circuito.resultados && circuito.resultados[t.id];
+      html += `<label style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--sand);font-size:13px;">
+        <input type="checkbox" data-circuito-torneio="${t.id}" data-circuito="${circuito.id}" ${vinculados.has(t.id)?"checked":""} style="width:auto;">
+        <span style="flex:1;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
+        ${resultado ? `<span class="sub" style="font-size:11px;">✅ resultado computado</span>` : ""}
+      </label>`;
+    });
+  }
+
+  html += `</div>
+    <button class="btn ghost" id="btn-excluir-circuito" data-circuito="${circuito.id}" data-nome="${escapeHtml(circuito.nome)}" style="border-color:var(--coral);color:var(--coral);">🗑️ Excluir circuito</button>`;
+
   return html;
 }
 
@@ -4401,7 +4926,7 @@ function badgeCupom(c){
   const st = statusGeralCupom(c);
   if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
   if(st==="expirado") return `<span class="status-pill" style="background:#F5D9D9;color:#8A2E2E;">⏰ Expirado</span>`;
-  if(st==="nao_comecou") return `<span class="status-pill" style="background:#FCEBC9;color:#8A6D1D;">🕓 Ainda não começou</span>`;
+  if(st==="nao_comecou") return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">🕓 Ainda não começou</span>`;
   if(st==="limite_atingido") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🎯 Limite atingido</span>`;
   return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativo</span>`;
 }
@@ -4580,7 +5105,7 @@ function renderRelatorioCuponsScreen(){
           : t.comissaoRepassada
             ? `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Comissão repassada</span>
                <button class="btn ghost" data-comissao-alternar="${t.id}" data-comissao-nova="0" style="flex:1;width:auto;padding:7px 12px;font-size:12px;">Marcar como pendente</button>`
-            : `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Comissão pendente</span>
+            : `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">⏳ Comissão pendente</span>
                <button class="btn ghost" data-comissao-alternar="${t.id}" data-comissao-nova="1" style="flex:1;width:auto;padding:7px 12px;font-size:12px;">Marcar como repassada</button>`
         }
       </div>
@@ -4615,7 +5140,7 @@ const ROTULO_TIPO_LOG = {
 const COR_TIPO_LOG = {
   acesso: { bg:"#E4E4E4", cor:"#5A5A5A" },
   torneio_criado: { bg:"#DCEEE1", cor:"#2E6E42" },
-  duplas_sorteadas: { bg:"#FCEFD8", cor:"#9A6B1E" },
+  duplas_sorteadas: { bg:"var(--pending-bg)", cor:"var(--pending-text)" },
   resultado_registrado: { bg:"#DCE7F5", cor:"#2C5C99" },
   permissao_usuario: { bg:"#EDE1F5", cor:"#6B3FA0" },
   dupla_adicionada: { bg:"#F3E8FB", cor:"#7A3FA0" },
@@ -4844,7 +5369,7 @@ function renderResumo(){
       const rows = standingsFor(letter);
       html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
       rows.forEach((r,i)=>{
-        html += `<div class="name"><span class="dot" style="background:${i<2?'#4C9A64':'#C9B896'}"></span>${r.nome} <span style="margin-left:auto;font-family:'DM Mono',monospace;color:var(--muted);font-size:12px;">${r.pts} pts</span></div>`;
+        html += `<div class="name"><span class="dot" style="background:${i<2?'var(--grass)':'var(--sand-dark)'}"></span>${r.nome} <span style="margin-left:auto;font-family:'DM Mono',monospace;color:var(--muted);font-size:12px;">${r.pts} pts</span></div>`;
       });
       html += `</div></div>`;
     });
@@ -4906,7 +5431,7 @@ function renderContatoBlock(i, slot, tel, baseMsg, trackKey){
 }
 
 function badgeStatusDupla(status, ativacaoVia){
-  if(status==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente pagamento</span>`;
+  if(status==="pendente") return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">⏳ Pendente pagamento</span>`;
   if(status==="bloqueada") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">🚫 Bloqueada</span>`;
   const viaTxt = ativacaoVia==="pix" ? " · via Pix" : ativacaoVia==="manual" ? " · aprovação manual" : "";
   return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativa${viaTxt}</span>`;
@@ -5008,12 +5533,14 @@ function renderSorteio(){
         <input type="text" data-dupla-jogador="${i}_1" data-field="nomeCompleto" placeholder="Nome completo" value="${escapeHtml(j1.nomeCompleto||"")}">
         <input type="tel" data-dupla-jogador="${i}_1" data-field="tel" placeholder="Telefone (WhatsApp)" value="${escapeHtml(j1.tel||d.tel1||"")}">
         <input type="email" data-dupla-jogador="${i}_1" data-field="email" placeholder="E-mail" value="${escapeHtml(j1.email||"")}">
+        <input type="text" inputmode="numeric" data-dupla-jogador="${i}_1" data-field="cpf" placeholder="CPF (opcional — usado no ranking por circuito)" value="${escapeHtml(formatarCPF(j1.cpf||""))}">
       </div>
       <div class="jogador-group">
         <label>Jogador 2</label>
         <input type="text" data-dupla-jogador="${i}_2" data-field="nomeCompleto" placeholder="Nome completo" value="${escapeHtml(j2.nomeCompleto||"")}">
         <input type="tel" data-dupla-jogador="${i}_2" data-field="tel" placeholder="Telefone (WhatsApp)" value="${escapeHtml(j2.tel||d.tel2||"")}">
         <input type="email" data-dupla-jogador="${i}_2" data-field="email" placeholder="E-mail" value="${escapeHtml(j2.email||"")}">
+        <input type="text" inputmode="numeric" data-dupla-jogador="${i}_2" data-field="cpf" placeholder="CPF (opcional — usado no ranking por circuito)" value="${escapeHtml(formatarCPF(j2.cpf||""))}">
       </div>
     </div>`;
   });
@@ -5093,7 +5620,7 @@ function renderSituacaoEliminacaoLista(){
   nomes.slice().sort((a,b)=> (perdas[a]||0)-(perdas[b]||0) || (vitorias[b]||0)-(vitorias[a]||0)).forEach(nome=>{
     const l = perdas[nome] || 0;
     const v = vitorias[nome] || 0;
-    const cor = l>=2 ? "#C0392B" : (l===1 ? "#F2652A" : "#4C9A64");
+    const cor = l>=2 ? "var(--coral)" : (l===1 ? "var(--pending-text)" : "var(--grass)");
     const status = l>=2 ? "❌ Eliminada" : (l===1 ? "⚠️ 1 derrota" : "✅ Sem derrotas");
     html += `<div class="name"><span class="dot" style="background:${cor}"></span>${escapeHtml(nome)} <span style="margin-left:auto;font-size:11.5px;color:var(--muted);">${v}V · ${status}</span></div>`;
   });
@@ -5186,7 +5713,7 @@ function renderRodadasEliminacao(){
     if(resgatadas.length){
       html += `<div class="tiebreak-note" style="text-align:center;">🎟️ ${resgatadas.map(escapeHtml).join(", ")} ${resgatadas.length>1?"entraram":"entrou"} de repescagem no mata-mata — melhor desempenho entre as eliminadas (mais vitórias, depois saldo de pontos, depois pontos pró) pra fechar a meta de ${meta}.</div>`;
     }
-    html += `<div class="champion-banner" style="background:linear-gradient(150deg,var(--grass),#2E6E42);">
+    html += `<div class="champion-banner">
         <div class="eyebrow">Fase de eliminação concluída</div>
         <div class="name" style="font-size:22px;">${totalClassificadas} dupla${totalClassificadas>1?'s':''} classificada${totalClassificadas>1?'s':''}</div>
       </div>
@@ -5269,7 +5796,7 @@ function renderFluxoJogos(){
       const classifHtml = rows.map((r,i)=>{
         let badge = "";
         if(classificadosFinais.has(r.nome)) badge = ` <span class="flow-badge" style="background:#DCEEE1;color:#2E6E42;">QUALIFICADO</span>`;
-        else if(pendente && desempateInfo.grupoEmpatado.includes(r.nome)) badge = ` <span class="flow-badge" style="background:#FCEFD8;color:#9A6B1E;">⚖️ AGUARDANDO DECISÃO</span>`;
+        else if(pendente && desempateInfo.grupoEmpatado.includes(r.nome)) badge = ` <span class="flow-badge" style="background:var(--pending-bg);color:var(--pending-text);">⚖️ AGUARDANDO DECISÃO</span>`;
         return `${i+1}º ${escapeHtml(r.nome)} — ${r.pts}pts, saldo ${r.saldo>0?"+":""}${r.saldo}, ${r.pp} pontos pró${badge}`;
       }).join("<br>");
 
@@ -5331,7 +5858,7 @@ function renderFluxoJogos(){
     }
     const camp = champion();
     if(camp){
-      html += fluxoStep(`🏆 Campeão`, `<b>${escapeHtml(camp)}</b> venceu a Final e é o campeão do torneio.`, "#C9A227");
+      html += fluxoStep(`🏆 Campeão`, `<b>${escapeHtml(camp)}</b> venceu a Final e é o campeão do torneio.`, "var(--grass)");
     }
   } else {
     html += fluxoStep(`Mata-mata`, `Ainda não começou — depende da conclusão da fase anterior.`, "var(--muted)");
@@ -5426,6 +5953,21 @@ function renderConfiguracoes(){
         ${state.headerImage ? `<button class="btn ghost" id="btn-remover-header-image" style="flex:0 0 auto;width:auto;">Remover</button>` : ``}
       </div>
       <div class="hint">Aparece no cabeçalho do app e no topo do Story enquanto este torneio estiver aberto. Fica salva com o torneio (some se você remover ou trocar).</div>
+    </div>
+    <div class="card tg-settings">
+      <label>Patrocinadores</label>
+      ${state.patrocinadores.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+        ${state.patrocinadores.map(p=>`<div style="display:flex;align-items:center;gap:10px;background:var(--sand);border-radius:10px;padding:6px 10px;">
+          <img src="${p.logo}" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;">
+          <span style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.nome)}</span>
+          <button class="ref-mini-btn ghost" data-remover-patrocinador="${p.id}" style="width:auto;flex:0 0 auto;padding:6px 10px;">🗑️</button>
+        </div>`).join("")}
+      </div>` : ""}
+      <label class="btn secondary" style="text-align:center;margin:0;">
+        ➕ Adicionar patrocinador
+        <input type="file" accept="image/*" id="input-patrocinador-logo" style="display:none;">
+      </label>
+      <div class="hint">Logo do patrocinador aparece no Placar de TV e na imagem de Stories enquanto este torneio estiver aberto.</div>
     </div>
     <div class="card tg-settings">
       <label>Bot do Telegram (usuário, sem @)</label>
@@ -5886,6 +6428,88 @@ function bindEvents(){
       if(preview) preview.textContent = textoPreviewValorDiarias(inputInicio?.value, inputFim?.value);
     });
   });
+  const btnAbrirCircuitos = document.getElementById("btn-abrir-circuitos");
+  if(btnAbrirCircuitos) btnAbrirCircuitos.addEventListener("click", ()=>{
+    telaCircuitos = "lista";
+    render();
+  });
+  const btnVoltarCircuitos = document.getElementById("btn-voltar-circuitos");
+  if(btnVoltarCircuitos) btnVoltarCircuitos.addEventListener("click", ()=>{
+    telaCircuitos = telaCircuitos==="lista" ? null : "lista";
+    render();
+  });
+  const btnNovoCircuito = document.getElementById("btn-novo-circuito");
+  if(btnNovoCircuito) btnNovoCircuito.addEventListener("click", ()=>{
+    mostrarFormNovoCircuito = true;
+    render();
+  });
+  const btnCancelarNovoCircuito = document.getElementById("btn-cancelar-novo-circuito");
+  if(btnCancelarNovoCircuito) btnCancelarNovoCircuito.addEventListener("click", ()=>{
+    mostrarFormNovoCircuito = false;
+    render();
+  });
+  const btnConfirmarNovoCircuito = document.getElementById("btn-confirmar-novo-circuito");
+  if(btnConfirmarNovoCircuito) btnConfirmarNovoCircuito.addEventListener("click", ()=>{
+    const nome = (document.getElementById("input-novo-circuito-nome").value||"").trim();
+    if(!nome){ showToast("Dê um nome para o circuito."); return; }
+    const pontuacaoTabela = {
+      campeao: Number(document.getElementById("input-pt-campeao").value) || 0,
+      vice: Number(document.getElementById("input-pt-vice").value) || 0,
+      terceiroLugar: Number(document.getElementById("input-pt-terceiro").value) || 0,
+      quartoLugar: Number(document.getElementById("input-pt-quarto").value) || 0,
+      participacao: Number(document.getElementById("input-pt-participacao").value) || 0
+    };
+    criarCircuito({ nome, pontuacaoTabela });
+  });
+  main.querySelectorAll("[data-abrir-circuito]").forEach(item=>{
+    item.addEventListener("click", ()=>{
+      telaCircuitos = item.dataset.abrirCircuito;
+      render();
+    });
+  });
+  const inputCircuitoNome = document.getElementById("input-circuito-nome");
+  if(inputCircuitoNome) inputCircuitoNome.addEventListener("change", e=>{
+    const nome = e.target.value.trim();
+    if(!nome){ showToast("O nome do circuito não pode ficar em branco."); render(); return; }
+    atualizarCircuito(e.target.dataset.circuito, { nome });
+  });
+  main.querySelectorAll(".input-circuito-pt").forEach(input=>{
+    input.addEventListener("change", e=>{
+      const circuitoId = e.target.dataset.circuito;
+      const pontuacaoTabela = {
+        campeao: Number(document.getElementById("input-circuito-pt-campeao").value) || 0,
+        vice: Number(document.getElementById("input-circuito-pt-vice").value) || 0,
+        terceiroLugar: Number(document.getElementById("input-circuito-pt-terceiro").value) || 0,
+        quartoLugar: Number(document.getElementById("input-circuito-pt-quarto").value) || 0,
+        participacao: Number(document.getElementById("input-circuito-pt-participacao").value) || 0
+      };
+      atualizarCircuito(circuitoId, { pontuacaoTabela });
+    });
+  });
+  const btnCopiarLinkCircuito = document.getElementById("btn-copiar-link-circuito");
+  if(btnCopiarLinkCircuito) btnCopiarLinkCircuito.addEventListener("click", async ()=>{
+    const url = btnCopiarLinkCircuito.dataset.link;
+    if(navigator.share){
+      try{ await navigator.share({ title:"Ranking do circuito", url }); return; }catch(e){ /* cancelou o share nativo — cai pro clipboard abaixo */ }
+    }
+    try{
+      await navigator.clipboard.writeText(url);
+      showToast("Link copiado!");
+    }catch(e){
+      prompt("Copie o link abaixo:", url);
+    }
+  });
+  main.querySelectorAll("[data-circuito-torneio]").forEach(checkbox=>{
+    checkbox.addEventListener("change", ()=>{
+      const circuitoId = checkbox.dataset.circuito;
+      const torneioIds = Array.from(main.querySelectorAll(`[data-circuito-torneio][data-circuito="${circuitoId}"]:checked`)).map(c=>c.dataset.circuitoTorneio);
+      atualizarCircuito(circuitoId, { torneioIds });
+    });
+  });
+  const btnExcluirCircuito = document.getElementById("btn-excluir-circuito");
+  if(btnExcluirCircuito) btnExcluirCircuito.addEventListener("click", ()=>{
+    excluirCircuito(btnExcluirCircuito.dataset.circuito, btnExcluirCircuito.dataset.nome);
+  });
   const btnNovoCupom = document.getElementById("btn-novo-cupom");
   if(btnNovoCupom) btnNovoCupom.addEventListener("click", ()=>{
     mostrarFormNovoCupom = true;
@@ -6143,6 +6767,11 @@ function bindEvents(){
         const pos = e.target.value.length;
         e.target.setSelectionRange(pos, pos);
       }
+      if(field==="cpf"){
+        e.target.value = formatarCPF(e.target.value);
+        const pos = e.target.value.length;
+        e.target.setSelectionRange(pos, pos);
+      }
       const jogadorKey = slot==="1" ? "jogador1" : "jogador2";
       if(!d[jogadorKey]) d[jogadorKey] = {};
       d[jogadorKey][field] = e.target.value;
@@ -6179,6 +6808,31 @@ function bindEvents(){
     state.headerImage = null;
     save(); render();
     showToast("Imagem do topo removida.");
+  });
+  const inputPatrocinadorLogo = document.getElementById("input-patrocinador-logo");
+  if(inputPatrocinadorLogo) inputPatrocinadorLogo.addEventListener("change", async e=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    const nome = (prompt("Nome do patrocinador (aparece só como identificação da logo):")||"").trim();
+    if(!nome){ e.target.value = ""; return; }
+    showToast("Processando logo...");
+    try{
+      const logo = await processarLogoPatrocinador(file);
+      state.patrocinadores.push({ id: crypto.randomUUID(), nome, logo });
+      save(); render();
+      showToast("Patrocinador adicionado!");
+    }catch(err){
+      showToast("Não foi possível usar essa imagem.");
+    }
+    e.target.value = "";
+  });
+  main.querySelectorAll("[data-remover-patrocinador]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.dataset.removerPatrocinador;
+      state.patrocinadores = state.patrocinadores.filter(p=>p.id!==id);
+      save(); render();
+      showToast("Patrocinador removido.");
+    });
   });
   main.querySelectorAll("[data-placar-check]").forEach(chk=>{
     chk.addEventListener("change", e=>{
@@ -6553,6 +7207,35 @@ function alternarTema(){
 }
 
 /* ============================================================
+   MENU LATERAL (sidebar recolhível — substitui a antiga barra inferior)
+   No mobile/tablet (<901px) funciona como gaveta (drawer): fica fora da tela por padrão e
+   desliza por cima do conteúdo com uma camada escura atrás (.sidebar-backdrop), igual ao menu
+   do Facebook mobile. A partir de 901px vira uma coluna fixa ao lado do conteúdo — nesse caso
+   o mesmo botão (hambúrguer no topo, ou a setinha dentro do próprio menu) só encolhe/expande
+   pra um "trilho" só de ícones, sem escondê-lo de vez (ver .desktop-collapsed no CSS).
+============================================================ */
+const SIDEBAR_DESKTOP_QUERY = "(min-width:901px)";
+function ehDesktopViewport(){
+  return window.matchMedia(SIDEBAR_DESKTOP_QUERY).matches;
+}
+function alternarSidebar(){
+  const sidebar = document.getElementById("sidebar");
+  if(!sidebar) return;
+  if(ehDesktopViewport()){
+    sidebar.classList.toggle("desktop-collapsed");
+  } else {
+    const vaiAbrir = !sidebar.classList.contains("mobile-open");
+    sidebar.classList.toggle("mobile-open", vaiAbrir);
+    document.getElementById("sidebar-backdrop")?.classList.toggle("show", vaiAbrir);
+  }
+}
+function fecharSidebarMobile(){
+  if(ehDesktopViewport()) return;
+  document.getElementById("sidebar")?.classList.remove("mobile-open");
+  document.getElementById("sidebar-backdrop")?.classList.remove("show");
+}
+
+/* ============================================================
    PLACAR PARA TV (tela separada, somente leitura, via link)
 ============================================================ */
 let __tvUltimoArb = null;
@@ -6604,6 +7287,50 @@ function iniciarPlacarTV(torneioId, matchId){
 
   atualizar();
   setInterval(atualizar, 1200);
+}
+
+// Página pública do ranking do circuito (?ranking=1&circuito={id}) — mesmo padrão isolado das
+// outras páginas públicas (apito/inscrição/placar de TV): substitui document.body inteiro, sem
+// tabbar/login, busca só o necessário via rota pública (/api/circuito-ranking).
+function iniciarRankingPublico(circuitoId){
+  document.body.innerHTML = `<div class="ref-screen">
+    <div class="ref-top"><div class="ref-label" id="ranking-titulo">🏆 Ranking do circuito</div></div>
+    <div style="padding:16px 20px 40px;max-width:480px;margin:0 auto;" id="ranking-conteudo"><div class="hint">Carregando ranking...</div></div>
+  </div>`;
+
+  function renderRankingPublico(data){
+    const titulo = document.getElementById("ranking-titulo");
+    if(titulo) titulo.textContent = `🏆 ${data.circuitoNome || "Ranking do circuito"}`;
+    const el = document.getElementById("ranking-conteudo");
+    if(!el) return;
+    if(!data.ranking || !data.ranking.length){
+      el.innerHTML = `<div class="card empty">Nenhum resultado computado ainda neste circuito.</div>`;
+      return;
+    }
+    el.innerHTML = data.ranking.map((r,i)=> `<div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+      <div style="font-weight:800;font-size:18px;color:var(--heading);width:30px;text-align:center;">${i+1}º</div>
+      <div style="flex:1;">
+        <div style="font-weight:700;">${escapeHtml(r.jogadorNome||"—")}</div>
+        <div class="sub" style="font-size:11px;">${r.torneiosDisputados} torneio${r.torneiosDisputados!==1?"s":""} disputado${r.torneiosDisputados!==1?"s":""}</div>
+      </div>
+      <div style="font-weight:800;font-size:16px;color:var(--ocean);">${r.pontos} pts</div>
+    </div>`).join("");
+  }
+
+  async function atualizar(){
+    try{
+      const res = await fetch(`/api/circuito-ranking?circuito=${encodeURIComponent(circuitoId)}`, { cache:"no-store" });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      renderRankingPublico(data);
+    }catch(e){
+      const el = document.getElementById("ranking-conteudo");
+      if(el) el.innerHTML = `<div class="card" style="border-color:var(--coral);color:var(--coral);">⚠️ Não foi possível carregar o ranking: ${escapeHtml(e && e.message ? e.message : String(e))}</div>`;
+    }
+  }
+
+  atualizar();
+  setInterval(atualizar, 30000);
 }
 
 function iniciarPlacarMultiploTV(torneioId, matchIds){
@@ -6681,7 +7408,7 @@ function renderTVMulti(matchIds){
       </div>
     </div>`;
   });
-  html += `</div>`;
+  html += `</div>${sponsorsTvHtml()}`;
   screen.innerHTML = html;
 }
 
@@ -6718,7 +7445,16 @@ function renderTV(matchId){
       <div class="tv-timer">${formatTempo(tempoMs)}</div>
       <div class="tv-status">${statusLabel}</div>
     </div>
-    ${arb.arbitroNome ? `<div class="tv-status" style="margin-top:6px;opacity:.85;">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>` : ""}`;
+    ${arb.arbitroNome ? `<div class="tv-status" style="margin-top:6px;opacity:.85;">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>` : ""}
+    ${sponsorsTvHtml()}`;
+}
+
+// Faixa de logos de patrocinadores, fixada na base da tela — usada nas duas variantes do
+// Placar de TV (jogo único e grade de múltiplos jogos). Vazio quando o torneio não tem
+// nenhum patrocinador cadastrado (aba Configurações).
+function sponsorsTvHtml(){
+  if(!state.patrocinadores?.length) return "";
+  return `<div class="tv-sponsors">${state.patrocinadores.map(p=>`<img src="${p.logo}" alt="${escapeHtml(p.nome||"Patrocinador")}" title="${escapeHtml(p.nome||"")}">`).join("")}</div>`;
 }
 
 /* ============================================================
@@ -6924,7 +7660,9 @@ function renderInscricaoPublicaForm(erro){
         <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Telefone</label>
         <input type="tel" id="input-j1-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
         <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">E-mail</label>
-        <input type="email" id="input-j1-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
+        <input type="email" id="input-j1-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">CPF (opcional)</label>
+        <input type="text" inputmode="numeric" id="input-j1-cpf" placeholder="000.000.000-00" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
       </div>
 
       <div style="border:1.5px solid #3a5a44;border-radius:12px;padding:14px;margin-bottom:18px;">
@@ -6934,7 +7672,9 @@ function renderInscricaoPublicaForm(erro){
         <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Telefone</label>
         <input type="tel" id="input-j2-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
         <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">E-mail</label>
-        <input type="email" id="input-j2-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
+        <input type="email" id="input-j2-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">CPF (opcional)</label>
+        <input type="text" inputmode="numeric" id="input-j2-cpf" placeholder="000.000.000-00" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
       </div>
 
       <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Nome da dupla</label>
@@ -6966,6 +7706,14 @@ function renderInscricaoPublicaForm(erro){
       e.target.setSelectionRange(pos, pos);
     });
   });
+  ["input-j1-cpf","input-j2-cpf"].forEach(id=>{
+    const el = document.getElementById(id);
+    el.addEventListener("input", e=>{
+      e.target.value = formatarCPF(e.target.value);
+      const pos = e.target.value.length;
+      e.target.setSelectionRange(pos, pos);
+    });
+  });
 
   document.getElementById("btn-inscricao-enviar").addEventListener("click", enviarInscricaoPublica);
 }
@@ -6975,12 +7723,14 @@ async function enviarInscricaoPublica(){
   const jogador1 = {
     nomeCompleto: (document.getElementById("input-j1-nome").value||"").trim(),
     tel: (document.getElementById("input-j1-tel").value||"").trim(),
-    email: (document.getElementById("input-j1-email").value||"").trim()
+    email: (document.getElementById("input-j1-email").value||"").trim(),
+    cpf: (document.getElementById("input-j1-cpf").value||"").trim()
   };
   const jogador2 = {
     nomeCompleto: (document.getElementById("input-j2-nome").value||"").trim(),
     tel: (document.getElementById("input-j2-tel").value||"").trim(),
-    email: (document.getElementById("input-j2-email").value||"").trim()
+    email: (document.getElementById("input-j2-email").value||"").trim(),
+    cpf: (document.getElementById("input-j2-cpf").value||"").trim()
   };
   const nomeDupla = (document.getElementById("input-nome-dupla").value||"").trim();
 
@@ -7083,6 +7833,8 @@ const __apitarFlag = __urlParams.get("apitar");
 const __apitarMatch = __urlParams.get("match");
 const __apitarToken = __urlParams.get("token");
 const __inscreverFlag = __urlParams.get("inscrever");
+const __rankingFlag = __urlParams.get("ranking");
+const __circuitoId = __urlParams.get("circuito");
 
 if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
   iniciarApitoPublico({
@@ -7099,6 +7851,8 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
   iniciarPlacarTV(__tvTorneioId, __tvMatchId);
 } else if(__tvMultiIds && __tvTorneioId){
   iniciarPlacarMultiploTV(__tvTorneioId, __tvMultiIds.split(","));
+} else if(__rankingFlag && __circuitoId){
+  iniciarRankingPublico(__circuitoId);
 } else {
   document.querySelectorAll("#nav-torneio button").forEach(btn=>{
     btn.addEventListener("click", ()=>{
@@ -7109,6 +7863,7 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
       state.tab = btn.dataset.tab;
       save();
       render();
+      fecharSidebarMobile();
       if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
       if(state.tab==="matamata" && state.drawn) checkElimNotifications();
     });
@@ -7117,6 +7872,7 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
     btn.addEventListener("click", ()=>{
       telaAdmin = btn.dataset.telaAdmin;
       render();
+      fecharSidebarMobile();
     });
   });
   const btnThemeIcon = document.getElementById("btn-theme-icon");
@@ -7124,6 +7880,14 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
     btnThemeIcon.textContent = temaAtual()==="dark" ? "☀️" : "🌙";
     btnThemeIcon.addEventListener("click", alternarTema);
   }
+  const btnHamburger = document.getElementById("btn-hamburger");
+  if(btnHamburger) btnHamburger.addEventListener("click", alternarSidebar);
+  const btnSidebarCollapse = document.getElementById("btn-sidebar-collapse");
+  if(btnSidebarCollapse) btnSidebarCollapse.addEventListener("click", alternarSidebar);
+  const btnSidebarClose = document.getElementById("btn-sidebar-close");
+  if(btnSidebarClose) btnSidebarClose.addEventListener("click", fecharSidebarMobile);
+  const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+  if(sidebarBackdrop) sidebarBackdrop.addEventListener("click", fecharSidebarMobile);
 
   render();
   fetchAndCacheClientId();

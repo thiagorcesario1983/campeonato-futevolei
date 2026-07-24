@@ -766,7 +766,9 @@ async function torneiosSave(request: Request, env: Env): Promise<Response> {
   }
 
   try {
-    await env.DB.put(`torneio:${id}`, JSON.stringify({ ...meta, pagamento: existingFull?.pagamento ?? null, state: body.state }));
+    // circuitoIds é campo espelho (só o servidor escreve, via /api/circuito-atualizar) — nunca
+    // confia no que o cliente manda em body.state.circuitoIds, mesmo padrão de "pagamento" acima.
+    await env.DB.put(`torneio:${id}`, JSON.stringify({ ...meta, pagamento: existingFull?.pagamento ?? null, circuitoIds: existingFull?.circuitoIds ?? [], state: body.state }));
     const newIndex = index.filter((t: any) => t.id !== id);
     newIndex.push(meta);
     await env.DB.put("torneios:index", JSON.stringify(newIndex));
@@ -2134,11 +2136,34 @@ async function inscricaoInfo(request: Request, env: Env): Promise<Response> {
   });
 }
 
-function inscricaoValidarJogador(j: any): j is { nomeCompleto: string; tel: string; email: string } {
-  return !!j
-    && typeof j.nomeCompleto === "string" && j.nomeCompleto.trim().length >= 3
-    && typeof j.tel === "string" && j.tel.trim().length >= 8
-    && typeof j.email === "string" && /\S+@\S+\.\S+/.test(j.email.trim());
+function normalizarCPF(cpf: unknown): string {
+  return String(cpf || "").replace(/\D/g, "");
+}
+// CPF é opcional em todo o app (usado só como chave de identidade entre torneios no ranking
+// por circuito — ver CLAUDE.md) — só valida o dígito verificador quando o campo vem preenchido.
+function validarCPF(cpf: string): boolean {
+  const digits = normalizarCPF(cpf);
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  const calcDigito = (base: string, pesoInicial: number): number => {
+    let soma = 0;
+    for (let i = 0; i < base.length; i++) soma += Number(base[i]) * (pesoInicial - i);
+    const resto = (soma * 10) % 11;
+    return resto === 10 ? 0 : resto;
+  };
+  const d1 = calcDigito(digits.slice(0, 9), 10);
+  const d2 = calcDigito(digits.slice(0, 9) + d1, 11);
+  return digits.slice(9) === `${d1}${d2}`;
+}
+function inscricaoValidarJogador(j: any): j is { nomeCompleto: string; tel: string; email: string; cpf?: string } {
+  if (!j
+    || typeof j.nomeCompleto !== "string" || j.nomeCompleto.trim().length < 3
+    || typeof j.tel !== "string" || j.tel.trim().length < 8
+    || typeof j.email !== "string" || !/\S+@\S+\.\S+/.test(j.email.trim())) {
+    return false;
+  }
+  if (j.cpf != null && String(j.cpf).trim() !== "" && !validarCPF(j.cpf)) return false;
+  return true;
 }
 
 // Público (com token): cria a dupla (status "pendente") e gera o Pix da inscrição. Nunca
@@ -2180,8 +2205,8 @@ async function inscricaoCriar(request: Request, env: Env): Promise<Response> {
   }
 
   const duplaId = crypto.randomUUID();
-  const jogador1 = { nomeCompleto: body.jogador1.nomeCompleto.trim(), tel: body.jogador1.tel.trim(), email: body.jogador1.email.trim() };
-  const jogador2 = { nomeCompleto: body.jogador2.nomeCompleto.trim(), tel: body.jogador2.tel.trim(), email: body.jogador2.email.trim() };
+  const jogador1 = { nomeCompleto: body.jogador1.nomeCompleto.trim(), tel: body.jogador1.tel.trim(), email: body.jogador1.email.trim(), cpf: normalizarCPF(body.jogador1.cpf) || null };
+  const jogador2 = { nomeCompleto: body.jogador2.nomeCompleto.trim(), tel: body.jogador2.tel.trim(), email: body.jogador2.email.trim(), cpf: normalizarCPF(body.jogador2.cpf) || null };
   const novaDupla = {
     id: duplaId,
     nome: nomeDupla,
@@ -2520,6 +2545,310 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
   } catch (e: any) {
     return json({ error: "Falha de rede ao falar com o Mercado Pago", detail: String(e?.message || e) }, 502);
   }
+}
+
+/* ============================================================
+   RANKING POR CIRCUITO
+   Um circuito agrupa vários torneios (escolhidos manualmente pelo organizador) e soma pontos
+   por COLOCAÇÃO FINAL de cada jogador, agregando pelo CPF (chave estável entre torneios —
+   telefone pode mudar, CPF não). Guardado numa única chave (circuitos:index, lista completa),
+   mesmo padrão leve de Cupons (sem separar índice+detalhe — um circuito não tem blob pesado
+   por torneio, só referências + resultado já resolvido).
+
+   Decisão de arquitetura: o SERVIDOR nunca re-deriva quem é campeão/vice/3º/4º lugar — essa
+   lógica já existe no cliente (champion()/semifinalLosers()/terceiroWinner() em index.html) e
+   já foi historicamente cheia de bugs sutis (bye em mata-mata, empate técnico antes do
+   mata-mata — ver CLAUDE.md itens 2 e 15). O cliente calcula a colocação final e só faz um
+   POST do resultado já resolvido (circuitoResultadoTorneio); reimplementar essa resolução aqui
+   duplicaria o mesmo risco.
+
+   Os pontos NÃO são gravados em resultados[] — só a posição (1/2/3/4/"participacao"). A
+   multiplicação pela pontuacaoTabela acontece ao vivo em circuitoRanking(), então editar a
+   tabela de pontos depois recalcula sozinho todo o histórico, sem precisar de "recalcular".
+============================================================ */
+interface Circuito {
+  id: string;
+  nome: string;
+  ownerEmail: string; // dono = quem criou (via emailAutenticado, nunca campo solto do body)
+  createdAt: string;
+  updatedAt: string;
+  torneioIds: string[]; // torneios manualmente adicionados a este circuito
+  pontuacaoTabela: {
+    campeao: number; vice: number; terceiroLugar: number; quartoLugar: number; participacao: number;
+  };
+  resultados: {
+    [torneioId: string]: {
+      torneioNome: string;
+      calculadoEm: string;
+      colocacoes: Array<{ posicao: 1 | 2 | 3 | 4 | "participacao"; duplaNome: string; jogadorNome: string; cpf: string | null }>;
+    };
+  };
+}
+
+async function getCircuitosIndex(env: Env): Promise<Circuito[]> {
+  try {
+    const raw = await env.DB.get("circuitos:index");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+async function saveCircuitosIndex(env: Env, lista: Circuito[]): Promise<void> {
+  await env.DB.put("circuitos:index", JSON.stringify(lista));
+}
+
+async function circuitoCriar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+
+  const nome = String(body.nome || "").trim();
+  if (!nome) return json({ error: "Informe o nome do circuito" }, 400);
+
+  const pt = body.pontuacaoTabela || {};
+  const agora = new Date().toISOString();
+  const circuito: Circuito = {
+    id: crypto.randomUUID(),
+    nome,
+    ownerEmail: solicitanteEmail,
+    createdAt: agora,
+    updatedAt: agora,
+    torneioIds: [],
+    pontuacaoTabela: {
+      campeao: Number(pt.campeao) || 100,
+      vice: Number(pt.vice) || 70,
+      terceiroLugar: Number(pt.terceiroLugar) || 50,
+      quartoLugar: Number(pt.quartoLugar) || 40,
+      participacao: Number(pt.participacao) || 10
+    },
+    resultados: {}
+  };
+
+  const lista = await getCircuitosIndex(env);
+  lista.push(circuito);
+  await saveCircuitosIndex(env, lista);
+  return json({ ok: true, circuito });
+}
+
+// Organizador enxerga só os próprios circuitos; admin enxerga todos (mesmo padrão de torneiosList).
+async function circuitosList(request: Request, env: Env): Promise<Response> {
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+  const lista = await getCircuitosIndex(env);
+  const meus = ehAdmin(solicitanteEmail, env) ? lista : lista.filter((c) => c.ownerEmail === solicitanteEmail);
+  return json({ circuitos: meus });
+}
+
+async function circuitoAtualizar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+
+  const lista = await getCircuitosIndex(env);
+  const idx = lista.findIndex((c) => c.id === body.id);
+  if (idx < 0) return json({ error: "não encontrado" }, 404);
+  const circuito = lista[idx];
+  if (circuito.ownerEmail !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para editar este circuito" }, 403);
+  }
+
+  if (typeof body.nome === "string" && body.nome.trim()) circuito.nome = body.nome.trim();
+  if (body.pontuacaoTabela && typeof body.pontuacaoTabela === "object") {
+    const pt = body.pontuacaoTabela;
+    circuito.pontuacaoTabela = {
+      campeao: Number(pt.campeao) || 0,
+      vice: Number(pt.vice) || 0,
+      terceiroLugar: Number(pt.terceiroLugar) || 0,
+      quartoLugar: Number(pt.quartoLugar) || 0,
+      participacao: Number(pt.participacao) || 0
+    };
+  }
+
+  // torneioIds: atualização cirúrgica com campo espelho em cada torneio.circuitoIds (mesmo
+  // espírito do item 19 do CLAUDE.md — anotarNomesBracket: espelho só pra leitura). Só linka um
+  // torneio se o solicitante realmente tiver acesso a ele (temAcessoTorneio) — sem essa checagem,
+  // o dono de um circuito poderia colar o id de um torneio de OUTRO organizador e expor os
+  // nomes/CPFs das duplas dele no ranking público.
+  if (Array.isArray(body.torneioIds)) {
+    const novosIdsBrutos: string[] = [...new Set(body.torneioIds.filter((x: any) => typeof x === "string") as string[])];
+    const antigosIds: string[] = circuito.torneioIds || [];
+    const adicionados = novosIdsBrutos.filter((id) => !antigosIds.includes(id));
+    const removidos = antigosIds.filter((id) => !novosIdsBrutos.includes(id));
+    const adicionadosAutorizados: string[] = [];
+
+    for (const torneioId of adicionados) {
+      const raw = await env.DB.get(`torneio:${torneioId}`);
+      if (!raw) continue;
+      const dadosTorneio = JSON.parse(raw);
+      if (!temAcessoTorneio(dadosTorneio, solicitanteEmail, env)) continue;
+      dadosTorneio.circuitoIds = Array.isArray(dadosTorneio.circuitoIds) ? dadosTorneio.circuitoIds : [];
+      if (!dadosTorneio.circuitoIds.includes(circuito.id)) dadosTorneio.circuitoIds.push(circuito.id);
+      await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dadosTorneio));
+      adicionadosAutorizados.push(torneioId);
+    }
+    for (const torneioId of removidos) {
+      const raw = await env.DB.get(`torneio:${torneioId}`);
+      if (raw) {
+        const dadosTorneio = JSON.parse(raw);
+        dadosTorneio.circuitoIds = (dadosTorneio.circuitoIds || []).filter((x: string) => x !== circuito.id);
+        await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dadosTorneio));
+      }
+      delete circuito.resultados[torneioId]; // some do circuito, some o resultado gravado dele também
+    }
+    circuito.torneioIds = [...antigosIds.filter((id) => !removidos.includes(id)), ...adicionadosAutorizados];
+  }
+
+  circuito.updatedAt = new Date().toISOString();
+  lista[idx] = circuito;
+  await saveCircuitosIndex(env, lista);
+  return json({ ok: true, circuito });
+}
+
+async function circuitoExcluir(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+
+  const id = body.id;
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  const lista = await getCircuitosIndex(env);
+  const circuito = lista.find((c) => c.id === id);
+  if (!circuito) return json({ error: "não encontrado" }, 404);
+  if (circuito.ownerEmail !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para excluir este circuito" }, 403);
+  }
+
+  for (const torneioId of circuito.torneioIds || []) {
+    const raw = await env.DB.get(`torneio:${torneioId}`);
+    if (!raw) continue;
+    const dadosTorneio = JSON.parse(raw);
+    dadosTorneio.circuitoIds = (dadosTorneio.circuitoIds || []).filter((x: string) => x !== id);
+    await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dadosTorneio));
+  }
+  await saveCircuitosIndex(env, lista.filter((c) => c.id !== id));
+  return json({ ok: true });
+}
+
+function circuitoValidarColocacoes(colocacoes: any): colocacoes is Array<{ posicao: 1 | 2 | 3 | 4 | "participacao"; duplaNome: string; jogadorNome: string; cpf: string | null }> {
+  if (!Array.isArray(colocacoes) || !colocacoes.length) return false;
+  return colocacoes.every((c) =>
+    c && typeof c === "object"
+    && typeof c.duplaNome === "string" && c.duplaNome.trim().length > 0
+    && typeof c.jogadorNome === "string" && c.jogadorNome.trim().length > 0
+    && (c.posicao === 1 || c.posicao === 2 || c.posicao === 3 || c.posicao === 4 || c.posicao === "participacao")
+    && (c.cpf === null || c.cpf === undefined || typeof c.cpf === "string")
+  );
+}
+
+// Autenticado, mas não exige o dono do TORNEIO — exige o dono do CIRCUITO (ou admin), já que só
+// quem tem acesso ao circuito consegue tê-lo linkado ao torneio em primeiro lugar (circuitoAtualizar
+// já checou isso). Se o torneio não pertencer a nenhum circuito deste organizador, no-op silencioso
+// (200) — é o caso comum de "torneio sem circuito nenhum", disparado a cada torneio finalizado.
+async function circuitoResultadoTorneio(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+
+  const torneioId = body.torneioId;
+  if (!torneioId) return json({ error: "torneioId obrigatório" }, 400);
+  if (!circuitoValidarColocacoes(body.colocacoes)) {
+    return json({ error: "colocações inválidas" }, 400);
+  }
+
+  const lista = await getCircuitosIndex(env);
+  const circuitosAlvo = lista.filter((c) =>
+    (c.torneioIds || []).includes(torneioId) && (c.ownerEmail === solicitanteEmail || ehAdmin(solicitanteEmail, env))
+  );
+  if (!circuitosAlvo.length) return json({ ok: true, ignorado: true });
+
+  let torneioNome = "Torneio";
+  const rawTorneio = await env.DB.get(`torneio:${torneioId}`);
+  if (rawTorneio) {
+    try {
+      torneioNome = JSON.parse(rawTorneio).nome || torneioNome;
+    } catch {}
+  }
+
+  const colocacoesNormalizadas = body.colocacoes.map((c: any) => ({
+    posicao: c.posicao,
+    duplaNome: String(c.duplaNome).trim(),
+    jogadorNome: String(c.jogadorNome).trim(),
+    cpf: c.cpf ? (normalizarCPF(c.cpf) || null) : null
+  }));
+
+  const agora = new Date().toISOString();
+  for (const circuito of circuitosAlvo) {
+    circuito.resultados[torneioId] = { torneioNome, calculadoEm: agora, colocacoes: colocacoesNormalizadas };
+    circuito.updatedAt = agora;
+  }
+  await saveCircuitosIndex(env, lista);
+  return json({ ok: true });
+}
+
+// CPF nunca é devolvido completo numa rota pública (dado pessoal, LGPD) — usado só como chave
+// de agregação interna. Mostra só os 3 primeiros e 2 últimos dígitos.
+function mascararCPF(cpf: string): string {
+  const d = normalizarCPF(cpf);
+  if (d.length !== 11) return "";
+  return `${d.slice(0, 3)}.***.***-${d.slice(9)}`;
+}
+
+// Pública (sem auth, como torneiosGetPublico) — agrega todos os resultados do circuito por CPF.
+// Entradas sem CPF (jogador não informou, ou dupla sem jogador1/jogador2 detalhado) aparecem no
+// resultado individual do torneio mas nunca agregam com outro torneio — ficam de fora daqui.
+async function circuitoRanking(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const circuitoId = url.searchParams.get("circuito");
+  if (!circuitoId) return json({ error: "circuito obrigatório" }, 400);
+
+  const lista = await getCircuitosIndex(env);
+  const circuito = lista.find((c) => c.id === circuitoId);
+  if (!circuito) return json({ error: "não encontrado" }, 404);
+
+  const pontosPorPosicao = (posicao: any): number => {
+    if (posicao === 1) return circuito.pontuacaoTabela.campeao;
+    if (posicao === 2) return circuito.pontuacaoTabela.vice;
+    if (posicao === 3) return circuito.pontuacaoTabela.terceiroLugar;
+    if (posicao === 4) return circuito.pontuacaoTabela.quartoLugar;
+    return circuito.pontuacaoTabela.participacao;
+  };
+
+  const porCpf = new Map<string, { jogadorNome: string; pontos: number; torneiosDisputados: number }>();
+  for (const resultado of Object.values(circuito.resultados)) {
+    for (const c of resultado.colocacoes) {
+      if (!c.cpf) continue;
+      const atual = porCpf.get(c.cpf) || { jogadorNome: c.jogadorNome, pontos: 0, torneiosDisputados: 0 };
+      atual.jogadorNome = c.jogadorNome || atual.jogadorNome;
+      atual.pontos += pontosPorPosicao(c.posicao);
+      atual.torneiosDisputados += 1;
+      porCpf.set(c.cpf, atual);
+    }
+  }
+
+  const ranking = [...porCpf.entries()]
+    .map(([cpf, v]) => ({ jogadorNome: v.jogadorNome, cpf: mascararCPF(cpf), pontos: v.pontos, torneiosDisputados: v.torneiosDisputados }))
+    .sort((a, b) => b.pontos - a.pontos);
+
+  return json({ circuitoNome: circuito.nome, ranking, atualizadoEm: circuito.updatedAt });
 }
 
 /* ============================================================
@@ -2940,6 +3269,24 @@ export default {
     }
     if (path === "/api/log-acesso") {
       return method === "POST" ? logAcesso(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/circuito-criar") {
+      return method === "POST" ? circuitoCriar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/circuitos-list") {
+      return circuitosList(request, env);
+    }
+    if (path === "/api/circuito-atualizar") {
+      return method === "POST" ? circuitoAtualizar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/circuito-excluir") {
+      return method === "POST" ? circuitoExcluir(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/circuito-resultado-torneio") {
+      return method === "POST" ? circuitoResultadoTorneio(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/circuito-ranking") {
+      return circuitoRanking(request, env);
     }
     if (path.startsWith("/api/")) {
       return new Response("Not found", { status: 404 });

@@ -446,6 +446,119 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     `ativacaoVia==="manual"` (não dispara pra ativação automática via Pix, já coberta por
     `inscricao_paga`); `dupla_removida` é restrito a `origem==="manual"` (duplas de inscrição
     nunca são removidas de verdade, só bloqueadas — ver item 14).
+24. **Patrocinadores** (`state.patrocinadores: [{id, nome, logo}]`, `logo` em data URL PNG,
+    configurado na aba Configurações): aparecem no Placar de TV (faixa fixa na base da tela,
+    `.tv-sponsors`) e no rodapé da imagem de Stories (`drawSponsorsSection`). Só front-end —
+    nada no worker.ts, já que é um campo de escritor único (organizador), sem concorrência,
+    trafega dentro do `state` normal do torneio como qualquer outro campo. No Story, a logo é
+    carregada de forma assíncrona (`getSponsorImage`, mesmo padrão de `getStoryHeaderImage`
+    pro banner de topo): a primeira chamada de `drawSponsorsSection` não desenha nada ainda
+    (retorna cedo se a imagem não carregou), e o próprio `onload` da imagem manda redesenhar o
+    canvas inteiro (`drawStoryCanvas()`) — como esse redesenho roda a mesma lógica de
+    medir-e-redimensionar do zero, a altura final do Story já sai contando com a faixa de
+    patrocinadores, sem precisar de nenhum código extra pra isso.
+25. **CPF opcional em `jogador1`/`jogador2`** (`{nomeCompleto, tel, email, cpf}`, editável tanto
+    no formulário manual da aba Duplas quanto no formulário de inscrição pública): existe hoje só
+    pra dar suporte ao ranking por circuito (item 26) — precisa de uma chave estável de
+    identidade de jogador entre torneios diferentes, e telefone pode mudar (perderia o vínculo).
+    Guardado no `state` **já com a máscara visual** (`000.000.000-00`, via `formatarCPF()`),
+    igual ao `tel` — quem consome o valor (validação, futura agregação do ranking) sempre remove
+    a formatação antes de comparar. Só é validado (dígito verificador mod-11, `validarCPF` em
+    `worker.ts`) no caminho público de inscrição (`inscricaoValidarJogador`) — a mesma assimetria
+    que já existe pra tel/e-mail: entrada manual do organizador continua sem validação forçada.
+    Campo totalmente opcional em ambos os caminhos; ausência de CPF nunca bloqueia nada, só
+    impede aquele jogador de agregar pontos entre torneios diferentes no ranking.
+26. **Ranking por circuito** (`Circuito` em `worker.ts`, KV `circuitos:index` — lista completa
+    numa chave só, mesmo padrão leve de Cupons, sem par índice+detalhe): agrupa torneios
+    escolhidos manualmente pelo organizador (não automático por "mesmo dono") e soma pontos por
+    colocação final de cada JOGADOR (não dupla — chave de agregação é o CPF, ver item 25, já que
+    jogadores trocam de parceiro entre torneios de um mesmo circuito).
+    - **Decisão de arquitetura mais importante**: o servidor nunca re-deriva quem é campeão/
+      vice/3º/4º lugar. Essa resolução já existe no cliente (`champion()`/`semifinalLosers()`/
+      `terceiroWinner()`, historicamente cheia de bugs sutis de bye/empate técnico — itens 2 e
+      15) e é reaproveitada tal como está (`montarColocacoesCircuito()`); o cliente só faz um
+      POST do resultado já resolvido (`/api/circuito-resultado-torneio`), e o servidor apenas
+      valida o formato e guarda. Reimplementar a resolução de chaveamento no worker duplicaria
+      o mesmo risco histórico.
+    - **Pontos não são gravados no resultado** — só a posição (1/2/3/4/"participacao"). A
+      multiplicação pela tabela de pontos (`pontuacaoTabela`, editável a qualquer momento)
+      acontece ao vivo dentro de `circuitoRanking()` (rota pública), então mudar a tabela
+      recalcula sozinho todo o histórico, sem precisar de um botão "recalcular".
+    - **CPF é o único critério de agregação** — entradas sem CPF aparecem no resultado daquele
+      torneio específico mas nunca somam com outro torneio. CPF nunca é devolvido completo pela
+      rota pública (`mascararCPF`), só como chave de agregação interna.
+    - **Ponto de entrada não pode usar o mecanismo `telaAdmin`/`nav-admin` existente** (Cupons/
+      Aprovações/Config/Log) porque esse é gated por `ehAdmin()` (admin GLOBAL do app via
+      `ADMIN_EMAILS`) — circuito precisa estar disponível pra QUALQUER organizador agrupar os
+      próprios torneios. Por isso ganhou uma variável de tela própria (`telaCircuitos`, solta,
+      não gated por `ehAdmin()`) dentro da própria `renderTorneiosScreen()` — que, como as
+      outras, só é renderizada quando `!state.cloudId` (fora de um torneio aberto); entrar num
+      torneio e sair de novo ("Trocar torneio") não zera `telaCircuitos` sozinho, mesmo
+      comportamento já existente de `telaAdmin` hoje.
+    - **`torneioIds` do circuito tem um campo espelho em cada torneio** (`torneio.circuitoIds`,
+      top-level no registro completo — ao lado de `pagamento`, não dentro de `state` —, escrito
+      só por `circuito-atualizar`, nunca pelo cliente): `torneiosSave` sempre preserva esse campo
+      a partir do registro existente, ignorando o que vier em `body.state.circuitoIds`, mesmo
+      padrão de proteção já usado pra `pagamento` (item 1). Ao linkar um torneio a um circuito,
+      o servidor exige que o solicitante tenha `temAcessoTorneio` daquele torneio específico —
+      sem essa checagem, o dono de um circuito poderia colar o id de um torneio de outro
+      organizador e vazar nomes/CPFs das duplas dele no ranking público.
+    - Envio automático (`verificarEnvioResultadoCircuito`, chamada em `save()`) dispara sempre
+      que `torneioTotalmenteFinalizado()` (item 25) for true e o torneio estiver vinculado a
+      algum circuito — fire-and-forget, idempotente do lado do servidor (sempre sobrescreve o
+      resultado daquele torneio), com uma marca local (`circuitoResultadoEnviadoEm`) só pra não
+      bater na rede a cada `save()` sem necessidade.
+27. **Menu lateral recolhível** (substituiu a barra de abas inferior antiga): `#nav-torneio` e
+    `#nav-admin` (os mesmos elementos/botões de sempre, `data-tab`/`data-tela-admin` e toda a
+    lógica de `render()`/`bindEvents()` que os controla — nada mudou aí) só foram REALOCADOS pra
+    dentro de um novo `<aside id="sidebar">`, com CSS reescrito de barra horizontal pra lista
+    vertical. Isso foi deliberado: qualquer mudança de comportamento (mostrar/esconder,
+    `.active`, badge do mata-mata) continua funcionando sem tocar em JS de navegação.
+    - **Cores do menu são fixas escuras, não seguem `--theme`** — única exceção deliberada à
+      regra de "sempre `var(--algumacoisa)`" logo abaixo: o pedido era um menu com visual de
+      "control room" (fundo quase preto + destaque verde neon), igual em modo claro ou escuro
+      do resto do app. Variáveis próprias (`--sidebar-bg`, `--sidebar-bg-hover`,
+      `--sidebar-bg-active`, `--sidebar-border`, `--sidebar-text`, `--sidebar-text-muted`,
+      `--sidebar-accent`) ficam só no `:root` (nunca redefinidas em `[data-theme="dark"]`) —
+      `--sidebar-accent` reaproveita o mesmo verde neon (`#2ECC58`) já usado como `--ocean` no
+      modo escuro do app, só pra manter identidade visual entre os dois.
+    - **Dois comportamentos por breakpoint, controlados pela MESMA função** (`alternarSidebar()`,
+      chamada tanto pelo hambúrguer no header quanto pela setinha dentro do próprio menu):
+      abaixo de 901px (`ehDesktopViewport()`, via `matchMedia`) é uma gaveta (`.mobile-open`,
+      `position:fixed` fora da tela por padrão, desliza por cima do conteúdo com
+      `.sidebar-backdrop` escurecendo atrás — fecha sozinha ao clicar num item de navegação
+      via `fecharSidebarMobile()`, ou ao clicar no backdrop); a partir de 901px vira coluna fixa
+      (`position:sticky`, sempre visível, empurra o conteúdo — `.app` passa a `flex-direction:row`)
+      e a mesma ação só encolhe pra um trilho de ícones (`.desktop-collapsed`, 76px, esconde
+      `.lbl`/`.sidebar-brand-text`) em vez de esconder de vez. **Qualquer novo item de menu deve
+      ir dentro de `#nav-torneio`/`#nav-admin` como os demais** (`<button>` com `<svg>` +
+      `<span class="lbl">`) — não precisa de CSS novo, o estilo já é genérico por `nav.tabbar`.
+28. **Laranja/âmbar removido do app inteiro** (pedido explícito — o app deve seguir só a paleta
+    verde/vermelho já estabelecida, sem tons quentes de laranja/dourado/marrom-claro em lugar
+    nenhum). Dois novos pares de variáveis, em `:root`/`[data-theme="dark"]` junto dos outros:
+    - `--pending-bg`/`--pending-text`: verde bem mais opaco/dessaturado que `--ocean`/`--grass`,
+      pra selos de "pendente"/"aguardando" (aprovação, pagamento, comissão, dupla, empate técnico
+      no Fluxo de Jogos) não parecerem "aprovado" de verdade enquanto ainda esperam alguma coisa.
+      Substituiu o par âmbar/pêssego antigo (`#FCEFD8`/`#9A6B1E` e variantes) usado em
+      `badgeAprovacao`, `badgePagamento`, `badgeStatusGeral`, `badgeStatusDupla`, `badgeCupom`,
+      `COR_TIPO_LOG.duplas_sorteadas` e no badge "AGUARDANDO DECISÃO" do Fluxo de Jogos.
+    - `--coral-bg`: fundo suave pareado com `--coral` (badges "ao vivo"/"em andamento" — `.tg-
+      status.pending`, `.status-pill.andamento`, `.live-score-badge`) — antes usava o mesmo
+      pêssego alaranjado (`#FDF1E7`) só que combinado com texto coral, o que também lia como
+      laranja visualmente.
+    - `.champion-banner` (banner de campeão, Resumo/Mata-mata/Fluxo de Jogos) usava gradiente
+      coral→laranja-queimado (`#C94A16`) quando renderizado SEM override inline — corrigido pro
+      mesmo gradiente verde (`--grass`→`--ocean-deep`) que uma das telas já usava via inline
+      style (removido o inline agora redundante, os dois lugares usam a mesma classe).
+    - Indicador de "1 derrota" na lista de status da eliminação (`renderSituacaoEliminacaoLista`)
+      e o passo "🏆 Campeão" no Fluxo de Jogos também usavam tons dourado/laranja isolados —
+      viraram `var(--pending-text)`/`var(--grass)` respectivamente.
+    - Borda de `.card`/`.group-card` (creme fixo `#EDE7D8`, não acompanhava `[data-theme="dark"]`)
+      virou `var(--sand-dark)` — corrige de quebra um card com borda clara demais no modo escuro.
+    - **Fora do escopo, de propósito**: Placar de TV e a imagem gerada pro Stories (```renderStory```/
+      `drawGroupsSection`/`drawTeamBar`/`drawBracket`, que usam `GOLD`/`GOLD_BG` no canvas) têm
+      identidade visual própria pensada pra serem vistas de longe/postadas — não fazem parte
+      desse pente-fino, mantidos exatamente como estavam.
 
 ## Convenções
 
