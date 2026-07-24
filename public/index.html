@@ -49,16 +49,18 @@
     --coral-bg:#FDEDE8;
     /* Menu lateral (sidebar): propositalmente FIXO escuro, independente de --theme (claro/
        escuro do resto do app) — pedido explícito de ficar fiel ao layout de referência (menu
-       lateral escuro tipo "control room"), então não deve virar var() reaproveitando --sand
-       etc. Reaproveita o mesmo verde neon do modo escuro do app (--ocean/--heading escuros)
-       como cor de destaque, pra manter a identidade visual entre o menu e o resto do app. */
-    --sidebar-bg:#0c0e13;
-    --sidebar-bg-hover:#161a22;
-    --sidebar-bg-active:#132019;
-    --sidebar-border:#1c212b;
-    --sidebar-text:#e7eaee;
-    --sidebar-text-muted:#7d8694;
-    --sidebar-accent:#2ECC58;
+       lateral escuro tipo "control room"). Por isso as variáveis daqui são todas fixas, nunca
+       reaproveitando --ocean/--ocean-deep (que mudam de valor conforme o tema claro/escuro do
+       resto do app) — inclusive --sidebar-accent-deep existe só pra isso, o gradiente do badge
+       do logo não pode variar se o usuário alternar o tema geral do app. */
+    --sidebar-bg:#08090c;
+    --sidebar-bg-hover:#13161d;
+    --sidebar-bg-active:#0e1712;
+    --sidebar-border:#181c24;
+    --sidebar-text:#eef1f5;
+    --sidebar-text-muted:#7a8290;
+    --sidebar-accent:#1FE075;
+    --sidebar-accent-deep:#0a5c34; /* fixo (não segue --ocean/--ocean-deep do tema claro/escuro) — só pro gradiente do badge do logo */
   }
   /* Modo escuro: mesmas variáveis, valores adaptados pra contraste em fundo escuro. Como o app
      inteiro já usa var(--sand)/var(--white)/var(--ink) etc. em vez de cores fixas, só trocar
@@ -145,7 +147,7 @@
   .sidebar-logo{
     width:34px; height:34px; border-radius:50%; flex-shrink:0;
     display:flex; align-items:center; justify-content:center;
-    background:radial-gradient(circle at 30% 30%, var(--ocean) 0%, var(--ocean-deep) 100%);
+    background:radial-gradient(circle at 30% 30%, var(--sidebar-accent) 0%, var(--sidebar-accent-deep) 100%);
     box-shadow:0 0 0 1px rgba(255,255,255,.08);
     font-size:16px; line-height:1;
   }
