@@ -508,6 +508,31 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       algum circuito — fire-and-forget, idempotente do lado do servidor (sempre sobrescreve o
       resultado daquele torneio), com uma marca local (`circuitoResultadoEnviadoEm`) só pra não
       bater na rede a cada `save()` sem necessidade.
+27. **Menu lateral recolhível** (substituiu a barra de abas inferior antiga): `#nav-torneio` e
+    `#nav-admin` (os mesmos elementos/botões de sempre, `data-tab`/`data-tela-admin` e toda a
+    lógica de `render()`/`bindEvents()` que os controla — nada mudou aí) só foram REALOCADOS pra
+    dentro de um novo `<aside id="sidebar">`, com CSS reescrito de barra horizontal pra lista
+    vertical. Isso foi deliberado: qualquer mudança de comportamento (mostrar/esconder,
+    `.active`, badge do mata-mata) continua funcionando sem tocar em JS de navegação.
+    - **Cores do menu são fixas escuras, não seguem `--theme`** — única exceção deliberada à
+      regra de "sempre `var(--algumacoisa)`" logo abaixo: o pedido era um menu com visual de
+      "control room" (fundo quase preto + destaque verde neon), igual em modo claro ou escuro
+      do resto do app. Variáveis próprias (`--sidebar-bg`, `--sidebar-bg-hover`,
+      `--sidebar-bg-active`, `--sidebar-border`, `--sidebar-text`, `--sidebar-text-muted`,
+      `--sidebar-accent`) ficam só no `:root` (nunca redefinidas em `[data-theme="dark"]`) —
+      `--sidebar-accent` reaproveita o mesmo verde neon (`#2ECC58`) já usado como `--ocean` no
+      modo escuro do app, só pra manter identidade visual entre os dois.
+    - **Dois comportamentos por breakpoint, controlados pela MESMA função** (`alternarSidebar()`,
+      chamada tanto pelo hambúrguer no header quanto pela setinha dentro do próprio menu):
+      abaixo de 901px (`ehDesktopViewport()`, via `matchMedia`) é uma gaveta (`.mobile-open`,
+      `position:fixed` fora da tela por padrão, desliza por cima do conteúdo com
+      `.sidebar-backdrop` escurecendo atrás — fecha sozinha ao clicar num item de navegação
+      via `fecharSidebarMobile()`, ou ao clicar no backdrop); a partir de 901px vira coluna fixa
+      (`position:sticky`, sempre visível, empurra o conteúdo — `.app` passa a `flex-direction:row`)
+      e a mesma ação só encolhe pra um trilho de ícones (`.desktop-collapsed`, 76px, esconde
+      `.lbl`/`.sidebar-brand-text`) em vez de esconder de vez. **Qualquer novo item de menu deve
+      ir dentro de `#nav-torneio`/`#nav-admin` como os demais** (`<button>` com `<svg>` +
+      `<span class="lbl">`) — não precisa de CSS novo, o estilo já é genérico por `nav.tabbar`.
 
 ## Convenções
 

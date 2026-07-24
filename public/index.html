@@ -39,6 +39,18 @@
     --heading:#205527; /* usada em títulos/labels — mesma cor de sempre no modo claro */
     --radius:16px;
     --shadow: 0 10px 24px -12px rgba(22,36,26,.35);
+    /* Menu lateral (sidebar): propositalmente FIXO escuro, independente de --theme (claro/
+       escuro do resto do app) — pedido explícito de ficar fiel ao layout de referência (menu
+       lateral escuro tipo "control room"), então não deve virar var() reaproveitando --sand
+       etc. Reaproveita o mesmo verde neon do modo escuro do app (--ocean/--heading escuros)
+       como cor de destaque, pra manter a identidade visual entre o menu e o resto do app. */
+    --sidebar-bg:#12151b;
+    --sidebar-bg-hover:#1b212b;
+    --sidebar-bg-active:#1c2b22;
+    --sidebar-border:#232833;
+    --sidebar-text:#dfe3e9;
+    --sidebar-text-muted:#7c8592;
+    --sidebar-accent:#2ECC58;
   }
   /* Modo escuro: mesmas variáveis, valores adaptados pra contraste em fundo escuro. Como o app
      inteiro já usa var(--sand)/var(--white)/var(--ink) etc. em vez de cores fixas, só trocar
@@ -81,16 +93,87 @@
     display:flex;
     flex-direction:column;
   }
-  @media (min-width:481px){
+  .app-content{
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+  }
+  @media (min-width:481px) and (max-width:900px){
+    /* Larguras médias (tablet) continuam no esquema de menu retrátil (drawer) — só a partir
+       de 901px o menu vira coluna fixa (ver bloco de desktop abaixo). Sem overflow:hidden
+       aqui: isso quebrava o "position:sticky" do header nessa largura, porque vira um
+       ancestral com scroll próprio (mesmo sem scrollbar) e o app real rola no body/html,
+       não dentro do .app. */
     body{padding:24px 0;}
-    /* Sem overflow:hidden aqui: isso quebrava o "position:sticky" do menu inferior nessa
-       largura, porque vira um ancestral com scroll próprio (mesmo sem scrollbar) e o app
-       real rola no body/html, não dentro do .app. Os cantos arredondados agora são feitos
-       diretamente no header (topo) e no nav.tabbar (base), que são os únicos filhos com
-       fundo próprio que encostam nas bordas do card. */
-    .app{min-height:calc(100vh - 48px); border-radius:28px;}
-    header{border-radius:28px 28px 0 0;}
-    nav.tabbar{border-radius:0 0 28px 28px;}
+    .app{min-height:calc(100vh - 48px); border-radius:28px; overflow:hidden;}
+  }
+  /* ---------- Menu lateral (sidebar) ---------- */
+  .sidebar-backdrop{
+    position:fixed; inset:0; z-index:35;
+    background:rgba(0,0,0,.55);
+    opacity:0; pointer-events:none;
+    transition:opacity .25s ease;
+  }
+  .sidebar-backdrop.show{ opacity:1; pointer-events:auto; }
+  .sidebar{
+    position:fixed; top:0; left:0; bottom:0; z-index:40;
+    width:270px; max-width:82vw;
+    background:var(--sidebar-bg);
+    border-right:1px solid var(--sidebar-border);
+    display:flex; flex-direction:column;
+    transform:translateX(-100%);
+    transition:transform .28s ease;
+  }
+  .sidebar.mobile-open{ transform:translateX(0); box-shadow:0 0 40px rgba(0,0,0,.5); }
+  .sidebar-brand{
+    display:flex; align-items:center; gap:10px;
+    padding:18px 14px; border-bottom:1px solid var(--sidebar-border);
+    flex-shrink:0;
+  }
+  .sidebar-logo{ font-size:24px; line-height:1; flex-shrink:0; }
+  .sidebar-brand-text{ flex:1; min-width:0; overflow:hidden; }
+  .sidebar-brand-title{
+    font-family:'Bebas Neue',sans-serif; font-size:17px; letter-spacing:.02em;
+    color:var(--sidebar-text); line-height:1.15; white-space:nowrap;
+  }
+  .sidebar-brand-sub{
+    font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--sidebar-text-muted); margin-top:2px; white-space:nowrap;
+  }
+  .sidebar-close{
+    background:none; border:none; color:var(--sidebar-text-muted);
+    font-size:16px; cursor:pointer; padding:4px 6px; flex-shrink:0; line-height:1;
+  }
+  .sidebar-nav-scroll{ flex:1; overflow-y:auto; padding:10px 0 6px; }
+  .sidebar-collapse-btn{
+    display:none;
+    align-items:center; justify-content:center;
+    background:none; border:none; border-top:1px solid var(--sidebar-border);
+    color:var(--sidebar-text-muted); cursor:pointer; padding:12px; width:100%; flex-shrink:0;
+  }
+  .sidebar-collapse-btn svg{ width:18px; height:18px; transition:transform .2s ease; }
+  @media (min-width:901px){
+    body{padding:0;}
+    .stage{align-items:stretch;}
+    .app{
+      max-width:100%; min-height:100vh; box-shadow:none;
+      flex-direction:row; background:var(--sand);
+    }
+    .sidebar{
+      position:sticky; top:0; height:100vh;
+      transform:none; flex-shrink:0;
+    }
+    .sidebar-backdrop{ display:none; }
+    .sidebar-close{ display:none; }
+    .sidebar-collapse-btn{ display:flex; }
+    .sidebar.desktop-collapsed{ width:76px; }
+    .sidebar.desktop-collapsed .sidebar-brand-text{ display:none; }
+    .sidebar.desktop-collapsed nav.tabbar button{ justify-content:center; padding:10px 4px; }
+    .sidebar.desktop-collapsed nav.tabbar button .lbl{ display:none; }
+    .sidebar.desktop-collapsed .sidebar-collapse-btn svg{ transform:rotate(180deg); }
+    .app-content{ min-width:0; }
+    header{ border-radius:0; }
   }
 
   /* ---------- Header ---------- */
@@ -99,7 +182,7 @@
     background-size: cover;
     background-position: center;
     color:var(--white);
-    padding:22px 20px 26px;
+    padding:22px 20px 26px 62px;
     position:relative;
     overflow:hidden;
   }
@@ -124,11 +207,19 @@
     display:flex;align-items:center;justify-content:center;
   }
   .theme-toggle-icon:active{background:rgba(255,255,255,.3);}
+  .hamburger-btn{
+    position:absolute;top:16px;left:16px;z-index:2;
+    width:38px;height:38px;border-radius:50%;
+    background:rgba(255,255,255,.18);border:none;color:var(--white);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .hamburger-btn:active{background:rgba(255,255,255,.3);}
+  .hamburger-btn svg{width:20px;height:20px;}
 
   /* ---------- Content ---------- */
   main{
     flex:1;
-    padding:18px 18px 90px;
+    padding:18px 18px 24px;
   }
   .section-title{
     font-family:'Bebas Neue',sans-serif;
@@ -357,36 +448,29 @@
   }
   .empty .ball-icon{font-size:30px;display:block;margin-bottom:8px;}
 
-  /* ---------- Bottom nav ---------- */
+  /* ---------- Nav do menu lateral (antes era barra inferior — ver .sidebar acima) ---------- */
+  .sidebar-nav-scroll::-webkit-scrollbar{width:5px;}
+  .sidebar-nav-scroll::-webkit-scrollbar-track{background:transparent;}
+  .sidebar-nav-scroll::-webkit-scrollbar-thumb{background:var(--sidebar-border);border-radius:4px;}
   nav.tabbar{
-    position:sticky;bottom:0;left:0;right:0;
-    background:var(--white);border-top:1px solid #EDE7D8;
-    display:flex;justify-content:flex-start;
-    overflow-x:auto;-webkit-overflow-scrolling:touch;
-    padding:8px 4px calc(8px + env(safe-area-inset-bottom));
-    z-index:10;
-    scrollbar-width:thin;
-    scrollbar-color:var(--sand-dark) transparent;
+    display:flex;flex-direction:column;gap:2px;padding:4px 10px;
   }
-  nav.tabbar::-webkit-scrollbar{height:5px;}
-  nav.tabbar::-webkit-scrollbar-track{background:transparent;}
-  nav.tabbar::-webkit-scrollbar-thumb{background:var(--sand-dark);border-radius:4px;}
   nav.tabbar button{
-    flex:0 0 auto;min-width:64px;background:none;border:none;display:flex;flex-direction:column;
-    align-items:center;gap:3px;padding:6px 6px;cursor:pointer;color:var(--muted);
-    font-family:'Work Sans',sans-serif;
+    display:flex;flex-direction:row;align-items:center;gap:12px;
+    width:100%;background:none;border:none;border-radius:10px;
+    padding:10px 12px;cursor:pointer;color:var(--sidebar-text-muted);
+    font-family:'Work Sans',sans-serif;text-align:left;position:relative;
   }
-  nav.tabbar button svg{width:20px;height:20px;}
-  nav.tabbar button .lbl{font-size:10px;font-weight:600;white-space:nowrap;}
-  nav.tabbar button.active{color:var(--coral);}
-  nav.tabbar button{position:relative;}
+  nav.tabbar button svg{width:20px;height:20px;flex-shrink:0;}
+  nav.tabbar button .lbl{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  nav.tabbar button:hover{background:var(--sidebar-bg-hover);color:var(--sidebar-text);}
+  nav.tabbar button.active{background:var(--sidebar-bg-active);color:var(--sidebar-accent);}
   nav.tabbar button.tab-bloqueada{opacity:.35;}
   .nav-badge{
-    position:absolute;top:2px;right:calc(50% - 22px);
+    margin-left:auto;flex-shrink:0;
     background:var(--coral);color:#fff;font-family:'DM Mono',monospace;
-    font-size:9.5px;font-weight:700;min-width:16px;height:16px;border-radius:8px;
-    display:none;align-items:center;justify-content:center;padding:0 3px;
-    box-shadow:0 0 0 2px var(--white);
+    font-size:10px;font-weight:700;min-width:17px;height:17px;border-radius:9px;
+    display:none;align-items:center;justify-content:center;padding:0 4px;
   }
   .nav-badge.show{display:flex;}
 
@@ -638,34 +722,55 @@
 <body>
 <div class="stage">
   <div class="app">
-    <header id="app-header">
-      <button class="theme-toggle-icon" id="btn-theme-icon" aria-label="Alternar modo claro/escuro">🌙</button>
-      <h1 id="header-title">Futevôlei</h1>
-      <div id="torneio-bar"></div>
-    </header>
-    <main id="main"></main>
-    <div class="toast" id="toast"></div>
-    <div class="loading-overlay" id="loading-overlay">
-      <div class="spinner"></div>
-      <div class="loading-msg" id="loading-msg"></div>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="sidebar-logo">🏐</span>
+        <div class="sidebar-brand-text">
+          <div class="sidebar-brand-title">Supremo FTV</div>
+          <div class="sidebar-brand-sub">Painel do torneio</div>
+        </div>
+        <button class="sidebar-close" id="btn-sidebar-close" aria-label="Fechar menu">✕</button>
+      </div>
+      <div class="sidebar-nav-scroll">
+        <nav class="tabbar" id="nav-torneio">
+          <button data-tab="resumo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="lbl">Resumo</span></button>
+          <button data-tab="sorteio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 9h.01M16 9h.01M8 15l4-3 4 3"/></svg><span class="lbl">Duplas</span></button>
+          <button data-tab="jogos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Jogos</span></button>
+          <button data-tab="classificacao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V10M12 19V4M20 19v-6"/></svg><span class="lbl">Tabela</span></button>
+          <button data-tab="matamata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h4v4H4zM4 15h4v4H4zM16 10h4v4h-4zM8 7h4v0M8 17h4v0M12 7v6M12 13v4M12 12h4"/></svg><span class="lbl">Mata-mata</span><span class="nav-badge" id="nav-badge-matamata"></span></button>
+          <button data-tab="fluxo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="9" y="15" width="6" height="6" rx="1"/><path d="M6 9v3a3 3 0 0 0 3 3M18 9v3a3 3 0 0 1-3 3"/></svg><span class="lbl">Fluxo Jogos</span></button>
+          <button data-tab="placar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="lbl">Placar</span></button>
+          <button data-tab="configuracoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
+        </nav>
+        <nav class="tabbar" id="nav-admin" style="display:none;">
+          <button data-tela-admin="lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg><span class="lbl">Torneios</span></button>
+          <button data-tela-admin="aprovacoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg><span class="lbl">Aprovações</span></button>
+          <button data-tela-admin="cupons"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V8z"/><path d="M9 6v10" stroke-dasharray="2 2"/></svg><span class="lbl">Cupons</span></button>
+          <button data-tela-admin="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
+          <button data-tela-admin="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="lbl">Log</span></button>
+        </nav>
+      </div>
+      <button class="sidebar-collapse-btn" id="btn-sidebar-collapse" aria-label="Recolher menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+    </aside>
+    <div class="app-content" id="app-content">
+      <header id="app-header">
+        <button class="hamburger-btn" id="btn-hamburger" aria-label="Abrir menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <button class="theme-toggle-icon" id="btn-theme-icon" aria-label="Alternar modo claro/escuro">🌙</button>
+        <h1 id="header-title">Futevôlei</h1>
+        <div id="torneio-bar"></div>
+      </header>
+      <main id="main"></main>
+      <div class="toast" id="toast"></div>
+      <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-msg" id="loading-msg"></div>
+      </div>
     </div>
-    <nav class="tabbar" id="nav-torneio">
-      <button data-tab="resumo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="lbl">Resumo</span></button>
-      <button data-tab="sorteio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 9h.01M16 9h.01M8 15l4-3 4 3"/></svg><span class="lbl">Duplas</span></button>
-      <button data-tab="jogos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Jogos</span></button>
-      <button data-tab="classificacao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V10M12 19V4M20 19v-6"/></svg><span class="lbl">Tabela</span></button>
-      <button data-tab="matamata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h4v4H4zM4 15h4v4H4zM16 10h4v4h-4zM8 7h4v0M8 17h4v0M12 7v6M12 13v4M12 12h4"/></svg><span class="lbl">Mata-mata</span><span class="nav-badge" id="nav-badge-matamata"></span></button>
-      <button data-tab="fluxo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="9" y="15" width="6" height="6" rx="1"/><path d="M6 9v3a3 3 0 0 0 3 3M18 9v3a3 3 0 0 1-3 3"/></svg><span class="lbl">Fluxo Jogos</span></button>
-      <button data-tab="placar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="lbl">Placar</span></button>
-      <button data-tab="configuracoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
-    </nav>
-    <nav class="tabbar" id="nav-admin" style="display:none;">
-      <button data-tela-admin="lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg><span class="lbl">Torneios</span></button>
-      <button data-tela-admin="aprovacoes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg><span class="lbl">Aprovações</span></button>
-      <button data-tela-admin="cupons"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V8z"/><path d="M9 6v10" stroke-dasharray="2 2"/></svg><span class="lbl">Cupons</span></button>
-      <button data-tela-admin="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">Config.</span></button>
-      <button data-tela-admin="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="lbl">Log</span></button>
-    </nav>
   </div>
 </div>
 
@@ -4153,6 +4258,7 @@ function render(){
   const nav = document.getElementById("nav-torneio");
   const navAdmin = document.getElementById("nav-admin");
   const torneioBar = document.getElementById("torneio-bar");
+  const btnHamburger = document.getElementById("btn-hamburger");
   stopRefTick();
   atualizarHeader();
 
@@ -4160,11 +4266,14 @@ function render(){
     nav.style.display = "none";
     navAdmin.style.display = "none";
     torneioBar.innerHTML = "";
+    if(btnHamburger) btnHamburger.style.display = "none";
+    fecharSidebarMobile();
     main.innerHTML = renderLoginScreen();
     bindEvents();
     setTimeout(initGoogleSignIn, 50);
     return;
   }
+  if(btnHamburger) btnHamburger.style.display = "flex";
 
   if(!state.cloudId){
     nav.style.display = "none";
@@ -7074,6 +7183,35 @@ function alternarTema(){
 }
 
 /* ============================================================
+   MENU LATERAL (sidebar recolhível — substitui a antiga barra inferior)
+   No mobile/tablet (<901px) funciona como gaveta (drawer): fica fora da tela por padrão e
+   desliza por cima do conteúdo com uma camada escura atrás (.sidebar-backdrop), igual ao menu
+   do Facebook mobile. A partir de 901px vira uma coluna fixa ao lado do conteúdo — nesse caso
+   o mesmo botão (hambúrguer no topo, ou a setinha dentro do próprio menu) só encolhe/expande
+   pra um "trilho" só de ícones, sem escondê-lo de vez (ver .desktop-collapsed no CSS).
+============================================================ */
+const SIDEBAR_DESKTOP_QUERY = "(min-width:901px)";
+function ehDesktopViewport(){
+  return window.matchMedia(SIDEBAR_DESKTOP_QUERY).matches;
+}
+function alternarSidebar(){
+  const sidebar = document.getElementById("sidebar");
+  if(!sidebar) return;
+  if(ehDesktopViewport()){
+    sidebar.classList.toggle("desktop-collapsed");
+  } else {
+    const vaiAbrir = !sidebar.classList.contains("mobile-open");
+    sidebar.classList.toggle("mobile-open", vaiAbrir);
+    document.getElementById("sidebar-backdrop")?.classList.toggle("show", vaiAbrir);
+  }
+}
+function fecharSidebarMobile(){
+  if(ehDesktopViewport()) return;
+  document.getElementById("sidebar")?.classList.remove("mobile-open");
+  document.getElementById("sidebar-backdrop")?.classList.remove("show");
+}
+
+/* ============================================================
    PLACAR PARA TV (tela separada, somente leitura, via link)
 ============================================================ */
 let __tvUltimoArb = null;
@@ -7701,6 +7839,7 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
       state.tab = btn.dataset.tab;
       save();
       render();
+      fecharSidebarMobile();
       if(state.tab==="sorteio" && state.drawn) refreshTelegramStatus();
       if(state.tab==="matamata" && state.drawn) checkElimNotifications();
     });
@@ -7709,6 +7848,7 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
     btn.addEventListener("click", ()=>{
       telaAdmin = btn.dataset.telaAdmin;
       render();
+      fecharSidebarMobile();
     });
   });
   const btnThemeIcon = document.getElementById("btn-theme-icon");
@@ -7716,6 +7856,14 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
     btnThemeIcon.textContent = temaAtual()==="dark" ? "☀️" : "🌙";
     btnThemeIcon.addEventListener("click", alternarTema);
   }
+  const btnHamburger = document.getElementById("btn-hamburger");
+  if(btnHamburger) btnHamburger.addEventListener("click", alternarSidebar);
+  const btnSidebarCollapse = document.getElementById("btn-sidebar-collapse");
+  if(btnSidebarCollapse) btnSidebarCollapse.addEventListener("click", alternarSidebar);
+  const btnSidebarClose = document.getElementById("btn-sidebar-close");
+  if(btnSidebarClose) btnSidebarClose.addEventListener("click", fecharSidebarMobile);
+  const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+  if(sidebarBackdrop) sidebarBackdrop.addEventListener("click", fecharSidebarMobile);
 
   render();
   fetchAndCacheClientId();
