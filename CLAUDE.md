@@ -446,6 +446,17 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     `ativacaoVia==="manual"` (não dispara pra ativação automática via Pix, já coberta por
     `inscricao_paga`); `dupla_removida` é restrito a `origem==="manual"` (duplas de inscrição
     nunca são removidas de verdade, só bloqueadas — ver item 14).
+24. **Patrocinadores** (`state.patrocinadores: [{id, nome, logo}]`, `logo` em data URL PNG,
+    configurado na aba Configurações): aparecem no Placar de TV (faixa fixa na base da tela,
+    `.tv-sponsors`) e no rodapé da imagem de Stories (`drawSponsorsSection`). Só front-end —
+    nada no worker.ts, já que é um campo de escritor único (organizador), sem concorrência,
+    trafega dentro do `state` normal do torneio como qualquer outro campo. No Story, a logo é
+    carregada de forma assíncrona (`getSponsorImage`, mesmo padrão de `getStoryHeaderImage`
+    pro banner de topo): a primeira chamada de `drawSponsorsSection` não desenha nada ainda
+    (retorna cedo se a imagem não carregou), e o próprio `onload` da imagem manda redesenhar o
+    canvas inteiro (`drawStoryCanvas()`) — como esse redesenho roda a mesma lógica de
+    medir-e-redimensionar do zero, a altura final do Story já sai contando com a faixa de
+    patrocinadores, sem precisar de nenhum código extra pra isso.
 
 ## Convenções
 

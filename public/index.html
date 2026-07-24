@@ -581,6 +581,12 @@
   .tv-footer{margin-top:6vh;}
   .tv-timer{font-family:'DM Mono',monospace;font-size:clamp(30px,5vw,60px);font-weight:600;}
   .tv-status{font-size:clamp(14px,2vw,20px);letter-spacing:.08em;text-transform:uppercase;opacity:.75;margin-top:6px;}
+  .tv-sponsors{
+    position:absolute;left:0;right:0;bottom:0;
+    display:flex;align-items:center;justify-content:center;gap:clamp(16px,3vw,32px);flex-wrap:wrap;
+    padding:14px 20px;background:rgba(0,0,0,.28);
+  }
+  .tv-sponsors img{height:clamp(26px,4vh,54px);width:auto;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));}
 
   /* ---------- Placar para TV — múltiplos jogos numa grade ---------- */
   .tv-multi-grid{position:absolute;inset:16px;display:grid;gap:12px;}
@@ -737,7 +743,8 @@ function defaultState(){
     arbitragem: {}, // {[matchId]: {status, placarA, placarB, acumuladoMs, inicioMs, ultimoMultiploTroca, duracaoFinalSegundos}}
     apitoMatchId: null,
     valorInscricao: null, // valor da inscrição por dupla, definido pelo organizador (aba Configurações) — null até ser configurado
-    inscricaoLink: null // {token, ativo, vagas} — token do link público de inscrição, gerado sob demanda (ver /api/inscricao-link)
+    inscricaoLink: null, // {token, ativo, vagas} — token do link público de inscrição, gerado sob demanda (ver /api/inscricao-link)
+    patrocinadores: [] // [{id, nome, logo}] — logo em data URL (PNG), aparece no Placar de TV e na imagem de Stories
   };
 }
 
@@ -772,6 +779,7 @@ function migrarBracketAntigo(s){
       if(!d.atualizadoEm) d.atualizadoEm = Date.now();
     });
   }
+  if(s && !Array.isArray(s.patrocinadores)) s.patrocinadores = [];
   return s;
 }
 
@@ -2013,6 +2021,32 @@ function processarImagemTopo(file){
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL("image/jpeg", 0.78));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Logo de patrocinador: diferente do banner de topo, mantém PNG (preserva fundo transparente,
+// comum em logo) e usa uma dimensão máxima bem menor (é exibido pequeno, lado a lado com outros).
+function processarLogoPatrocinador(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error("Falha ao ler o arquivo"));
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=>reject(new Error("Arquivo não é uma imagem válida"));
+      img.onload = ()=>{
+        const maxDim = 240;
+        const scale = Math.min(1, maxDim/Math.max(img.width, img.height));
+        const w = Math.round(img.width*scale);
+        const h = Math.round(img.height*scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/png"));
       };
       img.src = reader.result;
     };
@@ -3405,7 +3439,52 @@ function renderStory(canvas, H){
       : drawGroupMatchesSection(ctx, W, groupsBottom+50);
   }
 
+  cursorY = drawSponsorsSection(ctx, W, cursorY+60);
   return cursorY + 140;
+}
+
+// Faixa de logos de patrocinadores no rodapé do Story — mesmo cache-e-redesenha-sozinho de
+// getStoryHeaderImage (carregar uma data URL em Image() é assíncrono; enquanto não carregou,
+// essa chamada não desenha nada e o próprio onload manda redesenhar o canvas inteiro).
+let __sponsorImgCache = {};
+function getSponsorImage(patrocinador){
+  const cache = __sponsorImgCache[patrocinador.id];
+  if(cache && cache.src === patrocinador.logo) return cache.img;
+  const img = new Image();
+  __sponsorImgCache[patrocinador.id] = { src: patrocinador.logo, img: null };
+  img.onload = ()=>{ __sponsorImgCache[patrocinador.id].img = img; drawStoryCanvas(); };
+  img.src = patrocinador.logo;
+  return null;
+}
+function drawSponsorsSection(ctx, W, startY){
+  if(!state.patrocinadores?.length) return startY;
+  const imgs = state.patrocinadores.map(getSponsorImage).filter(Boolean);
+  if(!imgs.length) return startY; // nenhuma logo carregada ainda — o onload acima redesenha sozinho
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.font = "600 26px Arial, sans-serif";
+  ctx.fillText("PATROCÍNIO", W/2, startY);
+
+  const gap = 40, maxRowW = W - 160;
+  let alturaLogo = 90;
+  let larguras = imgs.map(img => (img.width/img.height) * alturaLogo);
+  let totalW = larguras.reduce((a,b)=>a+b, 0) + gap*(imgs.length-1);
+  if(totalW > maxRowW){
+    const escala = maxRowW / totalW;
+    alturaLogo *= escala;
+    larguras = larguras.map(w => w*escala);
+    totalW = maxRowW;
+  }
+
+  const rowY = startY + 50;
+  let x = W/2 - totalW/2;
+  imgs.forEach((img, i)=>{
+    const w = larguras[i];
+    ctx.drawImage(img, x, rowY, w, alturaLogo);
+    x += w + gap;
+  });
+  return rowY + alturaLogo + 20;
 }
 
 function drawGroupsSection(ctx, W, startY){
@@ -5428,6 +5507,21 @@ function renderConfiguracoes(){
       <div class="hint">Aparece no cabeçalho do app e no topo do Story enquanto este torneio estiver aberto. Fica salva com o torneio (some se você remover ou trocar).</div>
     </div>
     <div class="card tg-settings">
+      <label>Patrocinadores</label>
+      ${state.patrocinadores.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+        ${state.patrocinadores.map(p=>`<div style="display:flex;align-items:center;gap:10px;background:var(--sand);border-radius:10px;padding:6px 10px;">
+          <img src="${p.logo}" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;">
+          <span style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.nome)}</span>
+          <button class="ref-mini-btn ghost" data-remover-patrocinador="${p.id}" style="width:auto;flex:0 0 auto;padding:6px 10px;">🗑️</button>
+        </div>`).join("")}
+      </div>` : ""}
+      <label class="btn secondary" style="text-align:center;margin:0;">
+        ➕ Adicionar patrocinador
+        <input type="file" accept="image/*" id="input-patrocinador-logo" style="display:none;">
+      </label>
+      <div class="hint">Logo do patrocinador aparece no Placar de TV e na imagem de Stories enquanto este torneio estiver aberto.</div>
+    </div>
+    <div class="card tg-settings">
       <label>Bot do Telegram (usuário, sem @)</label>
       <input type="text" id="input-telegram-bot" placeholder="ex: meucampeonatobot" value="${escapeHtml(state.telegramBot||"")}">
       <div class="hint">Crie um bot gratuito com o @BotFather no Telegram e cole aqui o usuário dele (termina em "bot"). Cada dupla vai precisar apertar "Iniciar" uma única vez para poder receber os jogos automaticamente.</div>
@@ -6180,6 +6274,31 @@ function bindEvents(){
     save(); render();
     showToast("Imagem do topo removida.");
   });
+  const inputPatrocinadorLogo = document.getElementById("input-patrocinador-logo");
+  if(inputPatrocinadorLogo) inputPatrocinadorLogo.addEventListener("change", async e=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    const nome = (prompt("Nome do patrocinador (aparece só como identificação da logo):")||"").trim();
+    if(!nome){ e.target.value = ""; return; }
+    showToast("Processando logo...");
+    try{
+      const logo = await processarLogoPatrocinador(file);
+      state.patrocinadores.push({ id: crypto.randomUUID(), nome, logo });
+      save(); render();
+      showToast("Patrocinador adicionado!");
+    }catch(err){
+      showToast("Não foi possível usar essa imagem.");
+    }
+    e.target.value = "";
+  });
+  main.querySelectorAll("[data-remover-patrocinador]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.dataset.removerPatrocinador;
+      state.patrocinadores = state.patrocinadores.filter(p=>p.id!==id);
+      save(); render();
+      showToast("Patrocinador removido.");
+    });
+  });
   main.querySelectorAll("[data-placar-check]").forEach(chk=>{
     chk.addEventListener("change", e=>{
       const id = e.target.dataset.placarCheck;
@@ -6681,7 +6800,7 @@ function renderTVMulti(matchIds){
       </div>
     </div>`;
   });
-  html += `</div>`;
+  html += `</div>${sponsorsTvHtml()}`;
   screen.innerHTML = html;
 }
 
@@ -6718,7 +6837,16 @@ function renderTV(matchId){
       <div class="tv-timer">${formatTempo(tempoMs)}</div>
       <div class="tv-status">${statusLabel}</div>
     </div>
-    ${arb.arbitroNome ? `<div class="tv-status" style="margin-top:6px;opacity:.85;">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>` : ""}`;
+    ${arb.arbitroNome ? `<div class="tv-status" style="margin-top:6px;opacity:.85;">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>` : ""}
+    ${sponsorsTvHtml()}`;
+}
+
+// Faixa de logos de patrocinadores, fixada na base da tela — usada nas duas variantes do
+// Placar de TV (jogo único e grade de múltiplos jogos). Vazio quando o torneio não tem
+// nenhum patrocinador cadastrado (aba Configurações).
+function sponsorsTvHtml(){
+  if(!state.patrocinadores?.length) return "";
+  return `<div class="tv-sponsors">${state.patrocinadores.map(p=>`<img src="${p.logo}" alt="${escapeHtml(p.nome||"Patrocinador")}" title="${escapeHtml(p.nome||"")}">`).join("")}</div>`;
 }
 
 /* ============================================================
