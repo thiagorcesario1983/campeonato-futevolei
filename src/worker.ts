@@ -2572,7 +2572,10 @@ interface Circuito {
   ownerEmail: string; // dono = quem criou (via emailAutenticado, nunca campo solto do body)
   createdAt: string;
   updatedAt: string;
-  torneioIds: string[]; // torneios manualmente adicionados a este circuito
+  // Torneios manualmente adicionados a este circuito. Cada torneio só pode pertencer a UM
+  // circuito por vez (ver circuitoAtualizar/rejeitadosJaVinculados) — evita o mesmo torneio
+  // somar pontos em dois rankings diferentes.
+  torneioIds: string[];
   pontuacaoTabela: {
     campeao: number; vice: number; terceiroLugar: number; quartoLugar: number; participacao: number;
   };
@@ -2678,6 +2681,11 @@ async function circuitoAtualizar(request: Request, env: Env): Promise<Response> 
   // torneio se o solicitante realmente tiver acesso a ele (temAcessoTorneio) — sem essa checagem,
   // o dono de um circuito poderia colar o id de um torneio de OUTRO organizador e expor os
   // nomes/CPFs das duplas dele no ranking público.
+  // Regra: um torneio só pode pertencer a UM circuito por vez (evita o mesmo torneio somando
+  // pontos em dois rankings diferentes) — se o espelho circuitoIds já apontar pra outro circuito,
+  // a vinculação é recusada aqui (defesa em profundidade; o front já desabilita a caixinha nesse
+  // caso, mas duas abas/sessões concorrentes podem tentar vincular o mesmo torneio ao mesmo tempo).
+  const rejeitadosJaVinculados: Array<{ torneioId: string; circuitoId: string }> = [];
   if (Array.isArray(body.torneioIds)) {
     const novosIdsBrutos: string[] = [...new Set(body.torneioIds.filter((x: any) => typeof x === "string") as string[])];
     const antigosIds: string[] = circuito.torneioIds || [];
@@ -2690,8 +2698,13 @@ async function circuitoAtualizar(request: Request, env: Env): Promise<Response> 
       if (!raw) continue;
       const dadosTorneio = JSON.parse(raw);
       if (!temAcessoTorneio(dadosTorneio, solicitanteEmail, env)) continue;
-      dadosTorneio.circuitoIds = Array.isArray(dadosTorneio.circuitoIds) ? dadosTorneio.circuitoIds : [];
-      if (!dadosTorneio.circuitoIds.includes(circuito.id)) dadosTorneio.circuitoIds.push(circuito.id);
+      const circuitoIdsExistentes: string[] = Array.isArray(dadosTorneio.circuitoIds) ? dadosTorneio.circuitoIds : [];
+      const jaVinculadoOutro = circuitoIdsExistentes.find((cid: string) => cid !== circuito.id);
+      if (jaVinculadoOutro) {
+        rejeitadosJaVinculados.push({ torneioId, circuitoId: jaVinculadoOutro });
+        continue;
+      }
+      dadosTorneio.circuitoIds = [circuito.id];
       await env.DB.put(`torneio:${torneioId}`, JSON.stringify(dadosTorneio));
       adicionadosAutorizados.push(torneioId);
     }
@@ -2710,7 +2723,7 @@ async function circuitoAtualizar(request: Request, env: Env): Promise<Response> 
   circuito.updatedAt = new Date().toISOString();
   lista[idx] = circuito;
   await saveCircuitosIndex(env, lista);
-  return json({ ok: true, circuito });
+  return json({ ok: true, circuito, rejeitadosJaVinculados });
 }
 
 async function circuitoExcluir(request: Request, env: Env): Promise<Response> {

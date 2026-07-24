@@ -1177,6 +1177,12 @@ let statusProcessamentoCircuito = {};
 // Qual torneio está com o painel de "ver dados processados" (colocações) aberto na tela de
 // detalhe do circuito — só um por vez, fecha ao reabrir outro.
 let colocacoesExpandidoTorneioId = null;
+// Filtro/paginação da lista "Torneios neste circuito" — resetados sempre que um circuito
+// diferente é aberto (mesmo padrão de aprovacoesFiltroStatus/aprovacoesPagina).
+let circuitoTorneiosFiltroNome = "";
+let circuitoTorneiosFiltroData = "";
+let circuitoTorneiosPagina = 1;
+const CIRCUITO_TORNEIOS_POR_PAGINA = 10;
 // Logo já processada (data URL), aguardando o organizador confirmar o nome antes de entrar em
 // state.patrocinadores — substituiu um prompt() nativo (bloqueante e sem nenhum feedback de erro
 // se o navegador recusasse/cancelasse silenciosamente, o que fazia o upload "sumir" sem aviso).
@@ -1555,6 +1561,8 @@ async function criarCircuito(payload){
   }
 }
 
+// Devolve o corpo da resposta (ou null se falhou) pra quem chama poder inspecionar campos como
+// rejeitadosJaVinculados (torneios que não foram vinculados por já pertencerem a outro circuito).
 async function atualizarCircuito(id, patch){
   showLoading("Salvando...");
   try{
@@ -1569,8 +1577,10 @@ async function atualizarCircuito(id, patch){
       if(idx>=0) circuitosList[idx] = data.circuito;
     }
     render();
+    return data;
   }catch(e){
     showToast(e.message || "Falha ao salvar circuito.");
+    return null;
   }finally{
     hideLoading();
   }
@@ -2875,6 +2885,16 @@ function rotuloPosicaoCircuito(posicao){
   if(posicao===3) return "🥉 3º lugar";
   if(posicao===4) return "4º lugar";
   return "Participação";
+}
+// Mesma tabela usada ao vivo pelo circuitoRanking() no worker (pontuacaoTabela é editável a
+// qualquer momento, então os pontos nunca são gravados junto da colocação — só calculados na
+// hora de exibir). Usado só no painel de auditoria "Ver dados" da tela de detalhe do circuito.
+function pontosPorPosicaoCircuito(tabela, posicao){
+  if(posicao===1) return tabela.campeao;
+  if(posicao===2) return tabela.vice;
+  if(posicao===3) return tabela.terceiroLugar;
+  if(posicao===4) return tabela.quartoLugar;
+  return tabela.participacao;
 }
 
 // Monta as colocações de UMA dupla pro envio ao circuito — um item por JOGADOR (não por dupla),
@@ -4834,9 +4854,30 @@ function renderCircuitosListaScreen(){
 }
 
 function renderCircuitoDetalheScreen(circuito){
-  const meusTorneios = (torneiosList||[]).slice().sort((a,b)=> (a.nome||"").localeCompare(b.nome||""));
   const vinculados = new Set(circuito.torneioIds||[]);
   const linkPublico = `${location.origin}${location.pathname}?ranking=1&circuito=${circuito.id}`;
+  // Um torneio só pode pertencer a UM circuito por vez (ver CLAUDE.md/circuitoAtualizar) — pra
+  // cada torneio do organizador, acha se ele já está vinculado a outro circuito (não este), pra
+  // desabilitar a caixinha e mostrar o nome do circuito dono do vínculo.
+  const outroCircuitoPorTorneio = {};
+  (circuitosList||[]).forEach(c=>{
+    if(c.id===circuito.id) return;
+    (c.torneioIds||[]).forEach(tid=>{ if(!outroCircuitoPorTorneio[tid]) outroCircuitoPorTorneio[tid] = c; });
+  });
+
+  const filtroNome = circuitoTorneiosFiltroNome.trim().toLowerCase();
+  const filtroData = circuitoTorneiosFiltroData;
+  const meusTorneiosFiltrados = (torneiosList||[])
+    .slice()
+    .filter(t=> !filtroNome || (t.nome||"").toLowerCase().includes(filtroNome))
+    .filter(t=> !filtroData || (t.dataInicio && t.dataFim && filtroData>=t.dataInicio && filtroData<=t.dataFim) || t.dataInicio===filtroData)
+    .sort((a,b)=> (a.nome||"").localeCompare(b.nome||""));
+
+  const totalPaginasTorneios = Math.max(1, Math.ceil(meusTorneiosFiltrados.length / CIRCUITO_TORNEIOS_POR_PAGINA));
+  if(circuitoTorneiosPagina > totalPaginasTorneios) circuitoTorneiosPagina = totalPaginasTorneios;
+  if(circuitoTorneiosPagina < 1) circuitoTorneiosPagina = 1;
+  const inicioPagina = (circuitoTorneiosPagina-1) * CIRCUITO_TORNEIOS_POR_PAGINA;
+  const meusTorneios = meusTorneiosFiltrados.slice(inicioPagina, inicioPagina + CIRCUITO_TORNEIOS_POR_PAGINA);
 
   let html = `<button class="btn ghost" id="btn-voltar-circuitos" style="width:auto;padding:6px 12px;margin-bottom:10px;">← Voltar</button>
     <div class="section-title">${escapeHtml(circuito.nome)}</div>
@@ -4862,23 +4903,31 @@ function renderCircuitoDetalheScreen(circuito){
 
     <div class="card">
       <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">Torneios neste circuito</div>
-      <div class="hint" style="margin-bottom:10px;">Marque quais dos seus torneios entram no cálculo do ranking e clique em "Salvar vínculos". Jogadores sem CPF cadastrado não somam pontos entre torneios diferentes.</div>`;
+      <div class="hint" style="margin-bottom:10px;">Marque quais dos seus torneios entram no cálculo do ranking e clique em "Salvar vínculos". Um torneio só pode pertencer a um circuito por vez. Jogadores sem CPF cadastrado não somam pontos entre torneios diferentes.</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:12px;">
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Filtrar por nome</label><input type="text" id="input-circuito-torneios-filtro-nome" value="${escapeHtml(circuitoTorneiosFiltroNome)}" placeholder="Nome do campeonato..." style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Filtrar por data</label><input type="date" id="input-circuito-torneios-filtro-data" value="${escapeHtml(circuitoTorneiosFiltroData)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+      </div>`;
 
-  if(!meusTorneios.length){
-    html += `<div class="sub">Você ainda não tem torneios criados.</div>`;
+  if(!meusTorneiosFiltrados.length){
+    html += `<div class="sub">${(torneiosList||[]).length ? "Nenhum torneio encontrado com esse filtro." : "Você ainda não tem torneios criados."}</div>`;
   } else {
     meusTorneios.forEach(t=>{
       const resultado = circuito.resultados && circuito.resultados[t.id];
       const statusManual = statusProcessamentoCircuito[t.id];
       const expandido = colocacoesExpandidoTorneioId===t.id;
+      const outroCircuito = outroCircuitoPorTorneio[t.id];
+      const bloqueadoPorOutroCircuito = !!outroCircuito && !vinculados.has(t.id);
       html += `<div style="padding:8px 0;border-bottom:1px solid var(--sand);">
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
-          <input type="checkbox" data-circuito-torneio="${t.id}" data-circuito="${circuito.id}" ${vinculados.has(t.id)?"checked":""} style="width:auto;">
-          <span style="flex:1;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;${bloqueadoPorOutroCircuito?"opacity:.55;":""}">
+          <input type="checkbox" data-circuito-torneio="${t.id}" data-circuito="${circuito.id}" ${vinculados.has(t.id)?"checked":""} ${bloqueadoPorOutroCircuito?"disabled":""} style="width:auto;">
+          <span style="flex:1;">${escapeHtml(t.nome||"Torneio sem nome")} <span class="sub" style="font-family:'DM Mono',monospace;font-size:11px;">#${escapeHtml(t.codigo||t.id.slice(0,8))}</span></span>
         </label>
         <div style="padding-left:24px;margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
 
-      if(!vinculados.has(t.id)){
+      if(bloqueadoPorOutroCircuito){
+        html += `<span class="sub" style="font-size:11px;color:var(--pending-text);">🔗 Vinculado ao circuito "${escapeHtml(outroCircuito.nome)}"</span>`;
+      } else if(!vinculados.has(t.id)){
         html += `<span class="sub" style="font-size:11px;">Não vinculado</span>`;
       } else if(resultado){
         html += `<span class="sub" style="font-size:11px;color:var(--grass);">✅ Processado em ${new Date(resultado.calculadoEm).toLocaleString("pt-BR")}</span>
@@ -4901,13 +4950,21 @@ function renderCircuitoDetalheScreen(circuito){
         html += `<div style="margin:8px 0 0 24px;padding:8px 10px;background:var(--sand);border-radius:8px;">
           ${resultado.colocacoes.map(c=> `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0;">
             <span>${rotuloPosicaoCircuito(c.posicao)} — ${escapeHtml(c.jogadorNome)}</span>
-            <span class="sub" style="font-family:'DM Mono',monospace;">${c.cpf ? formatarCPF(c.cpf) : "sem CPF"}</span>
+            <span class="sub" style="font-family:'DM Mono',monospace;">${pontosPorPosicaoCircuito(circuito.pontuacaoTabela, c.posicao)} pts · ${c.cpf ? formatarCPF(c.cpf) : "sem CPF"}</span>
           </div>`).join("")}
         </div>`;
       }
 
       html += `</div>`;
     });
+  }
+
+  if(totalPaginasTorneios > 1){
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;">
+      <button class="btn ghost" id="btn-circuito-torneios-pagina-anterior" style="width:auto;padding:6px 14px;${circuitoTorneiosPagina<=1 ? "opacity:.45;cursor:not-allowed;" : ""}" ${circuitoTorneiosPagina<=1 ? "disabled" : ""}>← Anterior</button>
+      <span class="sub">Página ${circuitoTorneiosPagina} de ${totalPaginasTorneios}</span>
+      <button class="btn ghost" id="btn-circuito-torneios-pagina-proxima" style="width:auto;padding:6px 14px;${circuitoTorneiosPagina>=totalPaginasTorneios ? "opacity:.45;cursor:not-allowed;" : ""}" ${circuitoTorneiosPagina>=totalPaginasTorneios ? "disabled" : ""}>Próxima →</button>
+    </div>`;
   }
 
   html += `<button class="btn" id="btn-salvar-vinculos-circuito" data-circuito="${circuito.id}" style="margin-top:10px;">💾 Salvar vínculos</button>
@@ -6590,6 +6647,12 @@ function bindEvents(){
   main.querySelectorAll("[data-abrir-circuito]").forEach(item=>{
     item.addEventListener("click", ()=>{
       telaCircuitos = item.dataset.abrirCircuito;
+      // Reseta filtro/paginação da lista de torneios ao trocar de circuito (mesmo padrão de
+      // aprovacoesFiltroStatus/aprovacoesPagina) — senão um filtro/página deixados de um circuito
+      // anterior poderiam esconder torneios do novo circuito sem nenhum aviso.
+      circuitoTorneiosFiltroNome = "";
+      circuitoTorneiosFiltroData = "";
+      circuitoTorneiosPagina = 1;
       render();
     });
   });
@@ -6637,14 +6700,29 @@ function bindEvents(){
     const circuitoId = btnSalvarVinculosCircuito.dataset.circuito;
     const circuito = (circuitosList||[]).find(c=>c.id===circuitoId);
     const idsAntigos = new Set(circuito ? circuito.torneioIds||[] : []);
-    const torneioIds = Array.from(main.querySelectorAll(`[data-circuito-torneio][data-circuito="${circuitoId}"]:checked`)).map(c=>c.dataset.circuitoTorneio);
+    // A lista é filtrada/paginada — só as linhas RENDERIZADAS nesta página refletem o clique do
+    // usuário agora. Torneios já vinculados que não estão nesta página (outra página, ou
+    // escondidos pelo filtro) precisam manter seu vínculo intacto, senão "Salvar vínculos"
+    // desvincularia silenciosamente tudo que não está visível no momento do clique.
+    const renderizadosNestaPagina = new Set(Array.from(main.querySelectorAll(`[data-circuito-torneio][data-circuito="${circuitoId}"]`)).map(c=>c.dataset.circuitoTorneio));
+    const marcadosNestaPagina = new Set(Array.from(main.querySelectorAll(`[data-circuito-torneio][data-circuito="${circuitoId}"]:checked:not(:disabled)`)).map(c=>c.dataset.circuitoTorneio));
+    const torneioIds = [...new Set([
+      ...[...idsAntigos].filter(id=> !renderizadosNestaPagina.has(id) || marcadosNestaPagina.has(id)),
+      ...marcadosNestaPagina
+    ])];
     const adicionados = torneioIds.filter(id=> !idsAntigos.has(id));
-    await atualizarCircuito(circuitoId, { torneioIds });
+    const resposta = await atualizarCircuito(circuitoId, { torneioIds });
+    if(resposta && resposta.rejeitadosJaVinculados && resposta.rejeitadosJaVinculados.length){
+      showToast(`${resposta.rejeitadosJaVinculados.length} torneio(s) não vinculado(s) por já pertencerem a outro circuito.`);
+    }
     // Só processa retroativamente quem acabou de ser vinculado agora — torneios que já estavam
     // vinculados (com ou sem resultado) não precisam ser reprocessados aqui; pra isso existem os
-    // botões "Recalcular"/"Tentar novamente"/"Processar agora" por linha.
+    // botões "Recalcular"/"Tentar novamente"/"Processar agora" por linha. Se o servidor recusou o
+    // vínculo (já pertence a outro circuito), nem tenta processar.
+    const rejeitadosIds = new Set((resposta?.rejeitadosJaVinculados||[]).map(r=>r.torneioId));
     let algumSucesso = false;
     for(const torneioId of adicionados){
+      if(rejeitadosIds.has(torneioId)) continue;
       const resultado = await enviarResultadoRetroativoParaTorneio(torneioId);
       statusProcessamentoCircuito[torneioId] = resultado;
       if(resultado.status==="sucesso") algumSucesso = true;
@@ -6653,7 +6731,39 @@ function bindEvents(){
     // gravado e liberar o "Ver dados") — senão um render() local já basta pra mostrar erro/pendente.
     if(algumSucesso) await fetchCircuitosList();
     else render();
-    showToast(adicionados.length ? "Vínculos salvos e torneios novos processados." : "Vínculos salvos.");
+    if(!resposta || !resposta.rejeitadosJaVinculados || !resposta.rejeitadosJaVinculados.length){
+      showToast(adicionados.length ? "Vínculos salvos e torneios novos processados." : "Vínculos salvos.");
+    }
+  });
+  // render() recria o DOM inteiro (inclusive o próprio input de filtro) — sem restaurar o foco/
+  // cursor manualmente depois, cada tecla digitada tiraria o foco do campo (a busca "funcionaria"
+  // mas exigiria clicar de novo a cada letra).
+  const inputCircuitoTorneiosFiltroNome = document.getElementById("input-circuito-torneios-filtro-nome");
+  if(inputCircuitoTorneiosFiltroNome) inputCircuitoTorneiosFiltroNome.addEventListener("input", e=>{
+    const cursorPos = e.target.selectionStart;
+    circuitoTorneiosFiltroNome = e.target.value;
+    circuitoTorneiosPagina = 1;
+    render();
+    const novoInput = document.getElementById("input-circuito-torneios-filtro-nome");
+    if(novoInput){ novoInput.focus(); novoInput.setSelectionRange(cursorPos, cursorPos); }
+  });
+  const inputCircuitoTorneiosFiltroData = document.getElementById("input-circuito-torneios-filtro-data");
+  if(inputCircuitoTorneiosFiltroData) inputCircuitoTorneiosFiltroData.addEventListener("input", e=>{
+    circuitoTorneiosFiltroData = e.target.value;
+    circuitoTorneiosPagina = 1;
+    render();
+    const novoInput = document.getElementById("input-circuito-torneios-filtro-data");
+    if(novoInput) novoInput.focus();
+  });
+  const btnCircuitoTorneiosPaginaAnterior = document.getElementById("btn-circuito-torneios-pagina-anterior");
+  if(btnCircuitoTorneiosPaginaAnterior) btnCircuitoTorneiosPaginaAnterior.addEventListener("click", ()=>{
+    circuitoTorneiosPagina--;
+    render();
+  });
+  const btnCircuitoTorneiosPaginaProxima = document.getElementById("btn-circuito-torneios-pagina-proxima");
+  if(btnCircuitoTorneiosPaginaProxima) btnCircuitoTorneiosPaginaProxima.addEventListener("click", ()=>{
+    circuitoTorneiosPagina++;
+    render();
   });
   main.querySelectorAll("[data-processar-circuito-torneio]").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
