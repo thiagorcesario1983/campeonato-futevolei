@@ -527,6 +527,18 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       servidor (não só edições feitas pelo usuário) precisa considerar se `verificarEnvioResultadoCircuito`
       também deveria rodar ali**, senão um resultado "atrasado" (torneio antigo vinculado depois)
       fica esperando uma edição manual que pode nunca acontecer.
+    - **Vincular um torneio já concluído rankeia na hora, sem precisar reabri-lo** — mesmo com o
+      fallback acima, o organizador não deveria precisar entrar de novo no torneio só pra "ativar"
+      o cálculo. `enviarResultadoRetroativoParaTorneio(torneioId)` roda assim que a caixinha de um
+      torneio é marcada na tela Circuitos (nunca ao desmarcar): busca o `state` completo desse
+      torneio via `/api/torneios-get`, troca a variável global `state` por essa cópia só
+      temporariamente (pra reaproveitar `champion()`/`montarColocacoesCircuito()`, que sempre
+      leem `state` direto — nunca recebem parâmetro, ver decisão de arquitetura acima) e devolve o
+      `state` original logo em seguida. Essa troca é segura porque é 100% síncrona (nenhum
+      `await` entre trocar e devolver) — o JS nunca cede o controle no meio pra outro código
+      (timer, clique, `render()` de outra tela) enxergar esse `state` temporário. **Se algum dia
+      essa troca precisar ganhar uma etapa assíncrona no meio, pare e repense** — é exatamente o
+      tipo de mudança que introduziria uma condição de corrida.
 27. **Menu lateral recolhível** (substituiu a barra de abas inferior antiga): `#nav-torneio` e
     `#nav-admin` (os mesmos elementos/botões de sempre, `data-tab`/`data-tela-admin` e toda a
     lógica de `render()`/`bindEvents()` que os controla — nada mudou aí) só foram REALOCADOS pra

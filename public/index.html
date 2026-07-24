@@ -2949,6 +2949,41 @@ async function verificarEnvioResultadoCircuito(){
     console.error("Falha ao enviar resultado pro circuito:", e && e.message ? e.message : e);
   }
 }
+// Calcula e envia o resultado de UM torneio específico pro circuito sem precisar abrir esse
+// torneio na tela — chamada assim que o organizador marca a caixinha de um torneio na tela
+// Circuitos (data-circuito-torneio). Sem isso, um torneio já concluído só entraria no ranking
+// na próxima vez que alguém o abrisse de novo (ver verificarEnvioResultadoCircuito/CLAUDE.md) —
+// aqui o "abrir" acontece só em memória, sem tocar na UI.
+// Troca a variável global `state` por uma cópia temporária só pra reaproveitar
+// champion()/montarColocacoesCircuito() (que sempre leem `state` direto, nunca recebem
+// parâmetro — ver decisão de arquitetura no worker.ts) e restaura logo em seguida. Isso é seguro
+// porque a troca inteira (atribuir o state temporário, rodar as checagens, devolver o state
+// original) é 100% síncrona, sem nenhum `await` no meio — o JS nunca cede o controle pra outro
+// código (timer, clique) ler esse state trocado enquanto isso roda.
+async function enviarResultadoRetroativoParaTorneio(torneioId){
+  const estadoAtual = state;
+  try{
+    const res = await apiFetch(`/api/torneios-get?id=${encodeURIComponent(torneioId)}&email=${encodeURIComponent(auth.email)}`, { cache:"no-store" });
+    if(!res.ok) return;
+    const data = await res.json();
+    if(!data || !data.state) return;
+
+    state = migrarBracketAntigo(Object.assign(defaultState(), data.state));
+    state.circuitoIds = data.circuitoIds || [];
+    const finalizado = torneioTotalmenteFinalizado();
+    const colocacoes = finalizado ? montarColocacoesCircuito() : [];
+    state = estadoAtual;
+
+    if(!finalizado || !colocacoes.length) return;
+    await apiFetch("/api/circuito-resultado-torneio", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ torneioId, colocacoes })
+    });
+  }catch(e){
+    state = estadoAtual;
+    console.error("Falha ao calcular resultado retroativo pro circuito:", e && e.message ? e.message : e);
+  }
+}
 function nomeRodada(r, totalRounds){
   const restantes = totalRounds - r; // 1 = final, 2 = semifinal, 3 = quartas...
   if(restantes===1) return "Final";
@@ -6522,8 +6557,14 @@ function bindEvents(){
   main.querySelectorAll("[data-circuito-torneio]").forEach(checkbox=>{
     checkbox.addEventListener("change", ()=>{
       const circuitoId = checkbox.dataset.circuito;
+      const torneioId = checkbox.dataset.circuitoTorneio;
+      const marcado = checkbox.checked;
       const torneioIds = Array.from(main.querySelectorAll(`[data-circuito-torneio][data-circuito="${circuitoId}"]:checked`)).map(c=>c.dataset.circuitoTorneio);
-      atualizarCircuito(circuitoId, { torneioIds });
+      atualizarCircuito(circuitoId, { torneioIds }).then(()=>{
+        // Só ao MARCAR (vincular) — se o torneio já estiver concluído, calcula e envia o
+        // resultado na hora, sem precisar reabri-lo depois (ver enviarResultadoRetroativoParaTorneio).
+        if(marcado) enviarResultadoRetroativoParaTorneio(torneioId);
+      });
     });
   });
   const btnExcluirCircuito = document.getElementById("btn-excluir-circuito");
