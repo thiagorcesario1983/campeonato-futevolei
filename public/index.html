@@ -44,12 +44,12 @@
        lateral escuro tipo "control room"), então não deve virar var() reaproveitando --sand
        etc. Reaproveita o mesmo verde neon do modo escuro do app (--ocean/--heading escuros)
        como cor de destaque, pra manter a identidade visual entre o menu e o resto do app. */
-    --sidebar-bg:#12151b;
-    --sidebar-bg-hover:#1b212b;
-    --sidebar-bg-active:#1c2b22;
-    --sidebar-border:#232833;
-    --sidebar-text:#dfe3e9;
-    --sidebar-text-muted:#7c8592;
+    --sidebar-bg:#0c0e13;
+    --sidebar-bg-hover:#161a22;
+    --sidebar-bg-active:#132019;
+    --sidebar-border:#1c212b;
+    --sidebar-text:#e7eaee;
+    --sidebar-text-muted:#7d8694;
     --sidebar-accent:#2ECC58;
   }
   /* Modo escuro: mesmas variáveis, valores adaptados pra contraste em fundo escuro. Como o app
@@ -131,14 +131,20 @@
     padding:18px 14px; border-bottom:1px solid var(--sidebar-border);
     flex-shrink:0;
   }
-  .sidebar-logo{ font-size:24px; line-height:1; flex-shrink:0; }
+  .sidebar-logo{
+    width:34px; height:34px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 30% 30%, var(--ocean) 0%, var(--ocean-deep) 100%);
+    box-shadow:0 0 0 1px rgba(255,255,255,.08);
+    font-size:16px; line-height:1;
+  }
   .sidebar-brand-text{ flex:1; min-width:0; overflow:hidden; }
   .sidebar-brand-title{
     font-family:'Bebas Neue',sans-serif; font-size:17px; letter-spacing:.02em;
     color:var(--sidebar-text); line-height:1.15; white-space:nowrap;
   }
   .sidebar-brand-sub{
-    font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+    font-size:9.5px; text-transform:uppercase; letter-spacing:.08em; font-weight:600;
     color:var(--sidebar-text-muted); margin-top:2px; white-space:nowrap;
   }
   .sidebar-close{
@@ -457,14 +463,19 @@
   }
   nav.tabbar button{
     display:flex;flex-direction:row;align-items:center;gap:12px;
-    width:100%;background:none;border:none;border-radius:10px;
-    padding:10px 12px;cursor:pointer;color:var(--sidebar-text-muted);
+    width:100%;background:none;border:none;border-left:3px solid transparent;border-radius:8px;
+    padding:9px 12px;cursor:pointer;color:var(--sidebar-text-muted);
     font-family:'Work Sans',sans-serif;text-align:left;position:relative;
+    transition:background .15s ease,color .15s ease,border-color .15s ease;
   }
-  nav.tabbar button svg{width:20px;height:20px;flex-shrink:0;}
-  nav.tabbar button .lbl{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  nav.tabbar button svg{width:19px;height:19px;flex-shrink:0;}
+  nav.tabbar button .lbl{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   nav.tabbar button:hover{background:var(--sidebar-bg-hover);color:var(--sidebar-text);}
-  nav.tabbar button.active{background:var(--sidebar-bg-active);color:var(--sidebar-accent);}
+  nav.tabbar button.active{
+    background:var(--sidebar-bg-active);color:var(--sidebar-text);
+    border-left-color:var(--sidebar-accent);font-weight:700;
+  }
+  nav.tabbar button.active svg{color:var(--sidebar-accent);}
   nav.tabbar button.tab-bloqueada{opacity:.35;}
   .nav-badge{
     margin-left:auto;flex-shrink:0;
