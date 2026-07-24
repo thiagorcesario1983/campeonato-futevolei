@@ -569,6 +569,28 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       `drawGroupsSection`/`drawTeamBar`/`drawBracket`, que usam `GOLD`/`GOLD_BG` no canvas) têm
       identidade visual própria pensada pra serem vistas de longe/postadas — não fazem parte
       desse pente-fino, mantidos exatamente como estavam.
+29. **App sempre no modo escuro** (pedido explícito — visual "control room" fiel a uma
+    referência externa, sem alternador claro/escuro): o script no `<head>` seta
+    `data-theme="dark"` incondicionalmente (antes lia `localStorage`/`prefers-color-scheme`); o
+    botão `#btn-theme-icon` e as funções `aplicarTema`/`temaAtual`/`alternarTema` foram
+    removidos por completo (não é código morto de propósito — o app não tem mais noção de "modo
+    claro" alcançável pelo usuário). O bloco `:root` (claro) continua existindo no CSS só como
+    fallback defensivo caso o atributo `data-theme` não seja aplicado por algum motivo — na
+    prática, inatingível. As variáveis do tema escuro (`--sand`, `--white`, `--ocean`, `--ink`,
+    `--muted`, `--heading` etc., em `[data-theme="dark"]`) foram alinhadas pra bater exatamente
+    com as do menu lateral (`--sidebar-bg`, `--sidebar-accent` etc. — mesmo preto de fundo,
+    mesmo verde vívido de destaque), então hoje é uma paleta única — antes eram dois tons de
+    escuro/verde sutilmente diferentes (um pro menu, outro pro resto do app).
+30. **Labels em caixa alta no app inteiro** (mesmo tratamento tipográfico já usado no menu
+    lateral e nos `.stat .lbl`/`.jogador-group label`, que já eram assim): todo `<label>` de
+    campo de formulário (Configurações, Aprovações, Cupons, Circuitos, Duplas, inscrição
+    pública, apito público) ganhou `text-transform:uppercase;letter-spacing:.04em;` — antes só
+    alguns lugares seguiam essa convenção, a maioria (principalmente os "criar novo X" e o card
+    de Configurações) usava texto normal. **Efeito colateral aceito**: como alguns botões de
+    upload de arquivo são `<label class="btn ...">` dentro do mesmo contêiner que essa regra
+    mira (`.tg-settings label`), o texto desses botões (ex: "Escolher imagem") também virou
+    caixa alta — mantido assim de propósito, o resultado ficou consistente com o resto do
+    visual "control room" em vez de destoar.
 
 ## Convenções
 
