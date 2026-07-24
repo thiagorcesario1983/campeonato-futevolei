@@ -1169,6 +1169,14 @@ let telaCircuitos = null; // null | "lista" | id do circuito aberto
 let circuitosList = null;
 let circuitosLoading = false;
 let mostrarFormNovoCircuito = false;
+// Status do último processamento manual/automático de cada torneio dentro da tela de detalhe
+// de um circuito (chave = torneioId) — puramente em memória, só pra dar feedback de auditoria
+// ("processado com sucesso"/"erro"/"ainda não concluído") enquanto o organizador está nessa tela;
+// não precisa persistir, já que o resultado de sucesso de verdade fica em circuito.resultados.
+let statusProcessamentoCircuito = {};
+// Qual torneio está com o painel de "ver dados processados" (colocações) aberto na tela de
+// detalhe do circuito — só um por vez, fecha ao reabrir outro.
+let colocacoesExpandidoTorneioId = null;
 // Logo já processada (data URL), aguardando o organizador confirmar o nome antes de entrar em
 // state.patrocinadores — substituiu um prompt() nativo (bloqueante e sem nenhum feedback de erro
 // se o navegador recusasse/cancelasse silenciosamente, o que fazia o upload "sumir" sem aviso).
@@ -2859,6 +2867,15 @@ function champion(){
 function torneioTotalmenteFinalizado(){
   return !!champion() && (!state.terceiroLugar || !!state.terceiro?.finalizado);
 }
+// Rótulo amigável de cada posição gravada em Circuito.resultados[].colocacoes — usado só no
+// painel de auditoria da tela de detalhe do circuito (ver renderCircuitoDetalheScreen).
+function rotuloPosicaoCircuito(posicao){
+  if(posicao===1) return "🏆 Campeão";
+  if(posicao===2) return "🥈 Vice";
+  if(posicao===3) return "🥉 3º lugar";
+  if(posicao===4) return "4º lugar";
+  return "Participação";
+}
 
 // Monta as colocações de UMA dupla pro envio ao circuito — um item por JOGADOR (não por dupla),
 // já que o ranking soma pontos por indivíduo (chave CPF), não por dupla (jogadores trocam de
@@ -2949,24 +2966,24 @@ async function verificarEnvioResultadoCircuito(){
     console.error("Falha ao enviar resultado pro circuito:", e && e.message ? e.message : e);
   }
 }
-// Calcula e envia o resultado de UM torneio específico pro circuito sem precisar abrir esse
-// torneio na tela — chamada assim que o organizador marca a caixinha de um torneio na tela
-// Circuitos (data-circuito-torneio). Sem isso, um torneio já concluído só entraria no ranking
-// na próxima vez que alguém o abrisse de novo (ver verificarEnvioResultadoCircuito/CLAUDE.md) —
-// aqui o "abrir" acontece só em memória, sem tocar na UI.
+// Calcula (sem enviar nada) a colocação final de UM torneio específico sem precisar abrir esse
+// torneio na tela — usada tanto pelo envio automático quanto pelo botão manual "Processar
+// agora"/"Verificar novamente" na tela de detalhe do circuito (auditoria).
 // Troca a variável global `state` por uma cópia temporária só pra reaproveitar
 // champion()/montarColocacoesCircuito() (que sempre leem `state` direto, nunca recebem
 // parâmetro — ver decisão de arquitetura no worker.ts) e restaura logo em seguida. Isso é seguro
 // porque a troca inteira (atribuir o state temporário, rodar as checagens, devolver o state
 // original) é 100% síncrona, sem nenhum `await` no meio — o JS nunca cede o controle pra outro
 // código (timer, clique) ler esse state trocado enquanto isso roda.
-async function enviarResultadoRetroativoParaTorneio(torneioId){
+// Devolve sempre um status pra permitir auditoria (nunca engole o erro em silêncio):
+// {status:"pronto", colocacoes} | {status:"nao_concluido", mensagem} | {status:"erro", mensagem}
+async function calcularResultadoRetroativo(torneioId){
   const estadoAtual = state;
   try{
     const res = await apiFetch(`/api/torneios-get?id=${encodeURIComponent(torneioId)}&email=${encodeURIComponent(auth.email)}`, { cache:"no-store" });
-    if(!res.ok) return;
+    if(!res.ok) return { status:"erro", mensagem:`Falha ao buscar o torneio (HTTP ${res.status}).` };
     const data = await res.json();
-    if(!data || !data.state) return;
+    if(!data || !data.state) return { status:"erro", mensagem:"Torneio não encontrado ou sem dados salvos." };
 
     state = migrarBracketAntigo(Object.assign(defaultState(), data.state));
     state.circuitoIds = data.circuitoIds || [];
@@ -2974,14 +2991,34 @@ async function enviarResultadoRetroativoParaTorneio(torneioId){
     const colocacoes = finalizado ? montarColocacoesCircuito() : [];
     state = estadoAtual;
 
-    if(!finalizado || !colocacoes.length) return;
-    await apiFetch("/api/circuito-resultado-torneio", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ torneioId, colocacoes })
-    });
+    if(!finalizado) return { status:"nao_concluido", mensagem:"Este torneio ainda não foi totalmente finalizado (falta definir o campeão e/ou a disputa de 3º lugar)." };
+    if(!colocacoes.length) return { status:"erro", mensagem:"Não foi possível montar as colocações finais deste torneio." };
+    return { status:"pronto", colocacoes };
   }catch(e){
     state = estadoAtual;
-    console.error("Falha ao calcular resultado retroativo pro circuito:", e && e.message ? e.message : e);
+    return { status:"erro", mensagem: e && e.message ? e.message : "Falha inesperada ao calcular o resultado." };
+  }
+}
+// Calcula e envia o resultado de UM torneio específico pro circuito sem precisar abrir esse
+// torneio na tela — chamada assim que o organizador marca e salva o vínculo de um torneio na
+// tela Circuitos, ou manualmente via "Processar agora"/"Tentar novamente". Sem isso, um torneio
+// já concluído só entraria no ranking na próxima vez que alguém o abrisse de novo (ver
+// verificarEnvioResultadoCircuito/CLAUDE.md) — aqui o "abrir" acontece só em memória, sem tocar
+// na UI. Devolve o mesmo formato de status de calcularResultadoRetroativo (com "pronto" trocado
+// por "sucesso" após o POST confirmar), pra alimentar o painel de auditoria da tela de circuito.
+async function enviarResultadoRetroativoParaTorneio(torneioId){
+  const calculo = await calcularResultadoRetroativo(torneioId);
+  if(calculo.status !== "pronto") return calculo;
+  try{
+    const res = await apiFetch("/api/circuito-resultado-torneio", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ torneioId, colocacoes: calculo.colocacoes })
+    });
+    const data = await res.json().catch(()=>null);
+    if(!res.ok) return { status:"erro", mensagem: (data && data.error) || `Falha ao salvar o resultado (HTTP ${res.status}).` };
+    return { status:"sucesso", colocacoes: calculo.colocacoes };
+  }catch(e){
+    return { status:"erro", mensagem: e && e.message ? e.message : "Falha de rede ao enviar o resultado." };
   }
 }
 function nomeRodada(r, totalRounds){
@@ -4825,22 +4862,56 @@ function renderCircuitoDetalheScreen(circuito){
 
     <div class="card">
       <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">Torneios neste circuito</div>
-      <div class="hint" style="margin-bottom:10px;">Marque quais dos seus torneios entram no cálculo do ranking. Jogadores sem CPF cadastrado não somam pontos entre torneios diferentes.</div>`;
+      <div class="hint" style="margin-bottom:10px;">Marque quais dos seus torneios entram no cálculo do ranking e clique em "Salvar vínculos". Jogadores sem CPF cadastrado não somam pontos entre torneios diferentes.</div>`;
 
   if(!meusTorneios.length){
     html += `<div class="sub">Você ainda não tem torneios criados.</div>`;
   } else {
     meusTorneios.forEach(t=>{
       const resultado = circuito.resultados && circuito.resultados[t.id];
-      html += `<label style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--sand);font-size:13px;">
-        <input type="checkbox" data-circuito-torneio="${t.id}" data-circuito="${circuito.id}" ${vinculados.has(t.id)?"checked":""} style="width:auto;">
-        <span style="flex:1;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
-        ${resultado ? `<span class="sub" style="font-size:11px;">✅ resultado computado</span>` : ""}
-      </label>`;
+      const statusManual = statusProcessamentoCircuito[t.id];
+      const expandido = colocacoesExpandidoTorneioId===t.id;
+      html += `<div style="padding:8px 0;border-bottom:1px solid var(--sand);">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
+          <input type="checkbox" data-circuito-torneio="${t.id}" data-circuito="${circuito.id}" ${vinculados.has(t.id)?"checked":""} style="width:auto;">
+          <span style="flex:1;">${escapeHtml(t.nome||"Torneio sem nome")}</span>
+        </label>
+        <div style="padding-left:24px;margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
+
+      if(!vinculados.has(t.id)){
+        html += `<span class="sub" style="font-size:11px;">Não vinculado</span>`;
+      } else if(resultado){
+        html += `<span class="sub" style="font-size:11px;color:var(--grass);">✅ Processado em ${new Date(resultado.calculadoEm).toLocaleString("pt-BR")}</span>
+          <button class="btn ghost" data-ver-colocacoes-circuito="${t.id}" style="width:auto;padding:3px 10px;font-size:11px;">${expandido ? "Ocultar dados" : "🔍 Ver dados"}</button>
+          <button class="btn ghost" data-processar-circuito-torneio="${t.id}" data-circuito="${circuito.id}" style="width:auto;padding:3px 10px;font-size:11px;">↻ Recalcular</button>`;
+      } else if(statusManual && statusManual.status==="erro"){
+        html += `<span class="sub" style="font-size:11px;color:var(--coral);">⚠️ Erro: ${escapeHtml(statusManual.mensagem||"falha desconhecida")}</span>
+          <button class="btn ghost" data-processar-circuito-torneio="${t.id}" data-circuito="${circuito.id}" style="width:auto;padding:3px 10px;font-size:11px;">🔁 Tentar novamente</button>`;
+      } else if(statusManual && statusManual.status==="nao_concluido"){
+        html += `<span class="sub" style="font-size:11px;color:var(--pending-text);">⏳ ${escapeHtml(statusManual.mensagem||"Torneio ainda não concluído")}</span>
+          <button class="btn ghost" data-processar-circuito-torneio="${t.id}" data-circuito="${circuito.id}" style="width:auto;padding:3px 10px;font-size:11px;">🔍 Verificar novamente</button>`;
+      } else {
+        html += `<span class="sub" style="font-size:11px;">Vinculado, ainda não processado</span>
+          <button class="btn ghost" data-processar-circuito-torneio="${t.id}" data-circuito="${circuito.id}" style="width:auto;padding:3px 10px;font-size:11px;">⚙️ Processar agora</button>`;
+      }
+
+      html += `</div>`;
+
+      if(expandido && resultado){
+        html += `<div style="margin:8px 0 0 24px;padding:8px 10px;background:var(--sand);border-radius:8px;">
+          ${resultado.colocacoes.map(c=> `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0;">
+            <span>${rotuloPosicaoCircuito(c.posicao)} — ${escapeHtml(c.jogadorNome)}</span>
+            <span class="sub" style="font-family:'DM Mono',monospace;">${c.cpf ? formatarCPF(c.cpf) : "sem CPF"}</span>
+          </div>`).join("")}
+        </div>`;
+      }
+
+      html += `</div>`;
     });
   }
 
-  html += `</div>
+  html += `<button class="btn" id="btn-salvar-vinculos-circuito" data-circuito="${circuito.id}" style="margin-top:10px;">💾 Salvar vínculos</button>
+    </div>
     <button class="btn ghost" id="btn-excluir-circuito" data-circuito="${circuito.id}" data-nome="${escapeHtml(circuito.nome)}" style="border-color:var(--coral);color:var(--coral);">🗑️ Excluir circuito</button>`;
 
   return html;
@@ -6554,17 +6625,53 @@ function bindEvents(){
       prompt("Copie o link abaixo:", url);
     }
   });
-  main.querySelectorAll("[data-circuito-torneio]").forEach(checkbox=>{
-    checkbox.addEventListener("change", ()=>{
-      const circuitoId = checkbox.dataset.circuito;
-      const torneioId = checkbox.dataset.circuitoTorneio;
-      const marcado = checkbox.checked;
-      const torneioIds = Array.from(main.querySelectorAll(`[data-circuito-torneio][data-circuito="${circuitoId}"]:checked`)).map(c=>c.dataset.circuitoTorneio);
-      atualizarCircuito(circuitoId, { torneioIds }).then(()=>{
-        // Só ao MARCAR (vincular) — se o torneio já estiver concluído, calcula e envia o
-        // resultado na hora, sem precisar reabri-lo depois (ver enviarResultadoRetroativoParaTorneio).
-        if(marcado) enviarResultadoRetroativoParaTorneio(torneioId);
-      });
+  // As caixinhas em si NÃO disparam nada sozinhas (só marcam/desmarcam no DOM) — evita a corrida
+  // de "marquei vários e só um foi processado": antes, cada mudança de caixinha disparava seu
+  // próprio atualizarCircuito()+render() de forma independente, e chamadas concorrentes (cada
+  // uma com um snapshot diferente de "quais estão marcadas agora") podiam se sobrepor, já que o
+  // servidor substitui torneioIds por inteiro (sem merge) — a última resposta a chegar vencia,
+  // podendo derrubar seleções feitas entre o clique e a resposta. Agora só o botão "Salvar
+  // vínculos" lê o estado final do DOM (uma vez só) e manda uma única requisição.
+  const btnSalvarVinculosCircuito = document.getElementById("btn-salvar-vinculos-circuito");
+  if(btnSalvarVinculosCircuito) btnSalvarVinculosCircuito.addEventListener("click", async ()=>{
+    const circuitoId = btnSalvarVinculosCircuito.dataset.circuito;
+    const circuito = (circuitosList||[]).find(c=>c.id===circuitoId);
+    const idsAntigos = new Set(circuito ? circuito.torneioIds||[] : []);
+    const torneioIds = Array.from(main.querySelectorAll(`[data-circuito-torneio][data-circuito="${circuitoId}"]:checked`)).map(c=>c.dataset.circuitoTorneio);
+    const adicionados = torneioIds.filter(id=> !idsAntigos.has(id));
+    await atualizarCircuito(circuitoId, { torneioIds });
+    // Só processa retroativamente quem acabou de ser vinculado agora — torneios que já estavam
+    // vinculados (com ou sem resultado) não precisam ser reprocessados aqui; pra isso existem os
+    // botões "Recalcular"/"Tentar novamente"/"Processar agora" por linha.
+    let algumSucesso = false;
+    for(const torneioId of adicionados){
+      const resultado = await enviarResultadoRetroativoParaTorneio(torneioId);
+      statusProcessamentoCircuito[torneioId] = resultado;
+      if(resultado.status==="sucesso") algumSucesso = true;
+    }
+    // Recarrega do servidor só se algum processou de verdade (pra trazer o resultado/timestamp
+    // gravado e liberar o "Ver dados") — senão um render() local já basta pra mostrar erro/pendente.
+    if(algumSucesso) await fetchCircuitosList();
+    else render();
+    showToast(adicionados.length ? "Vínculos salvos e torneios novos processados." : "Vínculos salvos.");
+  });
+  main.querySelectorAll("[data-processar-circuito-torneio]").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const torneioId = btn.dataset.processarCircuitoTorneio;
+      btn.disabled = true;
+      btn.textContent = "Processando...";
+      const resultado = await enviarResultadoRetroativoParaTorneio(torneioId);
+      statusProcessamentoCircuito[torneioId] = resultado;
+      if(resultado.status==="sucesso") await fetchCircuitosList();
+      else render();
+      showToast(resultado.status==="sucesso" ? "Resultado processado!" : (resultado.mensagem || "Não foi possível processar."));
+    });
+  });
+  main.querySelectorAll("[data-ver-colocacoes-circuito]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const torneioId = btn.dataset.verColocacoesCircuito;
+      colocacoesExpandidoTorneioId = colocacoesExpandidoTorneioId===torneioId ? null : torneioId;
+      render();
     });
   });
   const btnExcluirCircuito = document.getElementById("btn-excluir-circuito");
