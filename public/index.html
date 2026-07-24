@@ -4,17 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Futevôlei — Campeonato</title>
-<meta name="theme-color" content="#205527" id="meta-theme-color">
+<meta name="theme-color" content="#08090c" id="meta-theme-color">
 <script>
-// Aplica o tema (claro/escuro) o mais cedo possível, antes do CSS pintar a tela, pra evitar
-// o "flash" de tema errado. Preferência salva localmente (não é por torneio, é do aparelho).
-(function(){
-  try{
-    var t = localStorage.getItem("futevolei_tema_v1");
-    if(!t) t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
-    document.documentElement.setAttribute("data-theme", t);
-  }catch(e){}
-})();
+// App sempre no modo escuro (visual "control room", pedido explícito — ver CLAUDE.md) — não
+// depende mais de preferência salva nem de prefers-color-scheme. O atributo continua existindo
+// só porque todo o CSS já é escrito em cima de [data-theme="dark"]/var(--algumacoisa).
+document.documentElement.setAttribute("data-theme", "dark");
 </script>
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
@@ -47,12 +42,11 @@
     /* Fundo suave pareado com --coral (badges "ao vivo"/"em andamento") — antes era um pêssego
        meio alaranjado (#FDF1E7), trocado por um tom realmente na família do coral. */
     --coral-bg:#FDEDE8;
-    /* Menu lateral (sidebar): propositalmente FIXO escuro, independente de --theme (claro/
-       escuro do resto do app) — pedido explícito de ficar fiel ao layout de referência (menu
-       lateral escuro tipo "control room"). Por isso as variáveis daqui são todas fixas, nunca
-       reaproveitando --ocean/--ocean-deep (que mudam de valor conforme o tema claro/escuro do
-       resto do app) — inclusive --sidebar-accent-deep existe só pra isso, o gradiente do badge
-       do logo não pode variar se o usuário alternar o tema geral do app. */
+    /* Menu lateral (sidebar): variáveis próprias (mesmos valores de --sand/--ocean/etc. do tema
+       escuro único do app, ver [data-theme="dark"] abaixo) — history: quando o app ainda tinha
+       alternador claro/escuro, essas cores precisavam ficar fixas aqui (o menu era sempre escuro
+       mesmo se o app estivesse no claro); o app virou 100% escuro depois, então hoje são
+       idênticas às gerais, mas mantidas separadas pra não acoplar o CSS do menu ao restante. */
     --sidebar-bg:#08090c;
     --sidebar-bg-hover:#13161d;
     --sidebar-bg-active:#0e1712;
@@ -60,24 +54,27 @@
     --sidebar-text:#eef1f5;
     --sidebar-text-muted:#7a8290;
     --sidebar-accent:#1FE075;
-    --sidebar-accent-deep:#0a5c34; /* fixo (não segue --ocean/--ocean-deep do tema claro/escuro) — só pro gradiente do badge do logo */
+    --sidebar-accent-deep:#0a5c34; /* só pro gradiente radial do badge do logo */
   }
-  /* Modo escuro: mesmas variáveis, valores adaptados pra contraste em fundo escuro. Como o app
-     inteiro já usa var(--sand)/var(--white)/var(--ink) etc. em vez de cores fixas, só trocar
-     esses valores já re-pinta o app inteiro — sem precisar editar cada componente. */
+  /* Modo escuro — ÚNICO modo do app agora (data-theme="dark" é setado sem condição no <head>,
+     ver script no topo do arquivo). Como o app inteiro já usa var(--sand)/var(--white)/var(--ink)
+     etc. em vez de cores fixas, só trocar esses valores já re-pinta o app inteiro — sem precisar
+     editar cada componente. Tons alinhados de propósito com --sidebar-* (mesmo preto de fundo,
+     mesmo verde vívido de destaque) — antes o menu lateral e o resto do app usavam dois tons de
+     escuro/verde ligeiramente diferentes; agora é uma paleta só. */
   [data-theme="dark"]{
-    --sand:#000000;
-    --sand-dark:#3A3A3A;
-    --ocean:#2ECC58;
-    --ocean-deep:#0F3D1D;
+    --sand:#08090c;
+    --sand-dark:#181c24;
+    --ocean:#1FE075;
+    --ocean-deep:#0a5c34;
     --coral:#FF7A5C;
     --grass:#3AD65A;
-    --white:#121212;
-    --ink:#F5F5F5;
-    --muted:#B5B5B5;
-    --heading:#4DFF7E; /* verde neon — as versões antigas (mesmo tom do fundo) ficavam ilegíveis no escuro */
+    --white:#12151b;
+    --ink:#eef1f5;
+    --muted:#7a8290;
+    --heading:#1FE075; /* mesmo verde vívido de --ocean — antes era um tom levemente diferente */
     --shadow: 0 10px 24px -12px rgba(0,0,0,.8);
-    --pending-bg:rgba(77,255,126,.14);
+    --pending-bg:rgba(31,224,117,.14);
     --pending-text:#8FE0A6;
     --coral-bg:rgba(255,122,92,.16);
   }
@@ -202,7 +199,9 @@
     background-position: center;
     color:var(--white);
     padding:22px 20px 26px 62px;
-    position:relative;
+    position:sticky;
+    top:0;
+    z-index:20;
     overflow:hidden;
   }
   header.has-bg-image{
@@ -218,14 +217,6 @@
     z-index:1;
     text-shadow: 0 2px 10px rgba(0,0,0,.35);
   }
-  .theme-toggle-icon{
-    position:absolute;top:16px;right:16px;z-index:2;
-    width:38px;height:38px;border-radius:50%;
-    background:rgba(255,255,255,.18);border:none;
-    font-size:18px;line-height:1;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;
-  }
-  .theme-toggle-icon:active{background:rgba(255,255,255,.3);}
   .hamburger-btn{
     position:absolute;top:16px;left:16px;z-index:2;
     width:38px;height:38px;border-radius:50%;
@@ -309,7 +300,7 @@
   .tel-row input{font-family:'DM Mono',monospace;font-size:12.5px;}
   .tel-row input::placeholder{font-family:'Work Sans',sans-serif;}
   .jogador-group{margin-bottom:10px;}
-  .jogador-group label{font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.02em;}
+  .jogador-group label{font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;}
   .jogador-group input{width:100%;margin-bottom:6px;}
   .jogador-group input:last-child{margin-bottom:0;}
   .jogador-group input[type=tel],.jogador-group input[type=email]{font-family:'DM Mono',monospace;font-size:12.5px;}
@@ -331,7 +322,7 @@
   .tg-status.ok{background:#E3F4FC;color:#0E7FB8;}
   .tg-status.pending{background:var(--coral-bg);color:var(--coral);}
   .tg-settings{margin-bottom:14px;}
-  .tg-settings label{font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;}
+  .tg-settings label{font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
   .tg-settings .hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;}
   .bulk-row{display:flex;gap:8px;margin-bottom:14px;}
   .copy-note{
@@ -563,7 +554,7 @@
   .login-wrap p{font-size:13px;color:var(--muted);margin:0 0 22px;max-width:320px;line-height:1.5;}
   #google-signin-btn{display:flex;justify-content:center;}
   .gcid-box{width:100%;max-width:320px;text-align:left;}
-  .gcid-box label{font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;}
+  .gcid-box label{font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
   .gcid-box .hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;text-align:left;}
 
   .torneio-bar{
@@ -784,7 +775,6 @@
         <button class="hamburger-btn" id="btn-hamburger" aria-label="Abrir menu">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
-        <button class="theme-toggle-icon" id="btn-theme-icon" aria-label="Alternar modo claro/escuro">🌙</button>
         <h1 id="header-title">Futevôlei</h1>
         <div id="torneio-bar"></div>
       </header>
@@ -1179,6 +1169,13 @@ let telaCircuitos = null; // null | "lista" | id do circuito aberto
 let circuitosList = null;
 let circuitosLoading = false;
 let mostrarFormNovoCircuito = false;
+// Logo já processada (data URL), aguardando o organizador confirmar o nome antes de entrar em
+// state.patrocinadores — substituiu um prompt() nativo (bloqueante e sem nenhum feedback de erro
+// se o navegador recusasse/cancelasse silenciosamente, o que fazia o upload "sumir" sem aviso).
+// Mesmo formulário inline serve tanto pra adicionar (editandoPatrocinadorId null) quanto pra
+// editar um patrocinador já existente (nome e/ou logo).
+let novoPatrocinadorLogo = null;
+let editandoPatrocinadorId = null;
 let adminNotificationEmailCache = "";
 let valorDiariaCache = 70; // valor da diária configurável pelo admin — atualizado via /api/config-get
 let cuponsList = null;
@@ -3502,6 +3499,7 @@ async function compartilharLinkInscricao(){
   }
 }
 function acharDuplaPorId(id){ return state.duplas.find(d=>d.id===id); }
+function acharPatrocinadorPorId(id){ return state.patrocinadores.find(p=>p.id===id); }
 function aprovarDupla(id){
   const d = acharDuplaPorId(id);
   if(!d) return;
@@ -4438,7 +4436,7 @@ function renderTelaPix(){
       ${pg.dias} diária${pg.dias>1?"s":""} (${formatarDataBR(state.dataInicio)} – ${formatarDataBR(state.dataFim)}) = <b>R$ ${pg.valor.toFixed(2).replace(".", ",")}</b>
     </div>
     ${pg.qrCodeBase64 ? `<img src="data:image/png;base64,${pg.qrCodeBase64}" alt="QR Code Pix" style="width:220px;height:220px;margin:0 auto 14px;display:block;border-radius:10px;border:1px solid var(--border);">` : ""}
-    <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Pix copia e cola</label>
+    <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Pix copia e cola</label>
     <textarea readonly style="width:100%;min-height:70px;font-family:'DM Mono',monospace;font-size:11px;padding:8px;border-radius:8px;border:1px solid var(--border);margin-bottom:10px;" onclick="this.select()">${escapeHtml(pg.copiaCola)}</textarea>
     <button class="btn secondary" id="btn-copiar-pix" style="margin-bottom:8px;">Copiar código</button>
     <button class="btn ghost" id="btn-verificar-pix">Já paguei, verificar</button>
@@ -4604,13 +4602,13 @@ function renderTorneiosScreen(){
   if(mostrarFormNovoTorneio){
     const hoje = hojeLocalISO();
     html += `<div class="card" style="border:1.5px solid var(--ocean);">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do torneio</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Nome do torneio</label>
       <input type="text" id="input-novo-nome" placeholder="Campeonato de Futevôlei" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Data de início</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Data de início</label>
       <input type="date" id="input-novo-inicio" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Data de fim</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Data de fim</label>
       <input type="date" id="input-novo-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Cupom de desconto (opcional)</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Cupom de desconto (opcional)</label>
       <input type="text" id="input-novo-cupom" placeholder="ex: JOAO10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;text-transform:uppercase;margin-bottom:4px;">
       <div id="feedback-cupom-novo-torneio" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
       <div id="preview-valor-diarias" style="font-size:13px;font-weight:600;color:var(--heading);margin-bottom:10px;">${textoPreviewValorDiarias(hoje, hoje)}</div>
@@ -4645,7 +4643,7 @@ function renderTorneiosScreen(){
       `<option value="${key}" ${torneiosFiltroStatus===key ? "selected" : ""}>${ROTULO_STATUS_GERAL[key]}</option>`
     ).join("");
     html += `<div style="margin-bottom:14px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Filtrar por status</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Filtrar por status</label>
       <select id="select-filtro-status" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">${opcoesFiltro}</select>
     </div>`;
 
@@ -4716,15 +4714,15 @@ function renderCircuitosListaScreen(){
 
   if(mostrarFormNovoCircuito){
     html += `<div class="card" style="border:1.5px solid var(--ocean);">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do circuito</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Nome do circuito</label>
       <input type="text" id="input-novo-circuito-nome" placeholder="ex: Circuito Verão 2026" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
       <div class="hint" style="margin-bottom:8px;">Pontos por colocação (editável depois a qualquer momento):</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Campeão</label><input type="number" id="input-pt-campeao" value="100" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
-        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Vice</label><input type="number" id="input-pt-vice" value="70" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
-        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">3º lugar</label><input type="number" id="input-pt-terceiro" value="50" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
-        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">4º lugar</label><input type="number" id="input-pt-quarto" value="40" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
-        <div style="grid-column:span 2;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Participação (demais duplas)</label><input type="number" id="input-pt-participacao" value="10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Campeão</label><input type="number" id="input-pt-campeao" value="100" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Vice</label><input type="number" id="input-pt-vice" value="70" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">3º lugar</label><input type="number" id="input-pt-terceiro" value="50" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">4º lugar</label><input type="number" id="input-pt-quarto" value="40" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div style="grid-column:span 2;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Participação (demais duplas)</label><input type="number" id="input-pt-participacao" value="10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn secondary" id="btn-cancelar-novo-circuito" style="flex:1;">Cancelar</button>
@@ -4762,15 +4760,15 @@ function renderCircuitoDetalheScreen(circuito){
     <div class="section-title">${escapeHtml(circuito.nome)}</div>
 
     <div class="card">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do circuito</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Nome do circuito</label>
       <input type="text" id="input-circuito-nome" data-circuito="${circuito.id}" value="${escapeHtml(circuito.nome)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:14px;">
       <div class="hint" style="margin-bottom:8px;">Pontos por colocação:</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Campeão</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-campeao" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.campeao}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
-        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Vice</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-vice" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.vice}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
-        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">3º lugar</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-terceiro" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.terceiroLugar}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
-        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">4º lugar</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-quarto" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.quartoLugar}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
-        <div style="grid-column:span 2;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Participação (demais duplas)</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-participacao" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.participacao}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Campeão</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-campeao" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.campeao}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Vice</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-vice" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.vice}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">3º lugar</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-terceiro" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.terceiroLugar}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">4º lugar</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-quarto" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.quartoLugar}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
+        <div style="grid-column:span 2;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Participação (demais duplas)</label><input type="number" class="input-circuito-pt" id="input-circuito-pt-participacao" data-circuito="${circuito.id}" value="${circuito.pontuacaoTabela.participacao}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
       </div>
     </div>
 
@@ -4809,7 +4807,7 @@ function renderConfigAdminScreen(){
     <div class="section-sub">Configurações globais do app — valem para todo mundo que acessar.</div>
     <div class="card" style="border:1.5px solid var(--ocean);margin-bottom:14px;">
       <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">🔑 Google Client ID</div>
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Client ID</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Client ID</label>
       <input type="text" id="input-gcid-admin" placeholder="algo.apps.googleusercontent.com" value="${escapeHtml(gcidAtual)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;">
       <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Criado gratuitamente no Google Cloud Console (OAuth), autorizado para este domínio. Salvo aqui uma vez, vale para todo mundo que acessar o app — sem precisar configurar em cada navegador.</div>
       <div style="display:flex;gap:8px;">
@@ -4819,14 +4817,14 @@ function renderConfigAdminScreen(){
     </div>
     <div class="card" style="border:1.5px solid var(--ocean);margin-bottom:14px;">
       <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">📧 E-mail para notificações</div>
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">E-mail</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">E-mail</label>
       <input type="email" id="input-email-admin" placeholder="voce@exemplo.com" value="${escapeHtml(adminNotificationEmailCache)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
       <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Recebe um aviso sempre que um novo campeonato for solicitado, e outras notificações do sistema.</div>
       <button class="btn" id="btn-salvar-email-admin">Salvar e-mail</button>
     </div>
     <div class="card" style="border:1.5px solid var(--ocean);">
       <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">💵 Valor da diária</div>
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Valor (R$)</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Valor (R$)</label>
       <input type="text" inputmode="numeric" id="input-valor-diaria-admin" value="${formatarCentavosBRL(String(Math.round(valorDiariaCache*100)))}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;">
       <div class="hint" style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.4;">Usado no cálculo automático do Pix (dias × valor da diária) em todos os campeonatos novos.</div>
       <button class="btn" id="btn-salvar-valor-diaria-admin">Salvar valor</button>
@@ -4848,7 +4846,7 @@ function renderAprovacoesScreen(){
     `<option value="${key}" ${aprovacoesFiltroStatus===key ? "selected" : ""}>${ROTULO_STATUS_GERAL[key]}</option>`
   ).join("");
   html += `<div style="margin-bottom:14px;">
-    <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Filtrar por status</label>
+    <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Filtrar por status</label>
     <select id="select-filtro-status-aprovacoes" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">${opcoesFiltro}</select>
   </div>`;
 
@@ -4882,14 +4880,14 @@ function renderAprovacoesScreen(){
       <div class="sub" style="margin-bottom:10px;">Organizador: ${escapeHtml(t.ownerName||"—")} · ${escapeHtml(t.ownerEmail||"—")}</div>
       ${t.cupomAplicado ? `<div class="sub" style="margin-bottom:10px;">🎟️ Cupom aplicado: <b>${escapeHtml(t.cupomAplicado.nome)}</b> (-${t.cupomAplicado.percentual}%)</div>` : ""}
       <div style="margin-bottom:6px;">
-        <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Início</label>
+        <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Início</label>
         <input type="date" data-aprov-inicio="${t.id}" value="${t.dataInicio||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:12px;box-sizing:border-box;margin-bottom:6px;overflow:hidden;">
-        <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Fim</label>
+        <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Fim</label>
         <input type="date" data-aprov-fim="${t.id}" value="${t.dataFim||""}" style="width:100%;min-width:0;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:12px;box-sizing:border-box;overflow:hidden;">
       </div>
       <div id="preview-valor-aprov-${t.id}" style="font-size:11px;color:var(--muted);margin-bottom:4px;">${textoPreviewValorDiarias(t.dataInicio, t.dataFim)}</div>
       <div style="margin-bottom:10px;">
-        <label style="font-size:11px;font-weight:600;color:var(--heading);display:block;margin-bottom:4px;">Valor do Pix (R$) — zere para liberar de graça</label>
+        <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Valor do Pix (R$) — zere para liberar de graça</label>
         <input type="text" inputmode="numeric" data-aprov-valor="${t.id}" value="${formatarCentavosBRL(String(Math.round((t.valorOverride ?? calcularValorComCupomLocal(calcularDiasLocal(t.dataInicio, t.dataFim), t.cupomAplicado)) * 100)))}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 8px;font-size:13px;font-family:'DM Mono',monospace;box-sizing:border-box;">
       </div>
       <div style="display:flex;gap:8px;">
@@ -4949,17 +4947,17 @@ function renderCuponsGerenciarScreen(){
   if(mostrarFormNovoCupom){
     const hoje = hojeLocalISO();
     html += `<div class="card" style="border:1.5px solid var(--ocean);">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Nome do cupom</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Nome do cupom</label>
       <input type="text" id="input-novo-cupom-nome" placeholder="ex: JOAO10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Percentual de desconto (%)</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Percentual de desconto (%)</label>
       <input type="number" id="input-novo-cupom-percentual" min="1" max="100" step="1" placeholder="10" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Início da validade</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Início da validade</label>
       <input type="date" id="input-novo-cupom-inicio" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Fim da validade</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Fim da validade</label>
       <input type="date" id="input-novo-cupom-fim" value="${hoje}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Máximo de usos (opcional)</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Máximo de usos (opcional)</label>
       <input type="number" id="input-novo-cupom-max-usos" min="1" step="1" placeholder="deixe em branco para ilimitado" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">% de comissão a repassar por uso (opcional)</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">% de comissão a repassar por uso (opcional)</label>
       <input type="number" id="input-novo-cupom-comissao" min="0" max="100" step="0.1" placeholder="deixe em branco se não houver comissão" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;margin-bottom:6px;">
       <div class="hint" style="margin-bottom:14px;">Percentual do valor pago do torneio a repassar pra quem indicou o cupom (ex: parceiro/influenciador) — separado do desconto dado ao cliente. Aparece no Relatório de uso e pode ser ajustado depois.</div>
       <div style="display:flex;gap:8px;">
@@ -4980,7 +4978,7 @@ function renderCuponsGerenciarScreen(){
       `<option value="${key}" ${cuponsFiltroStatus===key ? "selected" : ""}>${ROTULO_STATUS_CUPOM[key]}</option>`
     ).join("");
     html += `<div style="margin-bottom:14px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Filtrar por status</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Filtrar por status</label>
       <select id="select-filtro-status-cupons" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">${opcoesFiltroCupom}</select>
     </div>`;
 
@@ -5059,14 +5057,14 @@ function renderRelatorioCuponsScreen(){
 
   html += `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
     <div style="flex:1;min-width:140px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Filtrar por cupom</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Filtrar por cupom</label>
       <select id="select-relatorio-filtro-cupom" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">
         <option value="todos" ${relatorioFiltroCupom==="todos"?"selected":""}>Todos os cupons</option>
         ${nomesCupons.map(n=> `<option value="${escapeHtml(n)}" ${relatorioFiltroCupom===n?"selected":""}>${escapeHtml(n)}</option>`).join("")}
       </select>
     </div>
     <div style="flex:1;min-width:140px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Repasse</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Repasse</label>
       <select id="select-relatorio-filtro-repasse" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">
         <option value="todos" ${relatorioFiltroRepasse==="todos"?"selected":""}>Todos</option>
         <option value="pendente" ${relatorioFiltroRepasse==="pendente"?"selected":""}>Pendente</option>
@@ -5209,7 +5207,7 @@ function renderLogAdminScreen(){
 
   html += `<div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
     <div style="flex:1;min-width:160px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Torneio</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Torneio</label>
       <select id="select-log-filtro-torneio" ${jaCarregado?"":"disabled"} style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);${jaCarregado?"":"opacity:.6;"}">
         <option value="todos" ${logsFiltroTorneio==="todos"?"selected":""}>Todos os torneios</option>
         ${torneiosNoLog.map(t=> `<option value="${escapeHtml(t.id)}" ${logsFiltroTorneio===t.id?"selected":""}>${escapeHtml(t.nome)}${t.codigo ? ` (#${escapeHtml(t.codigo)})` : ""}</option>`).join("")}
@@ -5217,7 +5215,7 @@ function renderLogAdminScreen(){
       ${jaCarregado ? "" : `<div class="hint" style="font-size:11px;">Disponível depois de gerar o relatório</div>`}
     </div>
     <div style="flex:1;min-width:160px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Função</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Função</label>
       <select id="select-log-filtro-tipo" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--white);color:var(--ink);">
         <option value="todos" ${logsFiltroTipo==="todos"?"selected":""}>Todas</option>
         ${Object.keys(ROTULO_TIPO_LOG).map(key=> `<option value="${key}" ${logsFiltroTipo===key?"selected":""}>${ROTULO_TIPO_LOG[key]}</option>`).join("")}
@@ -5226,12 +5224,12 @@ function renderLogAdminScreen(){
   </div>
   <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
     <div style="flex:1;min-width:140px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">De</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">De</label>
       <input type="date" id="input-log-filtro-data-inicio" value="${logsFiltroDataInicio}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:6px;">
       <input type="time" id="input-log-filtro-hora-inicio" value="${logsFiltroHoraInicio}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
     </div>
     <div style="flex:1;min-width:140px;">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Até</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Até</label>
       <input type="date" id="input-log-filtro-data-fim" value="${logsFiltroDataFim}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:6px;">
       <input type="time" id="input-log-filtro-hora-fim" value="${logsFiltroHoraFim}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:13px;">
     </div>
@@ -5439,7 +5437,7 @@ function badgeStatusDupla(status, ativacaoVia){
 
 function renderCardInscricaoLink(){
   let html = `<div class="card">
-    <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Link de inscrição</label>`;
+    <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Link de inscrição</label>`;
   if(state.drawn){
     html += `<div class="hint">O sorteio já foi feito — as inscrições estão encerradas.</div>`;
   } else if(!state.cloudId){
@@ -5456,7 +5454,7 @@ function renderCardInscricaoLink(){
         <button class="btn secondary" id="btn-compartilhar-link-inscricao" style="flex:1;">🔗 Copiar link</button>
         <button class="btn secondary" id="btn-toggle-link-inscricao" style="flex:1;${state.inscricaoLink.ativo?"":"border-color:var(--coral);color:var(--coral);"}">${state.inscricaoLink.ativo?"⏸️ Fechar inscrições":"▶️ Reabrir inscrições"}</button>
       </div>
-      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Limite de vagas (em branco = sem limite)</label>
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Limite de vagas (em branco = sem limite)</label>
       <input type="number" min="1" step="1" id="input-vagas-inscricao" placeholder="ex: 16" value="${state.inscricaoLink.vagas ?? ""}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">`;
   }
   html += `</div>`;
@@ -5472,7 +5470,7 @@ function renderSorteio(){
 
   if(!state.drawn){
     html += `<div class="card">
-      <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:8px;">Formato do campeonato</label>
+      <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;">Formato do campeonato</label>
       <div style="display:flex;gap:8px;">
         <div class="chip ${state.formato!=="eliminacao"?"active":""}" data-formato="grupos" style="flex:1;text-align:center;">Por grupos</div>
         <div class="chip ${state.formato==="eliminacao"?"active":""}" data-formato="eliminacao" style="flex:1;text-align:center;">Eliminação</div>
@@ -5486,13 +5484,13 @@ function renderSorteio(){
 
     if(state.formato==="eliminacao"){
       html += `<div class="card">
-        <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Duplas que avançam para o mata-mata</label>
+        <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Duplas que avançam para o mata-mata</label>
         <input type="number" min="2" step="1" id="input-elim-target" value="${state.elimTarget}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
         <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (2, 4, 8...) e menor que a quantidade total de duplas. É uma meta aproximada — as rodadas continuam até sobrar uma quantidade "fechada", pra ninguém entrar no mata-mata de folga (pode passar um pouco dessa meta pra mais ou pra menos).</div>
       </div>`;
     } else {
       html += `<div class="card">
-        <label style="font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;">Quantidade de grupos</label>
+        <label style="font-size:11px;font-weight:700;color:var(--heading);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Quantidade de grupos</label>
         <input type="number" min="1" step="1" id="input-num-grupos" value="${state.numGrupos}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:10px;padding:9px 12px;font-size:14px;font-family:'DM Mono',monospace;">
         <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;">Precisa ser uma potência de 2 (1, 2, 4, 8...) e dividir a quantidade de duplas em partes iguais, com no mínimo 3 duplas por grupo. Os 2 primeiros de cada grupo avançam para o mata-mata. Marque duplas como <b>🌱 Cabeça de chave</b> na lista abaixo (uma por grupo, opcional) pra garantir que elas caiam em grupos diferentes no sorteio.</div>
       </div>`;
@@ -5956,17 +5954,29 @@ function renderConfiguracoes(){
     </div>
     <div class="card tg-settings">
       <label>Patrocinadores</label>
-      ${state.patrocinadores.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
-        ${state.patrocinadores.map(p=>`<div style="display:flex;align-items:center;gap:10px;background:var(--sand);border-radius:10px;padding:6px 10px;">
+      ${state.patrocinadores.filter(p=>p.id!==editandoPatrocinadorId).length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+        ${state.patrocinadores.filter(p=>p.id!==editandoPatrocinadorId).map(p=>`<div style="display:flex;align-items:center;gap:10px;background:var(--sand);border-radius:10px;padding:6px 10px;">
           <img src="${p.logo}" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;">
           <span style="flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.nome)}</span>
-          <button class="ref-mini-btn ghost" data-remover-patrocinador="${p.id}" style="width:auto;flex:0 0 auto;padding:6px 10px;">🗑️</button>
+          <button class="ref-mini-btn ghost" data-editar-patrocinador="${p.id}" style="width:auto;flex:0 0 auto;padding:6px 8px;">✏️</button>
+          <button class="ref-mini-btn ghost" data-remover-patrocinador="${p.id}" style="width:auto;flex:0 0 auto;padding:6px 8px;">🗑️</button>
         </div>`).join("")}
       </div>` : ""}
-      <label class="btn secondary" style="text-align:center;margin:0;">
-        ➕ Adicionar patrocinador
+      ${(novoPatrocinadorLogo || editandoPatrocinadorId) ? `<div style="display:flex;align-items:center;gap:10px;background:var(--sand);border-radius:10px;padding:8px 10px;margin-bottom:10px;">
+        <img src="${novoPatrocinadorLogo || acharPatrocinadorPorId(editandoPatrocinadorId)?.logo || ""}" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;">
+        <input type="text" id="input-novo-patrocinador-nome" placeholder="Nome do patrocinador" value="${editandoPatrocinadorId ? escapeHtml(acharPatrocinadorPorId(editandoPatrocinadorId)?.nome||"") : ""}" style="flex:1;min-width:0;" autofocus>
+      </div>
+      <label class="btn ghost" style="text-align:center;margin:0 0 8px;display:block;">
+        🔄 ${editandoPatrocinadorId ? "Trocar imagem" : "Escolher outra imagem"}
         <input type="file" accept="image/*" id="input-patrocinador-logo" style="display:none;">
       </label>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="btn-cancelar-patrocinador" style="flex:1;">Cancelar</button>
+        <button class="btn" id="btn-confirmar-patrocinador" style="flex:1;">Salvar</button>
+      </div>` : `<label class="btn secondary" style="text-align:center;margin:0;">
+        ➕ Adicionar patrocinador
+        <input type="file" accept="image/*" id="input-patrocinador-logo" style="display:none;">
+      </label>`}
       <div class="hint">Logo do patrocinador aparece no Placar de TV e na imagem de Stories enquanto este torneio estiver aberto.</div>
     </div>
     <div class="card tg-settings">
@@ -6813,18 +6823,45 @@ function bindEvents(){
   if(inputPatrocinadorLogo) inputPatrocinadorLogo.addEventListener("change", async e=>{
     const file = e.target.files && e.target.files[0];
     if(!file) return;
-    const nome = (prompt("Nome do patrocinador (aparece só como identificação da logo):")||"").trim();
-    if(!nome){ e.target.value = ""; return; }
     showToast("Processando logo...");
     try{
-      const logo = await processarLogoPatrocinador(file);
-      state.patrocinadores.push({ id: crypto.randomUUID(), nome, logo });
-      save(); render();
-      showToast("Patrocinador adicionado!");
+      novoPatrocinadorLogo = await processarLogoPatrocinador(file);
+      render();
     }catch(err){
       showToast("Não foi possível usar essa imagem.");
     }
-    e.target.value = "";
+  });
+  main.querySelectorAll("[data-editar-patrocinador]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      editandoPatrocinadorId = btn.dataset.editarPatrocinador;
+      novoPatrocinadorLogo = null;
+      render();
+    });
+  });
+  const btnCancelarPatrocinador = document.getElementById("btn-cancelar-patrocinador");
+  if(btnCancelarPatrocinador) btnCancelarPatrocinador.addEventListener("click", ()=>{
+    novoPatrocinadorLogo = null;
+    editandoPatrocinadorId = null;
+    render();
+  });
+  const btnConfirmarPatrocinador = document.getElementById("btn-confirmar-patrocinador");
+  if(btnConfirmarPatrocinador) btnConfirmarPatrocinador.addEventListener("click", ()=>{
+    const nome = (document.getElementById("input-novo-patrocinador-nome").value||"").trim();
+    if(!nome){ showToast("Dê um nome para o patrocinador."); return; }
+    if(editandoPatrocinadorId){
+      const p = acharPatrocinadorPorId(editandoPatrocinadorId);
+      if(p){
+        p.nome = nome;
+        if(novoPatrocinadorLogo) p.logo = novoPatrocinadorLogo;
+      }
+      showToast("Patrocinador atualizado!");
+    } else {
+      state.patrocinadores.push({ id: crypto.randomUUID(), nome, logo: novoPatrocinadorLogo });
+      showToast("Patrocinador adicionado!");
+    }
+    novoPatrocinadorLogo = null;
+    editandoPatrocinadorId = null;
+    save(); render();
   });
   main.querySelectorAll("[data-remover-patrocinador]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
@@ -7188,24 +7225,6 @@ function hideLoading(){
   if(overlay) overlay.classList.remove("show");
 }
 
-/* ---------- Modo claro / escuro ---------- */
-const THEME_KEY = "futevolei_tema_v1";
-function aplicarTema(tema){
-  document.documentElement.setAttribute("data-theme", tema==="dark" ? "dark" : "light");
-  const meta = document.getElementById("meta-theme-color");
-  if(meta) meta.setAttribute("content", tema==="dark" ? "#000000" : "#205527");
-  const icone = document.getElementById("btn-theme-icon");
-  if(icone) icone.textContent = tema==="dark" ? "☀️" : "🌙";
-}
-function temaAtual(){
-  return document.documentElement.getAttribute("data-theme")==="dark" ? "dark" : "light";
-}
-function alternarTema(){
-  const novo = temaAtual()==="dark" ? "light" : "dark";
-  try{ localStorage.setItem(THEME_KEY, novo); }catch(e){}
-  aplicarTema(novo);
-}
-
 /* ============================================================
    MENU LATERAL (sidebar recolhível — substitui a antiga barra inferior)
    No mobile/tablet (<901px) funciona como gaveta (drawer): fica fora da tela por padrão e
@@ -7475,7 +7494,7 @@ function iniciarApitoPublico(ctx){
       <div style="width:100%;text-align:center;font-size:14px;color:var(--muted, #666);margin-bottom:14px;">${escapeHtml(ctx.a||"—")} × ${escapeHtml(ctx.b||"—")}</div>
     </div>
     <div style="padding:0 20px;">
-      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Seu nome (aparece como árbitro da partida)</label>
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Seu nome (aparece como árbitro da partida)</label>
       <input type="text" id="input-apito-nome" value="${escapeHtml(nomeSalvo)}" placeholder="Seu nome" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:12px;">
       <button class="btn primary" id="btn-apito-comecar" style="width:100%;">Começar a apitar</button>
     </div>
@@ -7655,29 +7674,29 @@ function renderInscricaoPublicaForm(erro){
 
       <div style="border:1.5px solid #3a5a44;border-radius:12px;padding:14px;margin-bottom:14px;">
         <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">Jogador 1</div>
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Nome completo</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Nome completo</label>
         <input type="text" id="input-j1-nome" placeholder="Nome completo" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Telefone</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Telefone</label>
         <input type="tel" id="input-j1-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">E-mail</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">E-mail</label>
         <input type="email" id="input-j1-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">CPF (opcional)</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">CPF (opcional)</label>
         <input type="text" inputmode="numeric" id="input-j1-cpf" placeholder="000.000.000-00" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
       </div>
 
       <div style="border:1.5px solid #3a5a44;border-radius:12px;padding:14px;margin-bottom:18px;">
         <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">Jogador 2</div>
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Nome completo</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Nome completo</label>
         <input type="text" id="input-j2-nome" placeholder="Nome completo" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Telefone</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Telefone</label>
         <input type="tel" id="input-j2-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">E-mail</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">E-mail</label>
         <input type="email" id="input-j2-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">CPF (opcional)</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">CPF (opcional)</label>
         <input type="text" inputmode="numeric" id="input-j2-cpf" placeholder="000.000.000-00" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
       </div>
 
-      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Nome da dupla</label>
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;">Nome da dupla</label>
       <input type="text" id="input-nome-dupla" placeholder="Sugerido a partir dos nomes acima" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:18px;">
 
       <button class="btn primary" id="btn-inscricao-enviar" style="width:100%;">Continuar pro Pix</button>
@@ -7769,7 +7788,7 @@ function renderInscricaoPublicaPix(){
     <div style="padding:16px 20px 40px;max-width:420px;margin:0 auto;text-align:center;">
       <div style="font-weight:700;font-size:16px;color:var(--heading,#205527);margin-bottom:10px;">R$ ${pg.valor.toFixed(2).replace(".", ",")}</div>
       ${pg.qrCodeBase64 ? `<img src="data:image/png;base64,${pg.qrCodeBase64}" alt="QR Code Pix" style="width:220px;height:220px;margin:0 auto 14px;display:block;border-radius:10px;border:1px solid #ddd;">` : ""}
-      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;text-align:left;">Pix copia e cola</label>
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;text-align:left;text-transform:uppercase;letter-spacing:.04em;">Pix copia e cola</label>
       <textarea readonly style="width:100%;min-height:70px;font-family:'DM Mono',monospace;font-size:11px;padding:8px;border-radius:8px;border:1px solid #ddd;margin-bottom:10px;" onclick="this.select()">${escapeHtml(pg.copiaCola)}</textarea>
       <button class="btn secondary" id="btn-inscricao-copiar" style="width:100%;margin-bottom:8px;">Copiar código</button>
       <button class="btn ghost" id="btn-inscricao-verificar" style="width:100%;">Já paguei, verificar</button>
@@ -7875,11 +7894,6 @@ if(__apitarFlag && __tvTorneioId && __apitarMatch && __apitarToken){
       fecharSidebarMobile();
     });
   });
-  const btnThemeIcon = document.getElementById("btn-theme-icon");
-  if(btnThemeIcon){
-    btnThemeIcon.textContent = temaAtual()==="dark" ? "☀️" : "🌙";
-    btnThemeIcon.addEventListener("click", alternarTema);
-  }
   const btnHamburger = document.getElementById("btn-hamburger");
   if(btnHamburger) btnHamburger.addEventListener("click", alternarSidebar);
   const btnSidebarCollapse = document.getElementById("btn-sidebar-collapse");

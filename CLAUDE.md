@@ -457,6 +457,16 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     canvas inteiro (`drawStoryCanvas()`) — como esse redesenho roda a mesma lógica de
     medir-e-redimensionar do zero, a altura final do Story já sai contando com a faixa de
     patrocinadores, sem precisar de nenhum código extra pra isso.
+    **Bug corrigido**: o fluxo original pedia o nome do patrocinador via `prompt()` nativo do
+    navegador — se isso fosse cancelado ou bloqueado silenciosamente (comum em PWA instalado/
+    navegador in-app), o upload abortava sem nenhum aviso (`if(!nome){ e.target.value=""; return; }`),
+    dando a impressão de que a logo "sumia" depois de escolhida. Substituído por um formulário
+    inline dentro do próprio card (`novoPatrocinadorLogo`/`editandoPatrocinadorId`, mesmo padrão
+    de "criar novo X" usado em Circuitos/Cupons/Torneios) — a logo é processada e mostrada em
+    preview imediatamente, o nome é digitado num `<input>` normal, e só o clique em "Salvar"
+    grava em `state.patrocinadores`. O mesmo formulário também virou o fluxo de edição (botão
+    ✏️ ao lado do 🗑️ em cada patrocinador já cadastrado): pré-preenche o nome, permite trocar só
+    a imagem (mantendo o nome) ou só o nome (mantendo a imagem já salva).
 25. **CPF opcional em `jogador1`/`jogador2`** (`{nomeCompleto, tel, email, cpf}`, editável tanto
     no formulário manual da aba Duplas quanto no formulário de inscrição pública): existe hoje só
     pra dar suporte ao ranking por circuito (item 26) — precisa de uma chave estável de
@@ -559,6 +569,37 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       `drawGroupsSection`/`drawTeamBar`/`drawBracket`, que usam `GOLD`/`GOLD_BG` no canvas) têm
       identidade visual própria pensada pra serem vistas de longe/postadas — não fazem parte
       desse pente-fino, mantidos exatamente como estavam.
+29. **App sempre no modo escuro** (pedido explícito — visual "control room" fiel a uma
+    referência externa, sem alternador claro/escuro): o script no `<head>` seta
+    `data-theme="dark"` incondicionalmente (antes lia `localStorage`/`prefers-color-scheme`); o
+    botão `#btn-theme-icon` e as funções `aplicarTema`/`temaAtual`/`alternarTema` foram
+    removidos por completo (não é código morto de propósito — o app não tem mais noção de "modo
+    claro" alcançável pelo usuário). O bloco `:root` (claro) continua existindo no CSS só como
+    fallback defensivo caso o atributo `data-theme` não seja aplicado por algum motivo — na
+    prática, inatingível. As variáveis do tema escuro (`--sand`, `--white`, `--ocean`, `--ink`,
+    `--muted`, `--heading` etc., em `[data-theme="dark"]`) foram alinhadas pra bater exatamente
+    com as do menu lateral (`--sidebar-bg`, `--sidebar-accent` etc. — mesmo preto de fundo,
+    mesmo verde vívido de destaque), então hoje é uma paleta única — antes eram dois tons de
+    escuro/verde sutilmente diferentes (um pro menu, outro pro resto do app).
+30. **Labels em caixa alta no app inteiro** (mesmo tratamento tipográfico já usado no menu
+    lateral e nos `.stat .lbl`/`.jogador-group label`, que já eram assim): todo `<label>` de
+    campo de formulário (Configurações, Aprovações, Cupons, Circuitos, Duplas, inscrição
+    pública, apito público) ganhou `text-transform:uppercase;letter-spacing:.04em;` — antes só
+    alguns lugares seguiam essa convenção, a maioria (principalmente os "criar novo X" e o card
+    de Configurações) usava texto normal. **Efeito colateral aceito**: como alguns botões de
+    upload de arquivo são `<label class="btn ...">` dentro do mesmo contêiner que essa regra
+    mira (`.tg-settings label`), o texto desses botões (ex: "Escolher imagem") também virou
+    caixa alta — mantido assim de propósito, o resultado ficou consistente com o resto do
+    visual "control room" em vez de destoar.
+31. **Header fixo no topo** (`header{position:sticky;top:0;z-index:20;}`, era `position:relative`):
+    acompanha o menu lateral, que já era fixo (`position:fixed` na gaveta mobile,
+    `position:sticky` na coluna do desktop) — antes só o menu ficava fixo, o cabeçalho (banner
+    verde + nome do torneio + "Trocar torneio") rolava junto com o conteúdo. `#torneio-bar` (e os
+    banners de "somente leitura"/"pré-liberado" que ele injeta) fica dentro do próprio `<header>`
+    no HTML, então já fica fixo de graça, sem precisar de nenhuma mudança adicional.
+    `position:sticky` (em vez de `fixed`) porque continua funcionando sem precisar compensar a
+    altura do header com padding manual em nenhum lugar — quem rola é sempre `body`/`html` (o
+    app não usa scroll interno em `.app`/`main`), então basta isso pra "grudar" no topo.
 
 ## Convenções
 
