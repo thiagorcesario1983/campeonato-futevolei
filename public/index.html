@@ -1975,6 +1975,12 @@ function abrirTorneioComDados(data){
   verificarPixAoAbrir();
   if(state.drawn) refreshTelegramStatus();
   checkElimNotifications();
+  // Cobre o torneio já concluído ANTES de ser vinculado a um circuito (ver
+  // verificarEnvioResultadoCircuito): sem isso, o envio só acontecia dentro de save(), então só
+  // abrir o torneio recém-vinculado não bastava — precisava editar alguma coisa nele pra "forçar"
+  // um save(). Chamado aqui, roda assim que o torneio abre já sabendo do vínculo (state.circuitoIds
+  // acima veio fresco do servidor).
+  verificarEnvioResultadoCircuito();
   if(ehAdmin() || torneioEstaAtivo().ok) showToast(`"${data.nome}" carregado!`);
 }
 
@@ -2104,6 +2110,10 @@ async function refreshTorneioAtual(chamadaInicial){
       if(chamadaInicial) verificarPixAoAbrir();
       if(state.drawn) refreshTelegramStatus();
       checkElimNotifications();
+      // Mesmo raciocínio de abrirTorneioComDados: cobre o caso de vincular a um circuito um
+      // torneio que já está aberto (ex: noutro aparelho) — o polling periódico traz o
+      // circuitoIds novo e essa chamada pega o resultado na hora, sem esperar um save() qualquer.
+      verificarEnvioResultadoCircuito();
     }
   }catch(e){
     console.error("refreshTorneioAtual falhou:", e && e.message ? e.message : e); // mantém os dados locais que já tinha
