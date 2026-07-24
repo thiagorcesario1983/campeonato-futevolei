@@ -621,6 +621,43 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     `position:sticky` (em vez de `fixed`) porque continua funcionando sem precisar compensar a
     altura do header com padding manual em nenhum lugar — quem rola é sempre `body`/`html` (o
     app não usa scroll interno em `.app`/`main`), então basta isso pra "grudar" no topo.
+32. **Marcar várias caixinhas em "Torneios neste circuito" só processava uma** (bug reportado
+    com print da tela). Causa: cada mudança de caixinha (`data-circuito-torneio`) disparava seu
+    próprio `atualizarCircuito()` de forma independente e imediata — como o servidor
+    (`circuitoAtualizar`) substitui `torneioIds` por inteiro (sem merge, ver item 26), duas ou
+    mais chamadas concorrentes (cada uma com um snapshot diferente de "quais estão marcadas
+    agora no DOM") competiam entre si, e a última resposta a chegar vencia — podendo derrubar
+    seleções feitas entre o clique e a resposta chegar. Piorava porque `atualizarCircuito()`
+    chama `render()` ao concluir, recriando os elementos de checkbox (e seus listeners) no meio
+    da sequência de cliques do usuário. Corrigido trocando o modelo de "salva a cada clique" por
+    um botão explícito **"💾 Salvar vínculos"**: as caixinhas agora só marcam/desmarcam no DOM,
+    sem nenhuma chamada de rede; o clique no botão lê o estado final uma única vez, calcula o
+    diff contra `circuito.torneioIds` anterior (só quem foi **adicionado** agora entra na fila de
+    processamento — quem já estava vinculado não é reprocessado à toa) e manda uma única
+    requisição pra `atualizarCircuito`. **Mesma categoria de risco de outros pontos do app que
+    leem "o estado atual do DOM" de forma assíncrona** (ver itens 1/13/16/17): sempre ler o
+    snapshot final uma vez só, nunca por evento individual quando o resultado de cada evento vai
+    sobrescrever o mesmo recurso compartilhado no servidor.
+    - **Auditoria do processamento**: cada torneio na lista agora mostra um status claro —
+      não vinculado / vinculado sem processar ainda / processado com sucesso (com timestamp) /
+      erro / ainda não concluído (com a mensagem exata) — usando um novo estado só de memória
+      `statusProcessamentoCircuito` (chave = torneioId), preenchido tanto pelo fluxo automático
+      quanto pelos botões manuais por linha (**"⚙️ Processar agora"**, **"🔁 Tentar novamente"**,
+      **"🔍 Verificar novamente"**, **"↻ Recalcular"** — todos chamam a mesma função, só mudam de
+      rótulo conforme o estado atual). Pra viabilizar isso sem duplicar lógica,
+      `enviarResultadoRetroativoParaTorneio` foi separada em duas: `calcularResultadoRetroativo`
+      (só calcula, sem enviar nada — dry-run) e `enviarResultadoRetroativoParaTorneio` (chama a
+      primeira e só faz o POST se `status==="pronto"`); as duas agora **sempre devolvem um
+      status** (`{status:"sucesso"|"erro"|"nao_concluido"|"pronto", mensagem?, colocacoes?}`) em
+      vez de silenciosamente não fazer nada — antes, qualquer falha (torneio não encontrado, rede
+      fora, torneio ainda não terminou) só aparecia num `console.error`, sem nenhum jeito de saber
+      pela UI que algo não tinha sido processado.
+    - **Link "🔍 Ver dados"** por torneio já processado expande um painel inline mostrando cada
+      `colocacoes[]` gravado de verdade em `circuito.resultados[torneioId]` (posição rotulada via
+      `rotuloPosicaoCircuito()`, nome do jogador, CPF mascarado com `formatarCPF()` ou "sem CPF")
+      — usa o dado já salvo no servidor (não um cache local da última tentativa), então sempre
+      reflete o que está realmente gravado, útil pra auditar se o ranking está somando os
+      jogadores certos.
 
 ## Convenções
 
