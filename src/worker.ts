@@ -2599,6 +2599,10 @@ async function saveCircuitosIndex(env: Env, lista: Circuito[]): Promise<void> {
   await env.DB.put("circuitos:index", JSON.stringify(lista));
 }
 
+// Circuito é uma feature admin-only (agrupa torneios de qualquer organizador num ranking
+// oficial curado pela plataforma) — só quem está em ADMIN_EMAILS pode criar/listar. O front já
+// esconde a aba inteira pra quem não é admin; esta checagem é a mesma regra aplicada no servidor
+// (nunca confiar só na UI, mesmo padrão do resto do app).
 async function circuitoCriar(request: Request, env: Env): Promise<Response> {
   let body: any;
   try {
@@ -2608,6 +2612,7 @@ async function circuitoCriar(request: Request, env: Env): Promise<Response> {
   }
   const solicitanteEmail = await emailAutenticado(request, env);
   if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Somente administradores podem criar circuitos" }, 403);
 
   const nome = String(body.nome || "").trim();
   if (!nome) return json({ error: "Informe o nome do circuito" }, 400);
@@ -2637,13 +2642,14 @@ async function circuitoCriar(request: Request, env: Env): Promise<Response> {
   return json({ ok: true, circuito });
 }
 
-// Organizador enxerga só os próprios circuitos; admin enxerga todos (mesmo padrão de torneiosList).
+// Admin-only (ver comentário de circuitoCriar acima) — lista todos os circuitos, não só os que
+// o próprio admin criou (podem ter sido criados por outro admin da allowlist).
 async function circuitosList(request: Request, env: Env): Promise<Response> {
   const solicitanteEmail = await emailAutenticado(request, env);
   if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Somente administradores podem ver circuitos" }, 403);
   const lista = await getCircuitosIndex(env);
-  const meus = ehAdmin(solicitanteEmail, env) ? lista : lista.filter((c) => c.ownerEmail === solicitanteEmail);
-  return json({ circuitos: meus });
+  return json({ circuitos: lista });
 }
 
 async function circuitoAtualizar(request: Request, env: Env): Promise<Response> {
@@ -2825,13 +2831,22 @@ function mascararCPF(cpf: string): string {
   return `${d.slice(0, 3)}.***.***-${d.slice(9)}`;
 }
 
-// Pública (sem auth, como torneiosGetPublico) — agrega todos os resultados do circuito por CPF.
-// Entradas sem CPF (jogador não informou, ou dupla sem jogador1/jogador2 detalhado) aparecem no
-// resultado individual do torneio mas nunca agregam com outro torneio — ficam de fora daqui.
+// Pública (sem auth, como torneiosGetPublico) — agrega os resultados do circuito em dois modos
+// possíveis (?modo=individual|dupla, "individual" por padrão):
+// - "individual": por CPF de cada jogador. Entradas sem CPF (jogador não informou, ou dupla sem
+//   jogador1/jogador2 detalhado) aparecem no resultado daquele torneio mas nunca agregam com
+//   outro torneio — ficam de fora daqui.
+// - "dupla": pareia os jogadores da MESMA colocação (mesma dupla, dentro do resultado de um
+//   torneio — colocacoes.duplaNome identifica essa dupla ali dentro) e agrega pela combinação
+//   dos dois CPFs, pra somar pontos de quem jogou junto em mais de um torneio do circuito com o
+//   MESMO parceiro. Se a dupla daquele torneio não tiver os dois CPFs, essa entrada não agrega
+//   com nenhuma outra (chave única por torneio+dupla) — mesma regra de "sem CPF nunca soma entre
+//   torneios" do modo individual, só que aplicada ao par.
 async function circuitoRanking(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const circuitoId = url.searchParams.get("circuito");
   if (!circuitoId) return json({ error: "circuito obrigatório" }, 400);
+  const modo = url.searchParams.get("modo") === "dupla" ? "dupla" : "individual";
 
   const lista = await getCircuitosIndex(env);
   const circuito = lista.find((c) => c.id === circuitoId);
@@ -2845,23 +2860,47 @@ async function circuitoRanking(request: Request, env: Env): Promise<Response> {
     return circuito.pontuacaoTabela.participacao;
   };
 
-  const porCpf = new Map<string, { jogadorNome: string; pontos: number; torneiosDisputados: number }>();
-  for (const resultado of Object.values(circuito.resultados)) {
-    for (const c of resultado.colocacoes) {
-      if (!c.cpf) continue;
-      const atual = porCpf.get(c.cpf) || { jogadorNome: c.jogadorNome, pontos: 0, torneiosDisputados: 0 };
-      atual.jogadorNome = c.jogadorNome || atual.jogadorNome;
-      atual.pontos += pontosPorPosicao(c.posicao);
-      atual.torneiosDisputados += 1;
-      porCpf.set(c.cpf, atual);
+  let ranking: Array<{ nome: string; cpf?: string; pontos: number; torneiosDisputados: number }>;
+
+  if (modo === "individual") {
+    const porCpf = new Map<string, { nome: string; pontos: number; torneiosDisputados: number }>();
+    for (const resultado of Object.values(circuito.resultados)) {
+      for (const c of resultado.colocacoes) {
+        if (!c.cpf) continue;
+        const atual = porCpf.get(c.cpf) || { nome: c.jogadorNome, pontos: 0, torneiosDisputados: 0 };
+        atual.nome = c.jogadorNome || atual.nome;
+        atual.pontos += pontosPorPosicao(c.posicao);
+        atual.torneiosDisputados += 1;
+        porCpf.set(c.cpf, atual);
+      }
     }
+    ranking = [...porCpf.entries()].map(([cpf, v]) => ({ nome: v.nome, cpf: mascararCPF(cpf), pontos: v.pontos, torneiosDisputados: v.torneiosDisputados }));
+  } else {
+    const porDupla = new Map<string, { nome: string; pontos: number; torneiosDisputados: number }>();
+    for (const [torneioId, resultado] of Object.entries(circuito.resultados)) {
+      const grupos = new Map<string, typeof resultado.colocacoes>();
+      for (const c of resultado.colocacoes) {
+        const grupo = grupos.get(c.duplaNome) || [];
+        grupo.push(c);
+        grupos.set(c.duplaNome, grupo);
+      }
+      for (const [duplaNome, entradas] of grupos) {
+        const cpfs = entradas.map((e) => e.cpf).filter((x): x is string => !!x);
+        const key = cpfs.length === entradas.length && cpfs.length > 0 ? [...cpfs].sort().join("+") : `${torneioId}:${duplaNome}`;
+        const nome = entradas.map((e) => e.jogadorNome).join(" & ") || duplaNome;
+        const atual = porDupla.get(key) || { nome, pontos: 0, torneiosDisputados: 0 };
+        atual.nome = nome;
+        atual.pontos += pontosPorPosicao(entradas[0].posicao);
+        atual.torneiosDisputados += 1;
+        porDupla.set(key, atual);
+      }
+    }
+    ranking = [...porDupla.values()].map((v) => ({ nome: v.nome, pontos: v.pontos, torneiosDisputados: v.torneiosDisputados }));
   }
 
-  const ranking = [...porCpf.entries()]
-    .map(([cpf, v]) => ({ jogadorNome: v.jogadorNome, cpf: mascararCPF(cpf), pontos: v.pontos, torneiosDisputados: v.torneiosDisputados }))
-    .sort((a, b) => b.pontos - a.pontos);
+  ranking.sort((a, b) => b.pontos - a.pontos);
 
-  return json({ circuitoNome: circuito.nome, ranking, atualizadoEm: circuito.updatedAt });
+  return json({ circuitoNome: circuito.nome, modo, ranking, atualizadoEm: circuito.updatedAt });
 }
 
 /* ============================================================

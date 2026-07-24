@@ -1163,8 +1163,8 @@ const APROVACOES_POR_PAGINA = 5;
 let syncTimer = null;
 let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" | "cupons" — só usada quando ehAdmin()
 let mostrarFormNovoTorneio = false;
-// Diferente de telaAdmin, disponível pra QUALQUER organizador (não só ehAdmin()) — circuito
-// agrupa torneios do próprio organizador, não é uma função administrativa do app.
+// Circuito é uma feature admin-only (ehAdmin()) — agrupa torneios de QUALQUER organizador num
+// ranking oficial curado pela plataforma, por isso vive atrás do mesmo gate de telaAdmin.
 let telaCircuitos = null; // null | "lista" | id do circuito aberto
 let circuitosList = null;
 let circuitosLoading = false;
@@ -1183,6 +1183,14 @@ let circuitoTorneiosFiltroNome = "";
 let circuitoTorneiosFiltroData = "";
 let circuitoTorneiosPagina = 1;
 const CIRCUITO_TORNEIOS_POR_PAGINA = 10;
+// Painel inline "📊 Ver ranking" dentro da tela de detalhe do circuito — mostra o mesmo ranking
+// da página pública sem precisar sair do app. circuitoRankingAberto guarda o id do circuito com
+// o painel expandido (só um por vez); circuitoRankingCache guarda o último resultado buscado,
+// pra não rebuscar a cada re-render (só quando o circuito ou o modo mudam).
+let circuitoRankingAberto = null;
+let circuitoRankingModo = "individual"; // "individual" | "dupla"
+let circuitoRankingCache = null; // { circuitoId, modo, dados } | null
+let circuitoRankingCarregando = false;
 // Logo já processada (data URL), aguardando o organizador confirmar o nome antes de entrar em
 // state.patrocinadores — substituiu um prompt() nativo (bloqueante e sem nenhum feedback de erro
 // se o navegador recusasse/cancelasse silenciosamente, o que fazia o upload "sumir" sem aviso).
@@ -4691,9 +4699,12 @@ function renderTorneiosScreen(){
     return html;
   }
 
-  // Diferente das telas acima, disponível pra QUALQUER organizador — circuito agrupa torneios
-  // do próprio organizador, não é uma função administrativa (ver CLAUDE.md).
-  if(telaCircuitos){
+  // Circuito é uma feature admin-only (ver CLAUDE.md) — agrupa torneios de qualquer organizador
+  // num ranking oficial curado pela plataforma, por isso vive atrás de ehAdmin() e não da tela
+  // normal de Torneios de um organizador comum. Checagem defensiva aqui também (não só no botão
+  // que abre a tela) — se telaCircuitos ficou setado de uma sessão anterior como admin e a conta
+  // atual não é mais admin, não deve renderizar a tela mesmo assim.
+  if(telaCircuitos && ehAdmin()){
     html += renderCircuitosScreen();
     return html;
   }
@@ -4723,7 +4734,7 @@ function renderTorneiosScreen(){
   } else {
     html += `<div style="display:flex;gap:8px;margin-bottom:18px;">
       <button class="btn" id="btn-novo-torneio" style="flex:1;">➕ Criar novo torneio</button>
-      <button class="btn secondary" id="btn-abrir-circuitos" style="flex:1;">🏆 Circuitos</button>
+      ${ehAdmin() ? `<button class="btn secondary" id="btn-abrir-circuitos" style="flex:1;">🏆 Circuitos</button>` : ""}
     </div>`;
   }
 
@@ -4853,6 +4864,72 @@ function renderCircuitosListaScreen(){
   return html;
 }
 
+// Compartilhado entre o painel inline "📊 Ver ranking" (tela de detalhe do circuito, admin) e a
+// página pública compartilhável (iniciarRankingPublico) — mesma apresentação nos dois lugares.
+function medalhaRankingCircuito(indice){
+  if(indice===0) return "🥇";
+  if(indice===1) return "🥈";
+  if(indice===2) return "🥉";
+  return `${indice+1}º`;
+}
+function renderListaRankingCircuito(ranking){
+  if(!ranking || !ranking.length) return `<div class="card empty">Nenhum resultado computado ainda neste circuito.</div>`;
+  // Cor sempre explícita (nunca herdada) nos dois textos abaixo: essa lista também é usada
+  // dentro de .ref-screen (página pública de ranking), que define color:var(--white) no
+  // container pai — como .card também usa var(--white) de FUNDO, um texto sem cor própria
+  // herdava a mesma cor do fundo e ficava literalmente invisível (nome/duplas somem, só a
+  // medalha e os pontos, que já tinham cor própria, apareciam). Essa invisibilidade era o motivo
+  // real do ranking parecer "confuso" — não dava pra ler quem estava em cada posição.
+  return ranking.map((r,i)=> `<div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+    <div style="font-weight:800;font-size:18px;color:var(--heading);width:34px;text-align:center;">${medalhaRankingCircuito(i)}</div>
+    <div style="flex:1;">
+      <div style="font-weight:700;color:var(--ink);">${escapeHtml(r.nome||"—")}</div>
+      <div class="sub" style="font-size:11px;color:var(--muted);">${r.torneiosDisputados} torneio${r.torneiosDisputados!==1?"s":""} disputado${r.torneiosDisputados!==1?"s":""}</div>
+    </div>
+    <div style="font-weight:800;font-size:16px;color:var(--ocean);">${r.pontos} pts</div>
+  </div>`).join("");
+}
+// "Individual" soma pontos por jogador (CPF); "Por dupla" soma pontos de quem jogou junto (par
+// de CPFs) em mais de um torneio do circuito — ver circuitoRanking() no worker. Ajuda a esclarecer
+// o ranking quando jogadores trocam de parceiro entre torneios (motivo do pedido original).
+function tabsModoRankingCircuito(modoAtual){
+  return `<div style="display:flex;gap:8px;margin-bottom:12px;">
+    <button class="btn ${modoAtual==='individual'?'':'ghost'}" data-ranking-modo="individual" style="flex:1;">👤 Individual</button>
+    <button class="btn ${modoAtual==='dupla'?'':'ghost'}" data-ranking-modo="dupla" style="flex:1;">👥 Por dupla</button>
+  </div>`;
+}
+// Painel inline dentro da tela de detalhe do circuito (admin) — mesmo dado da página pública,
+// sem precisar sair do app pra conferir o ranking.
+function painelRankingInlineCircuito(circuito){
+  if(circuitoRankingAberto!==circuito.id) return "";
+  const cache = (circuitoRankingCache && circuitoRankingCache.circuitoId===circuito.id && circuitoRankingCache.modo===circuitoRankingModo) ? circuitoRankingCache.dados : null;
+  let corpo;
+  if(cache && cache.erro){
+    corpo = `<div class="card" style="border-color:var(--coral);color:var(--coral);">⚠️ ${escapeHtml(cache.erro)}</div>`;
+  } else if(!cache){
+    corpo = `<div class="hint">Carregando ranking...</div>`;
+  } else {
+    corpo = renderListaRankingCircuito(cache.ranking);
+  }
+  return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--sand);">
+    ${tabsModoRankingCircuito(circuitoRankingModo)}
+    ${corpo}
+  </div>`;
+}
+async function carregarRankingCircuitoInline(circuitoId, modo){
+  circuitoRankingCarregando = true;
+  try{
+    const res = await fetch(`/api/circuito-ranking?circuito=${encodeURIComponent(circuitoId)}&modo=${modo}`, { cache:"no-store" });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    circuitoRankingCache = { circuitoId, modo, dados: data };
+  }catch(e){
+    circuitoRankingCache = { circuitoId, modo, dados: { ranking: [], erro: e && e.message ? e.message : String(e) } };
+  }
+  circuitoRankingCarregando = false;
+  render();
+}
+
 function renderCircuitoDetalheScreen(circuito){
   const vinculados = new Set(circuito.torneioIds||[]);
   const linkPublico = `${location.origin}${location.pathname}?ranking=1&circuito=${circuito.id}`;
@@ -4898,7 +4975,11 @@ function renderCircuitoDetalheScreen(circuito){
     <div class="card">
       <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">🔗 Ranking público</div>
       <div class="hint" style="margin-bottom:10px;">Qualquer pessoa com este link vê o ranking somado, sem precisar logar.</div>
-      <button class="btn secondary" id="btn-copiar-link-circuito" data-link="${escapeHtml(linkPublico)}" style="width:100%;">Copiar link do ranking</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="btn-copiar-link-circuito" data-link="${escapeHtml(linkPublico)}" style="flex:1;">Copiar link</button>
+        <button class="btn secondary" id="btn-ver-ranking-circuito" data-circuito="${circuito.id}" style="flex:1;">${circuitoRankingAberto===circuito.id ? "Ocultar ranking" : "📊 Ver ranking"}</button>
+      </div>
+      ${painelRankingInlineCircuito(circuito)}
     </div>
 
     <div class="card">
@@ -6653,6 +6734,7 @@ function bindEvents(){
       circuitoTorneiosFiltroNome = "";
       circuitoTorneiosFiltroData = "";
       circuitoTorneiosPagina = 1;
+      circuitoRankingAberto = null;
       render();
     });
   });
@@ -6687,6 +6769,28 @@ function bindEvents(){
     }catch(e){
       prompt("Copie o link abaixo:", url);
     }
+  });
+  const btnVerRankingCircuito = document.getElementById("btn-ver-ranking-circuito");
+  if(btnVerRankingCircuito) btnVerRankingCircuito.addEventListener("click", ()=>{
+    const circuitoId = btnVerRankingCircuito.dataset.circuito;
+    if(circuitoRankingAberto===circuitoId){
+      circuitoRankingAberto = null;
+      render();
+      return;
+    }
+    circuitoRankingAberto = circuitoId;
+    render();
+    const jaTemCache = circuitoRankingCache && circuitoRankingCache.circuitoId===circuitoId && circuitoRankingCache.modo===circuitoRankingModo;
+    if(!jaTemCache) carregarRankingCircuitoInline(circuitoId, circuitoRankingModo);
+  });
+  main.querySelectorAll("[data-ranking-modo]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const modo = btn.dataset.rankingModo;
+      if(modo===circuitoRankingModo || !circuitoRankingAberto) return;
+      circuitoRankingModo = modo;
+      render();
+      carregarRankingCircuitoInline(circuitoRankingAberto, modo);
+    });
   });
   // As caixinhas em si NÃO disparam nada sozinhas (só marcam/desmarcam no DOM) — evita a corrida
   // de "marquei vários e só um foi processado": antes, cada mudança de caixinha disparava seu
@@ -7579,39 +7683,50 @@ function iniciarPlacarTV(torneioId, matchId){
 // Página pública do ranking do circuito (?ranking=1&circuito={id}) — mesmo padrão isolado das
 // outras páginas públicas (apito/inscrição/placar de TV): substitui document.body inteiro, sem
 // tabbar/login, busca só o necessário via rota pública (/api/circuito-ranking).
+// Mesma apresentação (medalhas + alternância individual/dupla) do painel inline da tela de
+// detalhe do circuito (ver renderListaRankingCircuito/tabsModoRankingCircuito) — mas essa página
+// é pública/sem login, então tem seu próprio fetch e bind de eventos (não passa pelo render()/
+// bindEvents() do app principal).
 function iniciarRankingPublico(circuitoId){
+  let modoAtual = "individual";
   document.body.innerHTML = `<div class="ref-screen">
     <div class="ref-top"><div class="ref-label" id="ranking-titulo">🏆 Ranking do circuito</div></div>
-    <div style="padding:16px 20px 40px;max-width:480px;margin:0 auto;" id="ranking-conteudo"><div class="hint">Carregando ranking...</div></div>
+    <div style="padding:16px 20px 40px;max-width:480px;margin:0 auto;">
+      ${tabsModoRankingCircuito(modoAtual)}
+      <div id="ranking-conteudo"><div class="hint">Carregando ranking...</div></div>
+    </div>
   </div>`;
+
+  function atualizarEstiloTabs(){
+    document.querySelectorAll("[data-ranking-modo]").forEach(btn=>{
+      btn.classList.toggle("ghost", btn.dataset.rankingModo!==modoAtual);
+    });
+  }
+  document.querySelectorAll("[data-ranking-modo]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      if(btn.dataset.rankingModo===modoAtual) return;
+      modoAtual = btn.dataset.rankingModo;
+      atualizarEstiloTabs();
+      atualizar();
+    });
+  });
 
   function renderRankingPublico(data){
     const titulo = document.getElementById("ranking-titulo");
     if(titulo) titulo.textContent = `🏆 ${data.circuitoNome || "Ranking do circuito"}`;
     const el = document.getElementById("ranking-conteudo");
-    if(!el) return;
-    if(!data.ranking || !data.ranking.length){
-      el.innerHTML = `<div class="card empty">Nenhum resultado computado ainda neste circuito.</div>`;
-      return;
-    }
-    el.innerHTML = data.ranking.map((r,i)=> `<div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
-      <div style="font-weight:800;font-size:18px;color:var(--heading);width:30px;text-align:center;">${i+1}º</div>
-      <div style="flex:1;">
-        <div style="font-weight:700;">${escapeHtml(r.jogadorNome||"—")}</div>
-        <div class="sub" style="font-size:11px;">${r.torneiosDisputados} torneio${r.torneiosDisputados!==1?"s":""} disputado${r.torneiosDisputados!==1?"s":""}</div>
-      </div>
-      <div style="font-weight:800;font-size:16px;color:var(--ocean);">${r.pontos} pts</div>
-    </div>`).join("");
+    if(el) el.innerHTML = renderListaRankingCircuito(data.ranking);
   }
 
   async function atualizar(){
+    const el = document.getElementById("ranking-conteudo");
+    if(el) el.innerHTML = `<div class="hint">Carregando ranking...</div>`;
     try{
-      const res = await fetch(`/api/circuito-ranking?circuito=${encodeURIComponent(circuitoId)}`, { cache:"no-store" });
+      const res = await fetch(`/api/circuito-ranking?circuito=${encodeURIComponent(circuitoId)}&modo=${modoAtual}`, { cache:"no-store" });
       const data = await res.json();
       if(!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       renderRankingPublico(data);
     }catch(e){
-      const el = document.getElementById("ranking-conteudo");
       if(el) el.innerHTML = `<div class="card" style="border-color:var(--coral);color:var(--coral);">⚠️ Não foi possível carregar o ranking: ${escapeHtml(e && e.message ? e.message : String(e))}</div>`;
     }
   }

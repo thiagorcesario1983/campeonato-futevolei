@@ -497,14 +497,14 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     - **CPF é o único critério de agregação** — entradas sem CPF aparecem no resultado daquele
       torneio específico mas nunca somam com outro torneio. CPF nunca é devolvido completo pela
       rota pública (`mascararCPF`), só como chave de agregação interna.
-    - **Ponto de entrada não pode usar o mecanismo `telaAdmin`/`nav-admin` existente** (Cupons/
-      Aprovações/Config/Log) porque esse é gated por `ehAdmin()` (admin GLOBAL do app via
-      `ADMIN_EMAILS`) — circuito precisa estar disponível pra QUALQUER organizador agrupar os
-      próprios torneios. Por isso ganhou uma variável de tela própria (`telaCircuitos`, solta,
-      não gated por `ehAdmin()`) dentro da própria `renderTorneiosScreen()` — que, como as
-      outras, só é renderizada quando `!state.cloudId` (fora de um torneio aberto); entrar num
-      torneio e sair de novo ("Trocar torneio") não zera `telaCircuitos` sozinho, mesmo
-      comportamento já existente de `telaAdmin` hoje.
+    - **Ponto de entrada é uma variável de tela própria** (`telaCircuitos`, dentro da própria
+      `renderTorneiosScreen()` — que, como as outras telas soltas, só é renderizada quando
+      `!state.cloudId`, fora de um torneio aberto; entrar num torneio e sair de novo ("Trocar
+      torneio") não zera `telaCircuitos` sozinho, mesmo comportamento já existente de `telaAdmin`).
+      Originalmente ficou fora do mecanismo `telaAdmin`/`nav-admin` (Cupons/Aprovações/Config/Log,
+      gated por `ehAdmin()`) porque a ideia era deixar disponível pra QUALQUER organizador — **essa
+      decisão foi revertida no item 34**: circuito hoje é admin-only, `telaCircuitos` só é lido
+      quando `ehAdmin()` também é true (o botão "🏆 Circuitos" nem aparece pra quem não é admin).
     - **`torneioIds` do circuito tem um campo espelho em cada torneio** (`torneio.circuitoIds`,
       top-level no registro completo — ao lado de `pagamento`, não dentro de `state` —, escrito
       só por `circuito-atualizar`, nunca pelo cliente): `torneiosSave` sempre preserva esse campo
@@ -702,6 +702,42 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       "o que está marcado agora", que apagaria silenciosamente todo vínculo fora da página visível
       no momento do clique. Mesma categoria de risco dos itens 1/13/16/17/32: sempre considerar
       que o DOM visível é só uma fatia do estado real, nunca o estado inteiro.
+34. **Circuito virou uma feature admin-only** (pedido explícito — o ranking ficava "confuso"
+    sendo self-service; decisão: só `ADMIN_EMAILS` cria/gerencia circuitos, curando quais
+    torneios de quais organizadores entram num ranking oficial). Reverte a decisão original do
+    item 26 ("disponível pra QUALQUER organizador"):
+    - **Front**: o botão "🏆 Circuitos" em `renderTorneiosScreen()` só é renderizado quando
+      `ehAdmin()`; o bloco que renderiza `telaCircuitos` em `render()` também checa `ehAdmin()`
+      (defesa extra — se `telaCircuitos` ficou setado de uma sessão anterior como admin e a conta
+      atual não é mais admin, não renderiza mesmo assim).
+    - **Servidor**: `circuitoCriar` e `circuitosList` agora exigem `ehAdmin(solicitanteEmail,
+      env)` (403 pra quem não é admin) — nunca confiar só na UI escondida, mesmo padrão do resto
+      do app. `circuitosList` também parou de filtrar por `ownerEmail` (já que só admin chega
+      lá, um admin deve ver os circuitos criados por outro admin também). `circuitoAtualizar`/
+      `circuitoExcluir`/`circuitoResultadoTorneio` **não foram alterados** (continuam
+      owner-or-admin / autenticado) — não há necessidade, já que só admin chega a criar um
+      circuito daqui pra frente, então `ownerEmail` de um circuito novo sempre vai ser um admin.
+    - **Ranking "confuso" também ganhou dois ajustes de apresentação**, nos dois lugares que
+      exibem a lista (painel inline dentro do circuito e a página pública compartilhável — agora
+      compartilham `renderListaRankingCircuito()`/`medalhaRankingCircuito()`): medalhas 🥇🥈🥉
+      pros 3 primeiros (era só "1º"/"2º"/"3º" em texto puro) e uma alternância **Individual /
+      Por dupla** (`tabsModoRankingCircuito()`).
+    - **Ranking "por dupla"** (`circuitoRanking()` em `worker.ts`, `?modo=dupla`): soma pontos de
+      quem jogou JUNTO (mesmo par de jogadores) em mais de um torneio do circuito — resolve a
+      confusão de só ver pontos individuais quando jogadores trocam de parceiro entre torneios.
+      **Não precisou de nenhum campo novo no schema**: dentro de `resultado.colocacoes` de UM
+      torneio, as 1-2 entradas (jogador1/jogador2) de uma mesma dupla sempre compartilham o mesmo
+      `duplaNome` — agrupando por `duplaNome` dentro de cada resultado, reconstrói-se a dupla
+      original daquele torneio; a chave de agregação ENTRE torneios é o par de CPFs ordenado
+      (`[cpf1,cpf2].sort().join("+")`), só quando os dois jogadores têm CPF — mesma regra de "sem
+      CPF nunca agrega" do modo individual (item 26), aplicada ao par. Resposta da rota mudou o
+      nome do campo de `jogadorNome` para `nome` (genérico o bastante pra cobrir tanto "Fulano"
+      quanto "Fulano & Beltrano") — único consumidor é `iniciarRankingPublico`/painel inline,
+      então não é uma mudança de API pública com terceiros dependendo dela.
+    - **Botão "📊 Ver ranking" dentro da tela de detalhe do circuito** (`painelRankingInlineCircuito`,
+      ao lado de "Copiar link"): mostra o mesmo ranking da página pública sem sair do app. Cache
+      em memória (`circuitoRankingCache`, chave = circuitoId+modo) evita rebuscar a cada
+      re-render — só busca de novo quando abre o painel pela primeira vez ou troca de modo.
 
 ## Convenções
 
