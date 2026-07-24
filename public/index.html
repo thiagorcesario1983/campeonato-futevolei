@@ -1483,6 +1483,17 @@ function formatarTelefoneBR(digitosStr){
   if(digits.length<=10) return `(${ddd}) ${resto.slice(0,4)}-${resto.slice(4)}`;
   return `(${ddd}) ${resto.slice(0,5)}-${resto.slice(5)}`;
 }
+// Máscara só visual (000.000.000-00) — a validação de verdade (dígito verificador) acontece
+// só no servidor, no caminho de inscrição pública (worker.ts, validarCPF), já que o CPF é
+// opcional e usado só pra somar pontos entre torneios de um circuito (ver CLAUDE.md).
+function formatarCPF(digitosStr){
+  const digits = (digitosStr || "").replace(/\D/g,"").slice(0,11);
+  if(digits.length===0) return "";
+  if(digits.length<=3) return digits;
+  if(digits.length<=6) return `${digits.slice(0,3)}.${digits.slice(3)}`;
+  if(digits.length<=9) return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6)}`;
+  return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6,9)}-${digits.slice(9)}`;
+}
 
 // cupomInfo é opcional — só é usado na tela de criação de torneio (a de Aprovações passa só
 // as datas, sem cupom, já que ali o cupom já foi decidido lá atrás, na criação).
@@ -2617,6 +2628,12 @@ function champion(){
   if(!rounds) return null;
   const w = bracketWinnersForRound(rounds-1);
   return w[0] || null;
+}
+// Diferente de champion() sozinho, também considera a disputa de 3º lugar (quando habilitada)
+// — usado só pra decidir quando enviar o resultado final pro ranking por circuito, nunca deve
+// afetar faseAtual()/statusTorneio() existentes.
+function torneioTotalmenteFinalizado(){
+  return !!champion() && (!state.terceiroLugar || !!state.terceiro?.finalizado);
 }
 function nomeRodada(r, totalRounds){
   const restantes = totalRounds - r; // 1 = final, 2 = semifinal, 3 = quartas...
@@ -5087,12 +5104,14 @@ function renderSorteio(){
         <input type="text" data-dupla-jogador="${i}_1" data-field="nomeCompleto" placeholder="Nome completo" value="${escapeHtml(j1.nomeCompleto||"")}">
         <input type="tel" data-dupla-jogador="${i}_1" data-field="tel" placeholder="Telefone (WhatsApp)" value="${escapeHtml(j1.tel||d.tel1||"")}">
         <input type="email" data-dupla-jogador="${i}_1" data-field="email" placeholder="E-mail" value="${escapeHtml(j1.email||"")}">
+        <input type="text" inputmode="numeric" data-dupla-jogador="${i}_1" data-field="cpf" placeholder="CPF (opcional — usado no ranking por circuito)" value="${escapeHtml(formatarCPF(j1.cpf||""))}">
       </div>
       <div class="jogador-group">
         <label>Jogador 2</label>
         <input type="text" data-dupla-jogador="${i}_2" data-field="nomeCompleto" placeholder="Nome completo" value="${escapeHtml(j2.nomeCompleto||"")}">
         <input type="tel" data-dupla-jogador="${i}_2" data-field="tel" placeholder="Telefone (WhatsApp)" value="${escapeHtml(j2.tel||d.tel2||"")}">
         <input type="email" data-dupla-jogador="${i}_2" data-field="email" placeholder="E-mail" value="${escapeHtml(j2.email||"")}">
+        <input type="text" inputmode="numeric" data-dupla-jogador="${i}_2" data-field="cpf" placeholder="CPF (opcional — usado no ranking por circuito)" value="${escapeHtml(formatarCPF(j2.cpf||""))}">
       </div>
     </div>`;
   });
@@ -6237,6 +6256,11 @@ function bindEvents(){
         const pos = e.target.value.length;
         e.target.setSelectionRange(pos, pos);
       }
+      if(field==="cpf"){
+        e.target.value = formatarCPF(e.target.value);
+        const pos = e.target.value.length;
+        e.target.setSelectionRange(pos, pos);
+      }
       const jogadorKey = slot==="1" ? "jogador1" : "jogador2";
       if(!d[jogadorKey]) d[jogadorKey] = {};
       d[jogadorKey][field] = e.target.value;
@@ -7052,7 +7076,9 @@ function renderInscricaoPublicaForm(erro){
         <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Telefone</label>
         <input type="tel" id="input-j1-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
         <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">E-mail</label>
-        <input type="email" id="input-j1-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
+        <input type="email" id="input-j1-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">CPF (opcional)</label>
+        <input type="text" inputmode="numeric" id="input-j1-cpf" placeholder="000.000.000-00" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
       </div>
 
       <div style="border:1.5px solid #3a5a44;border-radius:12px;padding:14px;margin-bottom:18px;">
@@ -7062,7 +7088,9 @@ function renderInscricaoPublicaForm(erro){
         <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Telefone</label>
         <input type="tel" id="input-j2-tel" placeholder="(11) 90000-0000" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
         <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">E-mail</label>
-        <input type="email" id="input-j2-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
+        <input type="email" id="input-j2-email" placeholder="email@exemplo.com" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">CPF (opcional)</label>
+        <input type="text" inputmode="numeric" id="input-j2-cpf" placeholder="000.000.000-00" style="width:100%;border:1.5px solid #ccc;border-radius:10px;padding:10px 12px;font-size:14px;">
       </div>
 
       <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Nome da dupla</label>
@@ -7094,6 +7122,14 @@ function renderInscricaoPublicaForm(erro){
       e.target.setSelectionRange(pos, pos);
     });
   });
+  ["input-j1-cpf","input-j2-cpf"].forEach(id=>{
+    const el = document.getElementById(id);
+    el.addEventListener("input", e=>{
+      e.target.value = formatarCPF(e.target.value);
+      const pos = e.target.value.length;
+      e.target.setSelectionRange(pos, pos);
+    });
+  });
 
   document.getElementById("btn-inscricao-enviar").addEventListener("click", enviarInscricaoPublica);
 }
@@ -7103,12 +7139,14 @@ async function enviarInscricaoPublica(){
   const jogador1 = {
     nomeCompleto: (document.getElementById("input-j1-nome").value||"").trim(),
     tel: (document.getElementById("input-j1-tel").value||"").trim(),
-    email: (document.getElementById("input-j1-email").value||"").trim()
+    email: (document.getElementById("input-j1-email").value||"").trim(),
+    cpf: (document.getElementById("input-j1-cpf").value||"").trim()
   };
   const jogador2 = {
     nomeCompleto: (document.getElementById("input-j2-nome").value||"").trim(),
     tel: (document.getElementById("input-j2-tel").value||"").trim(),
-    email: (document.getElementById("input-j2-email").value||"").trim()
+    email: (document.getElementById("input-j2-email").value||"").trim(),
+    cpf: (document.getElementById("input-j2-cpf").value||"").trim()
   };
   const nomeDupla = (document.getElementById("input-nome-dupla").value||"").trim();
 

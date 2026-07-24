@@ -457,6 +457,17 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     canvas inteiro (`drawStoryCanvas()`) — como esse redesenho roda a mesma lógica de
     medir-e-redimensionar do zero, a altura final do Story já sai contando com a faixa de
     patrocinadores, sem precisar de nenhum código extra pra isso.
+25. **CPF opcional em `jogador1`/`jogador2`** (`{nomeCompleto, tel, email, cpf}`, editável tanto
+    no formulário manual da aba Duplas quanto no formulário de inscrição pública): existe hoje só
+    pra dar suporte ao ranking por circuito (item 26) — precisa de uma chave estável de
+    identidade de jogador entre torneios diferentes, e telefone pode mudar (perderia o vínculo).
+    Guardado no `state` **já com a máscara visual** (`000.000.000-00`, via `formatarCPF()`),
+    igual ao `tel` — quem consome o valor (validação, futura agregação do ranking) sempre remove
+    a formatação antes de comparar. Só é validado (dígito verificador mod-11, `validarCPF` em
+    `worker.ts`) no caminho público de inscrição (`inscricaoValidarJogador`) — a mesma assimetria
+    que já existe pra tel/e-mail: entrada manual do organizador continua sem validação forçada.
+    Campo totalmente opcional em ambos os caminhos; ausência de CPF nunca bloqueia nada, só
+    impede aquele jogador de agregar pontos entre torneios diferentes no ranking.
 
 ## Convenções
 

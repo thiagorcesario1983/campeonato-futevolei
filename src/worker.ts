@@ -2134,11 +2134,34 @@ async function inscricaoInfo(request: Request, env: Env): Promise<Response> {
   });
 }
 
-function inscricaoValidarJogador(j: any): j is { nomeCompleto: string; tel: string; email: string } {
-  return !!j
-    && typeof j.nomeCompleto === "string" && j.nomeCompleto.trim().length >= 3
-    && typeof j.tel === "string" && j.tel.trim().length >= 8
-    && typeof j.email === "string" && /\S+@\S+\.\S+/.test(j.email.trim());
+function normalizarCPF(cpf: unknown): string {
+  return String(cpf || "").replace(/\D/g, "");
+}
+// CPF é opcional em todo o app (usado só como chave de identidade entre torneios no ranking
+// por circuito — ver CLAUDE.md) — só valida o dígito verificador quando o campo vem preenchido.
+function validarCPF(cpf: string): boolean {
+  const digits = normalizarCPF(cpf);
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  const calcDigito = (base: string, pesoInicial: number): number => {
+    let soma = 0;
+    for (let i = 0; i < base.length; i++) soma += Number(base[i]) * (pesoInicial - i);
+    const resto = (soma * 10) % 11;
+    return resto === 10 ? 0 : resto;
+  };
+  const d1 = calcDigito(digits.slice(0, 9), 10);
+  const d2 = calcDigito(digits.slice(0, 9) + d1, 11);
+  return digits.slice(9) === `${d1}${d2}`;
+}
+function inscricaoValidarJogador(j: any): j is { nomeCompleto: string; tel: string; email: string; cpf?: string } {
+  if (!j
+    || typeof j.nomeCompleto !== "string" || j.nomeCompleto.trim().length < 3
+    || typeof j.tel !== "string" || j.tel.trim().length < 8
+    || typeof j.email !== "string" || !/\S+@\S+\.\S+/.test(j.email.trim())) {
+    return false;
+  }
+  if (j.cpf != null && String(j.cpf).trim() !== "" && !validarCPF(j.cpf)) return false;
+  return true;
 }
 
 // Público (com token): cria a dupla (status "pendente") e gera o Pix da inscrição. Nunca
@@ -2180,8 +2203,8 @@ async function inscricaoCriar(request: Request, env: Env): Promise<Response> {
   }
 
   const duplaId = crypto.randomUUID();
-  const jogador1 = { nomeCompleto: body.jogador1.nomeCompleto.trim(), tel: body.jogador1.tel.trim(), email: body.jogador1.email.trim() };
-  const jogador2 = { nomeCompleto: body.jogador2.nomeCompleto.trim(), tel: body.jogador2.tel.trim(), email: body.jogador2.email.trim() };
+  const jogador1 = { nomeCompleto: body.jogador1.nomeCompleto.trim(), tel: body.jogador1.tel.trim(), email: body.jogador1.email.trim(), cpf: normalizarCPF(body.jogador1.cpf) || null };
+  const jogador2 = { nomeCompleto: body.jogador2.nomeCompleto.trim(), tel: body.jogador2.tel.trim(), email: body.jogador2.email.trim(), cpf: normalizarCPF(body.jogador2.cpf) || null };
   const novaDupla = {
     id: duplaId,
     nome: nomeDupla,
