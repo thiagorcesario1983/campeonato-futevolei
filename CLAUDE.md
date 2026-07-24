@@ -591,6 +591,15 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     mira (`.tg-settings label`), o texto desses botões (ex: "Escolher imagem") também virou
     caixa alta — mantido assim de propósito, o resultado ficou consistente com o resto do
     visual "control room" em vez de destoar.
+31. **Header fixo no topo** (`header{position:sticky;top:0;z-index:20;}`, era `position:relative`):
+    acompanha o menu lateral, que já era fixo (`position:fixed` na gaveta mobile,
+    `position:sticky` na coluna do desktop) — antes só o menu ficava fixo, o cabeçalho (banner
+    verde + nome do torneio + "Trocar torneio") rolava junto com o conteúdo. `#torneio-bar` (e os
+    banners de "somente leitura"/"pré-liberado" que ele injeta) fica dentro do próprio `<header>`
+    no HTML, então já fica fixo de graça, sem precisar de nenhuma mudança adicional.
+    `position:sticky` (em vez de `fixed`) porque continua funcionando sem precisar compensar a
+    altura do header com padding manual em nenhum lugar — quem rola é sempre `body`/`html` (o
+    app não usa scroll interno em `.app`/`main`), então basta isso pra "grudar" no topo.
 
 ## Convenções
 
