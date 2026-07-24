@@ -533,6 +533,32 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       `.lbl`/`.sidebar-brand-text`) em vez de esconder de vez. **Qualquer novo item de menu deve
       ir dentro de `#nav-torneio`/`#nav-admin` como os demais** (`<button>` com `<svg>` +
       `<span class="lbl">`) — não precisa de CSS novo, o estilo já é genérico por `nav.tabbar`.
+28. **Laranja/âmbar removido do app inteiro** (pedido explícito — o app deve seguir só a paleta
+    verde/vermelho já estabelecida, sem tons quentes de laranja/dourado/marrom-claro em lugar
+    nenhum). Dois novos pares de variáveis, em `:root`/`[data-theme="dark"]` junto dos outros:
+    - `--pending-bg`/`--pending-text`: verde bem mais opaco/dessaturado que `--ocean`/`--grass`,
+      pra selos de "pendente"/"aguardando" (aprovação, pagamento, comissão, dupla, empate técnico
+      no Fluxo de Jogos) não parecerem "aprovado" de verdade enquanto ainda esperam alguma coisa.
+      Substituiu o par âmbar/pêssego antigo (`#FCEFD8`/`#9A6B1E` e variantes) usado em
+      `badgeAprovacao`, `badgePagamento`, `badgeStatusGeral`, `badgeStatusDupla`, `badgeCupom`,
+      `COR_TIPO_LOG.duplas_sorteadas` e no badge "AGUARDANDO DECISÃO" do Fluxo de Jogos.
+    - `--coral-bg`: fundo suave pareado com `--coral` (badges "ao vivo"/"em andamento" — `.tg-
+      status.pending`, `.status-pill.andamento`, `.live-score-badge`) — antes usava o mesmo
+      pêssego alaranjado (`#FDF1E7`) só que combinado com texto coral, o que também lia como
+      laranja visualmente.
+    - `.champion-banner` (banner de campeão, Resumo/Mata-mata/Fluxo de Jogos) usava gradiente
+      coral→laranja-queimado (`#C94A16`) quando renderizado SEM override inline — corrigido pro
+      mesmo gradiente verde (`--grass`→`--ocean-deep`) que uma das telas já usava via inline
+      style (removido o inline agora redundante, os dois lugares usam a mesma classe).
+    - Indicador de "1 derrota" na lista de status da eliminação (`renderSituacaoEliminacaoLista`)
+      e o passo "🏆 Campeão" no Fluxo de Jogos também usavam tons dourado/laranja isolados —
+      viraram `var(--pending-text)`/`var(--grass)` respectivamente.
+    - Borda de `.card`/`.group-card` (creme fixo `#EDE7D8`, não acompanhava `[data-theme="dark"]`)
+      virou `var(--sand-dark)` — corrige de quebra um card com borda clara demais no modo escuro.
+    - **Fora do escopo, de propósito**: Placar de TV e a imagem gerada pro Stories (```renderStory```/
+      `drawGroupsSection`/`drawTeamBar`/`drawBracket`, que usam `GOLD`/`GOLD_BG` no canvas) têm
+      identidade visual própria pensada pra serem vistas de longe/postadas — não fazem parte
+      desse pente-fino, mantidos exatamente como estavam.
 
 ## Convenções
 

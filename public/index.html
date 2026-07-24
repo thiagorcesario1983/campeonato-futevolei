@@ -39,6 +39,14 @@
     --heading:#205527; /* usada em títulos/labels — mesma cor de sempre no modo claro */
     --radius:16px;
     --shadow: 0 10px 24px -12px rgba(22,36,26,.35);
+    /* Selos de "pendente"/"aguardando" usavam um par âmbar/pêssego (removido — ver CLAUDE.md).
+       Verde mais opaco/dessaturado que --ocean/--grass, só pra não parecer "aprovado" de
+       verdade enquanto ainda está esperando alguma coisa. */
+    --pending-bg:#E7F0E5;
+    --pending-text:#4B6B4F;
+    /* Fundo suave pareado com --coral (badges "ao vivo"/"em andamento") — antes era um pêssego
+       meio alaranjado (#FDF1E7), trocado por um tom realmente na família do coral. */
+    --coral-bg:#FDEDE8;
     /* Menu lateral (sidebar): propositalmente FIXO escuro, independente de --theme (claro/
        escuro do resto do app) — pedido explícito de ficar fiel ao layout de referência (menu
        lateral escuro tipo "control room"), então não deve virar var() reaproveitando --sand
@@ -67,6 +75,9 @@
     --muted:#B5B5B5;
     --heading:#4DFF7E; /* verde neon — as versões antigas (mesmo tom do fundo) ficavam ilegíveis no escuro */
     --shadow: 0 10px 24px -12px rgba(0,0,0,.8);
+    --pending-bg:rgba(77,255,126,.14);
+    --pending-text:#8FE0A6;
+    --coral-bg:rgba(255,122,92,.16);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -244,7 +255,7 @@
   /* ---------- Cards ---------- */
   .card{
     background:var(--white);
-    border:1px solid #EDE7D8;
+    border:1px solid var(--sand-dark);
     border-radius:var(--radius);
     padding:14px 16px;
     margin-bottom:12px;
@@ -316,7 +327,7 @@
     font-size:10.5px;font-weight:700;text-align:center;border-radius:8px;padding:5px 6px;
   }
   .tg-status.ok{background:#E3F4FC;color:#0E7FB8;}
-  .tg-status.pending{background:#FDF1E7;color:var(--coral);}
+  .tg-status.pending{background:var(--coral-bg);color:var(--coral);}
   .tg-settings{margin-bottom:14px;}
   .tg-settings label{font-size:12px;font-weight:600;color:var(--heading);display:block;margin-bottom:6px;}
   .tg-settings .hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;}
@@ -362,7 +373,7 @@
 
   .group-card{
     border-radius:var(--radius);
-    border:1px solid #EDE7D8;
+    border:1px solid var(--sand-dark);
     margin-bottom:10px;
     overflow:hidden;
   }
@@ -428,7 +439,7 @@
   }
   .round-label:first-child{margin-top:0;}
   .bracket-match{
-    background:var(--white);border:1px solid #EDE7D8;border-radius:12px;
+    background:var(--white);border:1px solid var(--sand-dark);border-radius:12px;
     padding:10px 12px;margin-bottom:10px;
   }
   .bracket-match .lbl{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:6px;}
@@ -442,7 +453,7 @@
   .team.win::after{content:" 🏁";}
 
   .champion-banner{
-    background:linear-gradient(150deg,var(--coral),#C94A16);
+    background:linear-gradient(150deg,var(--grass),var(--ocean-deep));
     color:var(--white);border-radius:var(--radius);
     padding:22px 16px;text-align:center;margin-bottom:16px;
   }
@@ -520,7 +531,7 @@
   }
   .live-score-badge{
     display:inline-block;font-size:11px;font-weight:700;color:var(--coral);
-    background:#FDF1E7;padding:3px 10px;border-radius:20px;margin:6px 0 2px;
+    background:var(--coral-bg);padding:3px 10px;border-radius:20px;margin:6px 0 2px;
   }
 
   /* ---------- Fluxo de Jogos (auditoria) ---------- */
@@ -576,7 +587,7 @@
     font-size:10.5px;font-weight:700;border-radius:20px;padding:4px 10px;white-space:nowrap;flex-shrink:0;
   }
   .status-pill.criado{background:#E3F4FC;color:#0E7FB8;}
-  .status-pill.andamento{background:#FDF1E7;color:var(--coral);}
+  .status-pill.andamento{background:var(--coral-bg);color:var(--coral);}
   .status-pill.finalizado{background:#E2EFDA;color:var(--grass);}
   .btn-excluir{
     background:none;border:none;color:#C0392B;font-size:11px;font-weight:600;
@@ -4480,13 +4491,13 @@ function badgeAprovacao(t){
   if(st==="aprovado") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Aprovado</span>`;
   if(st==="recusado") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">❌ Recusado</span>`;
   if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
-  return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente</span>`;
+  return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">⏳ Pendente</span>`;
 }
 function badgePagamento(t){
   const st = t.pagamentoStatus || "nao_solicitado";
   if(st==="pago") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">💰 Pago</span>`;
   if(st==="isento") return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">🎁 Grátis</span>`;
-  if(st==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">💳 Pix pendente</span>`;
+  if(st==="pendente") return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">💳 Pix pendente</span>`;
   return "";
 }
 // Status "geral" do torneio pra tela de Torneios (lista) — igual à prioridade usada em
@@ -4507,7 +4518,7 @@ function badgeStatusGeral(t){
   if(st==="recusado") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">❌ Recusado</span>`;
   if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
   if(st==="expirado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">⏱️ Expirado</span>`;
-  return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente</span>`;
+  return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">⏳ Pendente</span>`;
 }
 const ROTULO_STATUS_GERAL = { todos:"Todos", pendente:"Pendente", aprovado:"Aprovado", recusado:"Recusado", bloqueado:"Bloqueado", expirado:"Expirado" };
 function formatarDataBR(iso){
@@ -4913,7 +4924,7 @@ function badgeCupom(c){
   const st = statusGeralCupom(c);
   if(st==="bloqueado") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🔒 Bloqueado</span>`;
   if(st==="expirado") return `<span class="status-pill" style="background:#F5D9D9;color:#8A2E2E;">⏰ Expirado</span>`;
-  if(st==="nao_comecou") return `<span class="status-pill" style="background:#FCEBC9;color:#8A6D1D;">🕓 Ainda não começou</span>`;
+  if(st==="nao_comecou") return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">🕓 Ainda não começou</span>`;
   if(st==="limite_atingido") return `<span class="status-pill" style="background:#E4E4E4;color:#5A5A5A;">🎯 Limite atingido</span>`;
   return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativo</span>`;
 }
@@ -5092,7 +5103,7 @@ function renderRelatorioCuponsScreen(){
           : t.comissaoRepassada
             ? `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Comissão repassada</span>
                <button class="btn ghost" data-comissao-alternar="${t.id}" data-comissao-nova="0" style="flex:1;width:auto;padding:7px 12px;font-size:12px;">Marcar como pendente</button>`
-            : `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Comissão pendente</span>
+            : `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">⏳ Comissão pendente</span>
                <button class="btn ghost" data-comissao-alternar="${t.id}" data-comissao-nova="1" style="flex:1;width:auto;padding:7px 12px;font-size:12px;">Marcar como repassada</button>`
         }
       </div>
@@ -5127,7 +5138,7 @@ const ROTULO_TIPO_LOG = {
 const COR_TIPO_LOG = {
   acesso: { bg:"#E4E4E4", cor:"#5A5A5A" },
   torneio_criado: { bg:"#DCEEE1", cor:"#2E6E42" },
-  duplas_sorteadas: { bg:"#FCEFD8", cor:"#9A6B1E" },
+  duplas_sorteadas: { bg:"var(--pending-bg)", cor:"var(--pending-text)" },
   resultado_registrado: { bg:"#DCE7F5", cor:"#2C5C99" },
   permissao_usuario: { bg:"#EDE1F5", cor:"#6B3FA0" },
   dupla_adicionada: { bg:"#F3E8FB", cor:"#7A3FA0" },
@@ -5356,7 +5367,7 @@ function renderResumo(){
       const rows = standingsFor(letter);
       html += `<div class="group-card"><div class="group-head">Grupo ${letter}</div><div class="group-body">`;
       rows.forEach((r,i)=>{
-        html += `<div class="name"><span class="dot" style="background:${i<2?'#4C9A64':'#C9B896'}"></span>${r.nome} <span style="margin-left:auto;font-family:'DM Mono',monospace;color:var(--muted);font-size:12px;">${r.pts} pts</span></div>`;
+        html += `<div class="name"><span class="dot" style="background:${i<2?'var(--grass)':'var(--sand-dark)'}"></span>${r.nome} <span style="margin-left:auto;font-family:'DM Mono',monospace;color:var(--muted);font-size:12px;">${r.pts} pts</span></div>`;
       });
       html += `</div></div>`;
     });
@@ -5418,7 +5429,7 @@ function renderContatoBlock(i, slot, tel, baseMsg, trackKey){
 }
 
 function badgeStatusDupla(status, ativacaoVia){
-  if(status==="pendente") return `<span class="status-pill" style="background:#FCEFD8;color:#9A6B1E;">⏳ Pendente pagamento</span>`;
+  if(status==="pendente") return `<span class="status-pill" style="background:var(--pending-bg);color:var(--pending-text);">⏳ Pendente pagamento</span>`;
   if(status==="bloqueada") return `<span class="status-pill" style="background:#F7DCD8;color:#A23B2E;">🚫 Bloqueada</span>`;
   const viaTxt = ativacaoVia==="pix" ? " · via Pix" : ativacaoVia==="manual" ? " · aprovação manual" : "";
   return `<span class="status-pill" style="background:#DCEEE1;color:#2E6E42;">✅ Ativa${viaTxt}</span>`;
@@ -5607,7 +5618,7 @@ function renderSituacaoEliminacaoLista(){
   nomes.slice().sort((a,b)=> (perdas[a]||0)-(perdas[b]||0) || (vitorias[b]||0)-(vitorias[a]||0)).forEach(nome=>{
     const l = perdas[nome] || 0;
     const v = vitorias[nome] || 0;
-    const cor = l>=2 ? "#C0392B" : (l===1 ? "#F2652A" : "#4C9A64");
+    const cor = l>=2 ? "var(--coral)" : (l===1 ? "var(--pending-text)" : "var(--grass)");
     const status = l>=2 ? "❌ Eliminada" : (l===1 ? "⚠️ 1 derrota" : "✅ Sem derrotas");
     html += `<div class="name"><span class="dot" style="background:${cor}"></span>${escapeHtml(nome)} <span style="margin-left:auto;font-size:11.5px;color:var(--muted);">${v}V · ${status}</span></div>`;
   });
@@ -5700,7 +5711,7 @@ function renderRodadasEliminacao(){
     if(resgatadas.length){
       html += `<div class="tiebreak-note" style="text-align:center;">🎟️ ${resgatadas.map(escapeHtml).join(", ")} ${resgatadas.length>1?"entraram":"entrou"} de repescagem no mata-mata — melhor desempenho entre as eliminadas (mais vitórias, depois saldo de pontos, depois pontos pró) pra fechar a meta de ${meta}.</div>`;
     }
-    html += `<div class="champion-banner" style="background:linear-gradient(150deg,var(--grass),#2E6E42);">
+    html += `<div class="champion-banner">
         <div class="eyebrow">Fase de eliminação concluída</div>
         <div class="name" style="font-size:22px;">${totalClassificadas} dupla${totalClassificadas>1?'s':''} classificada${totalClassificadas>1?'s':''}</div>
       </div>
@@ -5783,7 +5794,7 @@ function renderFluxoJogos(){
       const classifHtml = rows.map((r,i)=>{
         let badge = "";
         if(classificadosFinais.has(r.nome)) badge = ` <span class="flow-badge" style="background:#DCEEE1;color:#2E6E42;">QUALIFICADO</span>`;
-        else if(pendente && desempateInfo.grupoEmpatado.includes(r.nome)) badge = ` <span class="flow-badge" style="background:#FCEFD8;color:#9A6B1E;">⚖️ AGUARDANDO DECISÃO</span>`;
+        else if(pendente && desempateInfo.grupoEmpatado.includes(r.nome)) badge = ` <span class="flow-badge" style="background:var(--pending-bg);color:var(--pending-text);">⚖️ AGUARDANDO DECISÃO</span>`;
         return `${i+1}º ${escapeHtml(r.nome)} — ${r.pts}pts, saldo ${r.saldo>0?"+":""}${r.saldo}, ${r.pp} pontos pró${badge}`;
       }).join("<br>");
 
@@ -5845,7 +5856,7 @@ function renderFluxoJogos(){
     }
     const camp = champion();
     if(camp){
-      html += fluxoStep(`🏆 Campeão`, `<b>${escapeHtml(camp)}</b> venceu a Final e é o campeão do torneio.`, "#C9A227");
+      html += fluxoStep(`🏆 Campeão`, `<b>${escapeHtml(camp)}</b> venceu a Final e é o campeão do torneio.`, "var(--grass)");
     }
   } else {
     html += fluxoStep(`Mata-mata`, `Ainda não começou — depende da conclusão da fase anterior.`, "var(--muted)");
