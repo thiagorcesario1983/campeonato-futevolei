@@ -658,6 +658,50 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       — usa o dado já salvo no servidor (não um cache local da última tentativa), então sempre
       reflete o que está realmente gravado, útil pra auditar se o ranking está somando os
       jogadores certos.
+33. **Um torneio só pode pertencer a UM circuito por vez** (pedido explícito, pra evitar o mesmo
+    torneio somar pontos em dois rankings diferentes). Antes disso nada impedia vincular o mesmo
+    torneio a vários circuitos (`Circuito.torneioIds` sempre foi um array por torneio também —
+    `torneio.circuitoIds`, espelho descrito no item 26 — sem limite). Regra aplicada nos dois
+    lados:
+    - **Servidor** (`circuitoAtualizar`, `src/worker.ts`): ao processar uma adição em
+      `body.torneioIds`, se o espelho `torneio.circuitoIds` já apontar pra outro circuito
+      (`cid !== circuito.id`), a adição é recusada (o torneio nem entra em
+      `circuito.torneioIds`) e volta no array `rejeitadosJaVinculados: [{torneioId, circuitoId}]`
+      da resposta — nunca falha a requisição inteira (os outros torneios do mesmo payload que
+      não tiverem conflito continuam sendo processados normalmente). Isso é defesa em
+      profundidade: o cenário real que motivaria isso é duas abas/sessões tentando vincular o
+      mesmo torneio a circuitos diferentes ao mesmo tempo — o front já impede isso na UI (abaixo),
+      mas o servidor não pode confiar só nisso.
+    - **Front** (`renderCircuitoDetalheScreen`): antes de renderizar a lista de torneios,
+      monta um mapa torneioId → circuito (varrendo `circuitosList` inteiro, procurando em qual
+      OUTRO circuito aquele torneioId já aparece em `torneioIds`). Se o torneio já pertence a
+      outro circuito (e não ao que está aberto agora), a caixinha nasce `disabled` e o texto de
+      status vira `🔗 Vinculado ao circuito "{nome}"` no lugar do fluxo normal — inclusive
+      ficando de fora da leitura final feita pelo botão "Salvar vínculos"
+      (`:checked:not(:disabled)`), então nem é possível tentar re-selecioná-lo por essa tela.
+    - Também aproveitado pra mostrar o **código do torneio** (`#{codigo}`, mesmo formato já usado
+      em Aprovações) ao lado do nome na lista — várias duplas de torneios podem ter nomes
+      parecidos, o código serve de identificador inequívoco pra saber qual torneio é qual.
+    - **Pontos no painel de auditoria**: o "Ver dados" (item 32) mostrava só a posição/jogador/CPF
+      — sem o valor em pontos daquela colocação, forçava o organizador a fazer a conta de cabeça
+      contra a tabela de pontos. Novo helper `pontosPorPosicaoCircuito(tabela, posicao)` no front
+      (espelha exatamente a mesma lógica de `circuitoRanking()` no worker) calcula ao vivo na
+      hora de exibir — segue a mesma regra do item 26 de nunca gravar pontos junto da colocação
+      (só a posição), então mudar a tabela de pontos depois já reflete automaticamente também
+      neste painel, sem precisar recalcular nada.
+    - **Filtro por nome + data e paginação (10 por página)** na lista "Torneios neste circuito"
+      (`circuitoTorneiosFiltroNome`/`circuitoTorneiosFiltroData`/`circuitoTorneiosPagina`,
+      resetados ao trocar de circuito — mesmo padrão de `aprovacoesFiltroStatus`/
+      `aprovacoesPagina`). Filtro de data casa com torneios cujo intervalo `dataInicio`..`dataFim`
+      contém a data escolhida. **Risco novo introduzido por isso e já tratado**: como a lista
+      passou a ser parcial (filtrada/paginada), o botão "Salvar vínculos" não pode mais assumir
+      que "tudo que não está marcado no DOM foi desmarcado pelo usuário" — um torneio já vinculado
+      que está fora da página atual (ou escondido pelo filtro) precisa **manter** seu vínculo.
+      Corrigido calculando o novo `torneioIds` como: (vínculos antigos que NÃO estão renderizados
+      nesta página) + (o que está marcado entre os renderizados nesta página) — nunca lendo só
+      "o que está marcado agora", que apagaria silenciosamente todo vínculo fora da página visível
+      no momento do clique. Mesma categoria de risco dos itens 1/13/16/17/32: sempre considerar
+      que o DOM visível é só uma fatia do estado real, nunca o estado inteiro.
 
 ## Convenções
 
