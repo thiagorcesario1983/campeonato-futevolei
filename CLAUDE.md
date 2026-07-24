@@ -513,11 +513,20 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       o servidor exige que o solicitante tenha `temAcessoTorneio` daquele torneio específico —
       sem essa checagem, o dono de um circuito poderia colar o id de um torneio de outro
       organizador e vazar nomes/CPFs das duplas dele no ranking público.
-    - Envio automático (`verificarEnvioResultadoCircuito`, chamada em `save()`) dispara sempre
-      que `torneioTotalmenteFinalizado()` (item 25) for true e o torneio estiver vinculado a
-      algum circuito — fire-and-forget, idempotente do lado do servidor (sempre sobrescreve o
+    - Envio automático (`verificarEnvioResultadoCircuito`) dispara sempre que
+      `torneioTotalmenteFinalizado()` (item 25) for true e o torneio estiver vinculado a algum
+      circuito — fire-and-forget, idempotente do lado do servidor (sempre sobrescreve o
       resultado daquele torneio), com uma marca local (`circuitoResultadoEnviadoEm`) só pra não
-      bater na rede a cada `save()` sem necessidade.
+      bater na rede sem necessidade. Chamada em três pontos, não só em `save()`: **também em
+      `abrirTorneioComDados()` e em `refreshTorneioAtual()`** — sem isso, um torneio já concluído
+      ANTES de existir o circuito (ou vinculado a um depois de pronto, pela tela Circuitos) só
+      entraria no ranking se alguém editasse alguma coisa nele depois de vinculado (a edição é
+      o que dispara `save()`); só abrir esse torneio de novo não bastava, já que
+      `abrirTorneioComDados`/`refreshTorneioAtual` só atualizam `state` e chamam `render()`, sem
+      passar por `save()`. Reforça: **qualquer novo fluxo que recarregue `state` a partir do
+      servidor (não só edições feitas pelo usuário) precisa considerar se `verificarEnvioResultadoCircuito`
+      também deveria rodar ali**, senão um resultado "atrasado" (torneio antigo vinculado depois)
+      fica esperando uma edição manual que pode nunca acontecer.
 27. **Menu lateral recolhível** (substituiu a barra de abas inferior antiga): `#nav-torneio` e
     `#nav-admin` (os mesmos elementos/botões de sempre, `data-tab`/`data-tela-admin` e toda a
     lógica de `render()`/`bindEvents()` que os controla — nada mudou aí) só foram REALOCADOS pra
