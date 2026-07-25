@@ -262,25 +262,26 @@ document.documentElement.setAttribute("data-theme", "dark");
   .stat{
     border-radius:var(--radius);
     padding:14px;
-    color:var(--white);
+    background:transparent;
+    border:1.5px solid var(--sand-dark);
     position:relative;
     overflow:hidden;
   }
-  .stat.ocean{background:linear-gradient(150deg,var(--ocean),var(--ocean-deep));}
-  .stat.coral{background:linear-gradient(150deg,var(--coral),#B31F00);}
-  .stat.grass{background:linear-gradient(150deg,var(--grass),#205527);}
-  .stat.ink{background:linear-gradient(150deg,#2A3A2C,var(--ocean-deep));}
+  .stat.ocean .num{color:var(--ocean);}
+  .stat.coral .num{color:var(--coral);}
+  .stat.grass .num{color:var(--grass);}
+  .stat.ink .num{color:var(--ink);}
   .stat .num{
     font-family:'DM Mono',monospace;
     font-size:22px;
-    font-weight:500;
+    font-weight:600;
     display:block;
   }
   .stat .lbl{
     font-size:10.5px;
     letter-spacing:.06em;
     text-transform:uppercase;
-    opacity:.85;
+    color:var(--muted);
   }
 
   /* ---------- Duplas / Sorteio ---------- */
@@ -3304,7 +3305,7 @@ function woNoteHtml(m, a, b){
 function acoesJogoHtml(matchId, m){
   const podeFinalizar = m && !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
   let html = `<div class="ref-actions-row">
-    <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
+    <button class="ref-mini-btn" data-apitar="${matchId}"><svg viewBox="0 0 25 24" width="14" height="13" style="vertical-align:-2px;margin-right:2px;"><rect x="1" y="9.5" width="4" height="5" rx="1.5" fill="currentColor"/><ellipse cx="11" cy="12" rx="7" ry="6.5" fill="currentColor"/><circle cx="21" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg> Apitar jogo</button>
     <button class="ref-mini-btn ghost" data-compartilhar-apito="${matchId}">🔗 Compartilhar</button>
     <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>`;
   if(m && !m.finalizado){
