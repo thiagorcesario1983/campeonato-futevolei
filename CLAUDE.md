@@ -867,6 +867,24 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       `calcularResultadoRetroativo`/`enviarResultadoRetroativoParaTorneio` passaram a receber
       `circuitoId` como parâmetro (antes só `torneioId`) — todo call site precisou repassar o
       `circuito.id` já disponível via `data-circuito` nos botões.
+41. **Status de "ainda não concluído" de um torneio vinculado sumia ao sair e voltar pra tela do
+    circuito** (reportado: "voltam como não processados"). Causa: `statusProcessamentoCircuito`
+    (item 32) é só em memória, de propósito — mas isso significa que ela zera em qualquer reload
+    de página, não só num logout. Um torneio vinculado que mostrava "⏳ Este torneio ainda não
+    foi totalmente finalizado" (com o motivo exato) voltava a cair no `else` genérico "Vinculado,
+    ainda não processado" só por ter saído e voltado (ou recarregado a página), mesmo sem nada
+    ter mudado de verdade no torneio — parecia que ninguém nunca tinha tentado processar aquele
+    vínculo. Corrigido com auto-verificação: ao renderizar `renderCircuitoDetalheScreen`, todo
+    torneio vinculado sem `resultado` gravado E sem `statusManual` em memória dispara um
+    `calcularResultadoRetroativo()` em segundo plano (dry-run, não envia nada) pra descobrir e
+    mostrar o status real, em vez de assumir "nunca processado". Controlado por
+    `circuitoTorneiosAutoVerificados` (chave `circuitoId:torneioId`) pra rodar só uma vez por
+    sessão por combinação circuito+torneio — evita reconsultar a cada re-render (que aconteceria
+    sem essa marca, já que `statusProcessamentoCircuito[t.id]` só é preenchido DEPOIS da promise
+    resolver, então o próprio ato de disparar a verificação não impede o próximo render de
+    disparar de novo antes da resposta chegar). Continua puramente em memória (mesma decisão do
+    item 32) — só que agora se autocorrige sozinho a cada vez que a tela é aberta, em vez de
+    depender de o usuário lembrar de clicar em "Verificar novamente" manualmente.
 
 ## Convenções
 

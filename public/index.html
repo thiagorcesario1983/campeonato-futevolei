@@ -1176,7 +1176,14 @@ let mostrarFormNovoCircuito = false;
 // de um circuito (chave = torneioId) — puramente em memória, só pra dar feedback de auditoria
 // ("processado com sucesso"/"erro"/"ainda não concluído") enquanto o organizador está nessa tela;
 // não precisa persistir, já que o resultado de sucesso de verdade fica em circuito.resultados.
+// MAS some ao recarregar a página (variável zerada) — sem o auto-check abaixo, um torneio
+// vinculado que mostrava "⏳ ainda não concluído" (com o motivo) voltava a parecer "nunca
+// verificado" (genérico "Vinculado, ainda não processado") só por ter saído e voltado, mesmo
+// sem nada ter mudado de verdade. circuitoTorneiosAutoVerificados evita reconsultar o mesmo
+// torneio repetidamente a cada render — só uma vez por sessão, a não ser que o usuário force
+// via "Verificar novamente"/"Processar agora" (que atualizam statusProcessamentoCircuito direto).
 let statusProcessamentoCircuito = {};
+let circuitoTorneiosAutoVerificados = new Set();
 // Qual torneio está com o painel de "ver dados processados" (colocações) aberto na tela de
 // detalhe do circuito — só um por vez, fecha ao reabrir outro.
 let colocacoesExpandidoTorneioId = null;
@@ -5130,6 +5137,19 @@ function renderCircuitoDetalheScreen(circuito){
       const expandido = colocacoesExpandidoTorneioId===t.id;
       const outroCircuito = outroCircuitoPorTorneio[t.id];
       const bloqueadoPorOutroCircuito = !!outroCircuito && !vinculados.has(t.id);
+
+      // Torneio vinculado, sem resultado gravado e sem status ainda checado nesta sessão (ex:
+      // acabou de recarregar a página) — verifica sozinho em segundo plano (dry-run, não envia
+      // nada) pra mostrar o motivo real ("ainda não concluído"/erro) em vez do genérico "ainda
+      // não processado", que parecia sugerir que ninguém nunca tinha tentado processar.
+      const chaveAutoVerificacao = `${circuito.id}:${t.id}`;
+      if(vinculados.has(t.id) && !resultado && !statusManual && !circuitoTorneiosAutoVerificados.has(chaveAutoVerificacao)){
+        circuitoTorneiosAutoVerificados.add(chaveAutoVerificacao);
+        calcularResultadoRetroativo(t.id, circuito.id).then(status=>{
+          statusProcessamentoCircuito[t.id] = status;
+          render();
+        });
+      }
       html += `<div style="padding:8px 0;border-bottom:1px solid var(--sand);">
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;${bloqueadoPorOutroCircuito?"opacity:.55;":""}">
           <input type="checkbox" data-circuito-torneio="${t.id}" data-circuito="${circuito.id}" ${vinculados.has(t.id)?"checked":""} ${bloqueadoPorOutroCircuito?"disabled":""} style="width:auto;">
