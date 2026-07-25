@@ -756,6 +756,27 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     decida se um jogador "conta" pro ranking deve considerar CPF e nome como critérios
     independentes** — exigir os dois pra usar qualquer um deles descarta dado real que o
     organizador informou de propósito.
+36. **Ranking mostrava o nome da dupla duas vezes, lado a lado, no modo Individual** — efeito
+    colateral direto do item 35: quando os DOIS jogadores de uma dupla têm CPF mas nenhum tem
+    `nomeCompleto`, os dois entram na lista de colocações (correto — CPF preservado pra cada um),
+    mas ambos usam o nome da dupla como `jogadorNome` de exibição — como são CPFs diferentes,
+    viram duas linhas SEPARADAS no ranking individual (correto, são duas pessoas reais), só que
+    com o texto idêntico, parecendo um bug de duplicação (reportado com print). O modo "Por
+    dupla" tinha o mesmo problema de um jeito diferente: `entradas.map(jogadorNome).join(" & ")`
+    virava `"Fulano e Beltrano & Fulano e Beltrano"` (o nome da dupla colado nele mesmo) quando
+    os dois caíam nesse fallback. Corrigido em `circuitoRanking()` (`worker.ts`), reaproveitando
+    o mesmo agrupamento por `(torneioId, duplaNome)` já usado pelo modo dupla (extraído pra
+    `agruparPorDupla()`):
+    - **Individual**: só desambigua quando há colisão de verdade (mais de um jogador da MESMA
+      dupla/torneio caiu no fallback) — nesse caso vira `"{duplaNome} (jogador 1)"` /
+      `"(jogador 2)"`, na ordem em que aparecem em `colocacoes` (== ordem jogador1/jogador2).
+      Quando só um dos dois cai no fallback (o outro tem nome próprio), não desambigua — não há
+      ambiguidade nesse caso, o nome da dupla sozinho já não colide com o nome próprio do parceiro.
+    - **Por dupla**: só junta com "&" quando **todos** os jogadores daquela dupla têm nome
+      próprio (`nomesReais.length === entradas.length`); caso contrário usa o nome da dupla
+      direto, sem juntar nada — nunca produz `"X & X"`.
+    - Nenhuma mudança no front — os dois modos só consomem o campo `nome` que a rota já devolve,
+      então a correção inteira ficou contida no cálculo do servidor.
 
 ## Convenções
 
