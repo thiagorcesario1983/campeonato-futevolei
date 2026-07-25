@@ -2862,32 +2862,54 @@ async function circuitoRanking(request: Request, env: Env): Promise<Response> {
 
   let ranking: Array<{ nome: string; cpf?: string; pontos: number; torneiosDisputados: number }>;
 
+  // Agrupar por (torneioId, duplaNome) reconstrói a dupla original daquele torneio — usado nos
+  // dois modos abaixo pra saber quando um jogador caiu no fallback "sem nomeCompleto" (jogadorNome
+  // === duplaNome, ver colocacoesParaDupla no front) e evitar exibir o mesmo texto genérico duas
+  // vezes lado a lado (parecia um bug de "nome duplicado", reportado com print, mesmo sendo duas
+  // pessoas de verdade com CPFs diferentes).
+  function agruparPorDupla(resultado: Circuito["resultados"][string]) {
+    const grupos = new Map<string, typeof resultado.colocacoes>();
+    for (const c of resultado.colocacoes) {
+      const grupo = grupos.get(c.duplaNome) || [];
+      grupo.push(c);
+      grupos.set(c.duplaNome, grupo);
+    }
+    return grupos;
+  }
+
   if (modo === "individual") {
     const porCpf = new Map<string, { nome: string; pontos: number; torneiosDisputados: number }>();
     for (const resultado of Object.values(circuito.resultados)) {
-      for (const c of resultado.colocacoes) {
-        if (!c.cpf) continue;
-        const atual = porCpf.get(c.cpf) || { nome: c.jogadorNome, pontos: 0, torneiosDisputados: 0 };
-        atual.nome = c.jogadorNome || atual.nome;
-        atual.pontos += pontosPorPosicao(c.posicao);
-        atual.torneiosDisputados += 1;
-        porCpf.set(c.cpf, atual);
+      for (const [duplaNome, entradas] of agruparPorDupla(resultado)) {
+        const semNomeTotal = entradas.filter((e) => e.jogadorNome === duplaNome).length;
+        let semNomeIndex = 0;
+        for (const c of entradas) {
+          if (!c.cpf) continue;
+          let nome = c.jogadorNome;
+          if (c.jogadorNome === duplaNome && semNomeTotal > 1) {
+            semNomeIndex += 1;
+            nome = `${duplaNome} (jogador ${semNomeIndex})`;
+          }
+          const atual = porCpf.get(c.cpf) || { nome, pontos: 0, torneiosDisputados: 0 };
+          atual.nome = nome;
+          atual.pontos += pontosPorPosicao(c.posicao);
+          atual.torneiosDisputados += 1;
+          porCpf.set(c.cpf, atual);
+        }
       }
     }
     ranking = [...porCpf.entries()].map(([cpf, v]) => ({ nome: v.nome, cpf: mascararCPF(cpf), pontos: v.pontos, torneiosDisputados: v.torneiosDisputados }));
   } else {
     const porDupla = new Map<string, { nome: string; pontos: number; torneiosDisputados: number }>();
     for (const [torneioId, resultado] of Object.entries(circuito.resultados)) {
-      const grupos = new Map<string, typeof resultado.colocacoes>();
-      for (const c of resultado.colocacoes) {
-        const grupo = grupos.get(c.duplaNome) || [];
-        grupo.push(c);
-        grupos.set(c.duplaNome, grupo);
-      }
-      for (const [duplaNome, entradas] of grupos) {
+      for (const [duplaNome, entradas] of agruparPorDupla(resultado)) {
         const cpfs = entradas.map((e) => e.cpf).filter((x): x is string => !!x);
         const key = cpfs.length === entradas.length && cpfs.length > 0 ? [...cpfs].sort().join("+") : `${torneioId}:${duplaNome}`;
-        const nome = entradas.map((e) => e.jogadorNome).join(" & ") || duplaNome;
+        // Só junta nomes individuais reais com "&" quando TODOS os jogadores da dupla têm nome
+        // próprio — se algum caiu no fallback (sem nomeCompleto), usar o nome da dupla direto
+        // evita "Fulano & Fulano" (o mesmo texto genérico duas vezes).
+        const nomesReais = entradas.map((e) => e.jogadorNome).filter((n) => n !== duplaNome);
+        const nome = nomesReais.length === entradas.length ? nomesReais.join(" & ") : duplaNome;
         const atual = porDupla.get(key) || { nome, pontos: 0, torneiosDisputados: 0 };
         atual.nome = nome;
         atual.pontos += pontosPorPosicao(entradas[0].posicao);
