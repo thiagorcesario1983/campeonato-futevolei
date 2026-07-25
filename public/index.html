@@ -262,25 +262,26 @@ document.documentElement.setAttribute("data-theme", "dark");
   .stat{
     border-radius:var(--radius);
     padding:14px;
-    color:var(--white);
+    background:transparent;
+    border:1.5px solid var(--sand-dark);
     position:relative;
     overflow:hidden;
   }
-  .stat.ocean{background:linear-gradient(150deg,var(--ocean),var(--ocean-deep));}
-  .stat.coral{background:linear-gradient(150deg,var(--coral),#B31F00);}
-  .stat.grass{background:linear-gradient(150deg,var(--grass),#205527);}
-  .stat.ink{background:linear-gradient(150deg,#2A3A2C,var(--ocean-deep));}
+  .stat.ocean .num{color:var(--ocean);}
+  .stat.coral .num{color:var(--coral);}
+  .stat.grass .num{color:var(--grass);}
+  .stat.ink .num{color:var(--ink);}
   .stat .num{
     font-family:'DM Mono',monospace;
     font-size:22px;
-    font-weight:500;
+    font-weight:600;
     display:block;
   }
   .stat .lbl{
     font-size:10.5px;
     letter-spacing:.06em;
     text-transform:uppercase;
-    opacity:.85;
+    color:var(--muted);
   }
 
   /* ---------- Duplas / Sorteio ---------- */
@@ -1193,6 +1194,12 @@ let circuitoRankingAberto = null;
 let circuitoRankingModo = "individual"; // "individual" | "dupla"
 let circuitoRankingCache = null; // { circuitoId, modo, dados } | null
 let circuitoRankingCarregando = false;
+// Torneios elegíveis pra vincular a este circuito — só os que pertencem ao dono do circuito ou
+// a algum dos usuários com acesso compartilhado a ele (não os torneios do usuário que ESTÁ
+// olhando a tela agora, que podem ser pessoas/conjuntos diferentes). Buscado sob demanda por
+// circuito (não reaproveita torneiosList, que é escopado ao usuário logado, não ao circuito).
+let circuitoTorneiosElegiveisCache = null; // { circuitoId, torneios } | null
+let circuitoTorneiosElegiveisLoading = false;
 // Logo já processada (data URL), aguardando o organizador confirmar o nome antes de entrar em
 // state.patrocinadores — substituiu um prompt() nativo (bloqueante e sem nenhum feedback de erro
 // se o navegador recusasse/cancelasse silenciosamente, o que fazia o upload "sumir" sem aviso).
@@ -1552,6 +1559,26 @@ async function fetchCircuitosList(){
   render();
 }
 
+// Torneios elegíveis pra vincular a UM circuito específico (dono do circuito + usuários com
+// acesso compartilhado a ele) — sempre o mesmo conjunto pra qualquer um que abrir esse circuito,
+// diferente de torneiosList (torneios do usuário logado). Cache por circuitoId, refeito só ao
+// trocar de circuito.
+async function fetchCircuitoTorneiosElegiveis(circuitoId){
+  if(circuitoTorneiosElegiveisLoading) return;
+  circuitoTorneiosElegiveisLoading = true;
+  try{
+    const res = await apiFetch(`/api/circuito-torneios-elegiveis?circuito=${encodeURIComponent(circuitoId)}`, { cache: "no-store" });
+    if(!res.ok) throw new Error("resposta não-ok");
+    const data = await res.json();
+    circuitoTorneiosElegiveisCache = { circuitoId, torneios: data.torneios || [] };
+  }catch(e){
+    circuitoTorneiosElegiveisCache = { circuitoId, torneios: [] };
+    showToast("Não foi possível carregar os torneios elegíveis deste circuito.");
+  }
+  circuitoTorneiosElegiveisLoading = false;
+  render();
+}
+
 async function criarCircuito(payload){
   showLoading("Criando circuito...");
   try{
@@ -1632,6 +1659,8 @@ async function adicionarUsuarioCircuito(circuitoId, novoEmail){
       const idx = circuitosList.findIndex(c=>c.id===circuitoId);
       if(idx>=0) circuitosList[idx] = data.circuito;
     }
+    // O conjunto de torneios elegíveis (dono + usuariosPermitidos) mudou — força rebuscar.
+    if(circuitoTorneiosElegiveisCache && circuitoTorneiosElegiveisCache.circuitoId===circuitoId) circuitoTorneiosElegiveisCache = null;
     showToast("Usuário adicionado.");
     render();
   }catch(e){
@@ -1654,6 +1683,7 @@ async function removerUsuarioCircuito(circuitoId, usuarioEmail){
       const idx = circuitosList.findIndex(c=>c.id===circuitoId);
       if(idx>=0) circuitosList[idx] = data.circuito;
     }
+    if(circuitoTorneiosElegiveisCache && circuitoTorneiosElegiveisCache.circuitoId===circuitoId) circuitoTorneiosElegiveisCache = null;
     showToast("Usuário removido.");
     render();
   }catch(e){
@@ -3052,6 +3082,11 @@ async function verificarEnvioResultadoCircuito(){
 // Calcula (sem enviar nada) a colocação final de UM torneio específico sem precisar abrir esse
 // torneio na tela — usada tanto pelo envio automático quanto pelo botão manual "Processar
 // agora"/"Verificar novamente" na tela de detalhe do circuito (auditoria).
+// Busca os dados completos do torneio via /api/circuito-torneio-dados (não /api/torneios-get):
+// quem está processando pode ser um colaborador do CIRCUITO sem ter acesso direto a ESTE
+// torneio específico (torneio de outro colaborador, ver CLAUDE.md/circuitoTorneiosElegiveis) —
+// torneiosGet exigiria temAcessoTorneio e devolveria 403 nesse caso; a autorização aqui vem do
+// circuito (temAcessoCircuito + dono do torneio ser um colaborador do circuito).
 // Troca a variável global `state` por uma cópia temporária só pra reaproveitar
 // champion()/montarColocacoesCircuito() (que sempre leem `state` direto, nunca recebem
 // parâmetro — ver decisão de arquitetura no worker.ts) e restaura logo em seguida. Isso é seguro
@@ -3060,10 +3095,10 @@ async function verificarEnvioResultadoCircuito(){
 // código (timer, clique) ler esse state trocado enquanto isso roda.
 // Devolve sempre um status pra permitir auditoria (nunca engole o erro em silêncio):
 // {status:"pronto", colocacoes} | {status:"nao_concluido", mensagem} | {status:"erro", mensagem}
-async function calcularResultadoRetroativo(torneioId){
+async function calcularResultadoRetroativo(torneioId, circuitoId){
   const estadoAtual = state;
   try{
-    const res = await apiFetch(`/api/torneios-get?id=${encodeURIComponent(torneioId)}&email=${encodeURIComponent(auth.email)}`, { cache:"no-store" });
+    const res = await apiFetch(`/api/circuito-torneio-dados?circuito=${encodeURIComponent(circuitoId)}&torneio=${encodeURIComponent(torneioId)}`, { cache:"no-store" });
     if(!res.ok) return { status:"erro", mensagem:`Falha ao buscar o torneio (HTTP ${res.status}).` };
     const data = await res.json();
     if(!data || !data.state) return { status:"erro", mensagem:"Torneio não encontrado ou sem dados salvos." };
@@ -3089,8 +3124,8 @@ async function calcularResultadoRetroativo(torneioId){
 // verificarEnvioResultadoCircuito/CLAUDE.md) — aqui o "abrir" acontece só em memória, sem tocar
 // na UI. Devolve o mesmo formato de status de calcularResultadoRetroativo (com "pronto" trocado
 // por "sucesso" após o POST confirmar), pra alimentar o painel de auditoria da tela de circuito.
-async function enviarResultadoRetroativoParaTorneio(torneioId){
-  const calculo = await calcularResultadoRetroativo(torneioId);
+async function enviarResultadoRetroativoParaTorneio(torneioId, circuitoId){
+  const calculo = await calcularResultadoRetroativo(torneioId, circuitoId);
   if(calculo.status !== "pronto") return calculo;
   try{
     const res = await apiFetch("/api/circuito-resultado-torneio", {
@@ -3304,7 +3339,7 @@ function woNoteHtml(m, a, b){
 function acoesJogoHtml(matchId, m){
   const podeFinalizar = m && !m.finalizado && m.pa!==null && m.pa!=="" && m.pb!==null && m.pb!=="";
   let html = `<div class="ref-actions-row">
-    <button class="ref-mini-btn" data-apitar="${matchId}">🏁 Apitar jogo</button>
+    <button class="ref-mini-btn" data-apitar="${matchId}"><svg viewBox="0 0 25 24" width="14" height="13" style="vertical-align:-2px;margin-right:2px;"><rect x="1" y="9.5" width="4" height="5" rx="1.5" fill="currentColor"/><ellipse cx="11" cy="12" rx="7" ry="6.5" fill="currentColor"/><circle cx="21" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg> Apitar jogo</button>
     <button class="ref-mini-btn ghost" data-compartilhar-apito="${matchId}">🔗 Compartilhar</button>
     <button class="ref-mini-btn ghost" data-placartv="${matchId}">📺 Placar do jogo</button>`;
   if(m && !m.finalizado){
@@ -5027,9 +5062,16 @@ function renderCircuitoDetalheScreen(circuito){
     (c.torneioIds||[]).forEach(tid=>{ if(!outroCircuitoPorTorneio[tid]) outroCircuitoPorTorneio[tid] = c; });
   });
 
+  // Torneios elegíveis SÃO os do dono do circuito + colaboradores dele (circuitoTorneiosElegiveisCache),
+  // não os do usuário que está olhando a tela agora (torneiosList é escopado ao usuário logado) —
+  // ver fetchCircuitoTorneiosElegiveis. Busca sob demanda, com cache por circuito.id.
+  const elegiveisCache = (circuitoTorneiosElegiveisCache && circuitoTorneiosElegiveisCache.circuitoId===circuito.id) ? circuitoTorneiosElegiveisCache : null;
+  if(!elegiveisCache && !circuitoTorneiosElegiveisLoading) fetchCircuitoTorneiosElegiveis(circuito.id);
+  const torneiosElegiveis = elegiveisCache ? elegiveisCache.torneios : [];
+
   const filtroNome = circuitoTorneiosFiltroNome.trim().toLowerCase();
   const filtroData = circuitoTorneiosFiltroData;
-  const meusTorneiosFiltrados = (torneiosList||[])
+  const meusTorneiosFiltrados = torneiosElegiveis
     .slice()
     .filter(t=> !filtroNome || (t.nome||"").toLowerCase().includes(filtroNome))
     .filter(t=> !filtroData || (t.dataInicio && t.dataFim && filtroData>=t.dataInicio && filtroData<=t.dataFim) || t.dataInicio===filtroData)
@@ -5077,8 +5119,10 @@ function renderCircuitoDetalheScreen(circuito){
         <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Filtrar por data</label><input type="date" id="input-circuito-torneios-filtro-data" value="${escapeHtml(circuitoTorneiosFiltroData)}" style="width:100%;border:1.5px solid var(--sand-dark);border-radius:8px;padding:7px 10px;font-size:13px;"></div>
       </div>`;
 
-  if(!meusTorneiosFiltrados.length){
-    html += `<div class="sub">${(torneiosList||[]).length ? "Nenhum torneio encontrado com esse filtro." : "Você ainda não tem torneios criados."}</div>`;
+  if(!elegiveisCache){
+    html += `<div class="sub">Carregando torneios...</div>`;
+  } else if(!meusTorneiosFiltrados.length){
+    html += `<div class="sub">${torneiosElegiveis.length ? "Nenhum torneio encontrado com esse filtro." : "Nenhum torneio elegível pra este circuito ainda (do dono ou dos usuários com acesso compartilhado a ele)."}</div>`;
   } else {
     meusTorneios.forEach(t=>{
       const resultado = circuito.resultados && circuito.resultados[t.id];
@@ -6822,6 +6866,7 @@ function bindEvents(){
       circuitoTorneiosFiltroData = "";
       circuitoTorneiosPagina = 1;
       circuitoRankingAberto = null;
+      circuitoTorneiosElegiveisCache = null;
       render();
     });
   });
@@ -6914,7 +6959,7 @@ function bindEvents(){
     let algumSucesso = false;
     for(const torneioId of adicionados){
       if(rejeitadosIds.has(torneioId)) continue;
-      const resultado = await enviarResultadoRetroativoParaTorneio(torneioId);
+      const resultado = await enviarResultadoRetroativoParaTorneio(torneioId, circuitoId);
       statusProcessamentoCircuito[torneioId] = resultado;
       if(resultado.status==="sucesso") algumSucesso = true;
     }
@@ -6959,9 +7004,10 @@ function bindEvents(){
   main.querySelectorAll("[data-processar-circuito-torneio]").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const torneioId = btn.dataset.processarCircuitoTorneio;
+      const circuitoId = btn.dataset.circuito;
       btn.disabled = true;
       btn.textContent = "Processando...";
-      const resultado = await enviarResultadoRetroativoParaTorneio(torneioId);
+      const resultado = await enviarResultadoRetroativoParaTorneio(torneioId, circuitoId);
       statusProcessamentoCircuito[torneioId] = resultado;
       if(resultado.status==="sucesso") await fetchCircuitosList();
       else render();

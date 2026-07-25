@@ -806,6 +806,67 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       `renderUsuariosPermitidosCard` de torneio) dentro da tela de detalhe do circuito, com a
       mesma UI de adicionar/remover e-mail — só visível/editável pro dono ou admin; quem tem
       acesso compartilhado só vê a lista (somente leitura).
+38. **Ícone do "Apitar jogo" trocado de bandeirada (🏁) por um apito** (pedido explícito — a
+    bandeirada remetia a "fim de partida"/corrida, não a apitar um jogo). **Não existe emoji
+    Unicode de apito** (é um pedido recorrente na comunidade do Unicode, nunca aprovado), então
+    virou um SVG inline pequeno (mesmo espírito dos ícones do menu lateral: `stroke`/`fill:
+    currentColor`, herda a cor do texto do botão) — silhueta simples de bocal + corpo oval +
+    argola, desenhada e validada visualmente via screenshot (Playwright) antes de aplicar, já que
+    não dá pra "ver" o resultado de um path SVG só lendo as coordenadas. Usado só dentro de
+    `acoesJogoHtml()` (função compartilhada do botão "Apitar jogo" em todo lugar que uma partida
+    aparece — grupos, eliminação, mata-mata) — os outros usos de 🏁 no app (`Fim de partida`,
+    indicador `.team.win::after`) foram mantidos, já que ali a bandeirada faz sentido (chegada/
+    fim), só o botão que INICIA o apito precisava trocar.
+39. **Cards de estatística da aba Resumo (`.stat-grid`/`.stat`) tinham fundo colorido sólido
+    (gradiente) e texto branco uniforme** — pedido explícito pra deixar o fundo transparente e
+    os dados (`.num`) com cores diferentes entre si, pra ficar mais fácil escanear visualmente
+    qual card é qual. Trocado `.stat{background:transparent;border:1.5px solid var(--sand-dark)}`
+    (mesmo tratamento visual de `.card`, consistente com o resto do "control room"), e cada
+    variante (`.ocean`/`.coral`/`.grass`/`.ink`) agora colore só o `.num` (`var(--ocean)`/
+    `var(--coral)`/`var(--grass)`/`var(--ink)` respectivamente) — o `.lbl` abaixo do número fica
+    sempre `var(--muted)`, discreto. **`--ink` (não `--heading`) foi escolhido de propósito pra
+    variante "Fase atual"**: `--heading` e `--ocean` são tons de verde muito parecidos no tema
+    escuro (podiam ficar visualmente iguais a duas casas de distância, ver print), enquanto
+    `--ink` é neutro (quase branco) e destoa claramente das outras 3 variantes (2 verdes + 1
+    coral) — únicas cores disponíveis na paleta verde/vermelho do app (item 28: sem laranja).
+    Único uso de `.stat`/`.stat-grid` no app é `renderResumo()`, então a mudança de CSS não
+    afeta nenhuma outra tela.
+40. **"Torneios neste circuito" mostrava os torneios do usuário LOGADO, não os do circuito** —
+    pedido explícito depois do item 37 (acesso compartilhado): a lista pra vincular torneios a
+    um circuito deve mostrar sempre o MESMO conjunto pra qualquer um que abrir aquele circuito —
+    torneios do dono do circuito + torneios de cada usuário com acesso compartilhado a ele
+    (`circuito.usuariosPermitidos`) — nunca os torneios de quem está simplesmente olhando a tela
+    no momento (que podem ser um conjunto totalmente diferente, se for um colaborador ou o
+    admin auditando). Antes disso, `renderCircuitoDetalheScreen` reaproveitava `torneiosList`
+    (busca genérica de "meus torneios", escopada ao usuário logado via `temAcessoTorneio`) —
+    então um colaborador do circuito só via os PRÓPRIOS torneios pra linkar, não os do dono
+    (nem vice-versa), a não ser que também tivesse acesso compartilhado torneio a torneio.
+    - **Nova rota `GET /api/circuito-torneios-elegiveis?circuito=ID`** (`temAcessoCircuito`
+      obrigatório): filtra `torneios:index` por `ownerEmail` estar no conjunto {dono do circuito}
+      ∪ {usuariosPermitidos do circuito} — não pelo acesso do solicitante. Novo cache no front
+      (`circuitoTorneiosElegiveisCache`, chave = circuito.id) busca sob demanda, invalidado ao
+      trocar de circuito ou ao adicionar/remover um usuário compartilhado (o conjunto de donos
+      muda).
+    - **`circuitoAtualizar` também precisou mudar a checagem de autorização por torneio**: linkar
+      um torneio agora é permitido se o DONO do torneio está no mesmo conjunto de colaboradores
+      do circuito (`donosCircuito.has(dono do torneio)`) — **além de**, não no lugar de,
+      `temAcessoTorneio(torneio, solicitante)` (mantido pra cobrir admin linkando qualquer
+      torneio). Sem isso, o dono do circuito conseguia MARCAR a caixinha de um torneio de um
+      colaborador (a lista já mostrava certo), mas o `circuitoAtualizar` recusava silenciosamente
+      o vínculo (`continue` no loop), porque a checagem antiga só considerava acesso DIRETO do
+      solicitante àquele torneio específico.
+    - **Nova rota `GET /api/circuito-torneio-dados?circuito=ID&torneio=ID`**: achado só depois de
+      testar o fluxo ponta a ponta — mesmo com o vínculo funcionando, o cálculo automático do
+      resultado (`calcularResultadoRetroativo`) continuava batendo em `/api/torneios-get`, que
+      exige `temAcessoTorneio` do SOLICITANTE (não do circuito) — voltava 403 pro dono do
+      circuito tentando processar o torneio de um colaborador. A nova rota autoriza pelo mesmo
+      critério do link (`temAcessoCircuito` + dono do torneio no conjunto de colaboradores do
+      circuito), devolvendo o registro completo (`state` com duplas/CPFs) só pra esse uso
+      específico de leitura — `torneiosGet` continua exigindo acesso direto pra quem quer "abrir
+      o torneio" de verdade (editar duplas, jogos etc.), que é um caso de uso mais sensível.
+      `calcularResultadoRetroativo`/`enviarResultadoRetroativoParaTorneio` passaram a receber
+      `circuitoId` como parâmetro (antes só `torneioId`) — todo call site precisou repassar o
+      `circuito.id` já disponível via `data-circuito` nos botões.
 
 ## Convenções
 
