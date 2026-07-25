@@ -1163,8 +1163,10 @@ const APROVACOES_POR_PAGINA = 5;
 let syncTimer = null;
 let telaAdmin = "lista"; // "lista" | "aprovacoes" | "config" | "cupons" — só usada quando ehAdmin()
 let mostrarFormNovoTorneio = false;
-// Circuito é uma feature admin-only (ehAdmin()) — agrupa torneios de QUALQUER organizador num
-// ranking oficial curado pela plataforma, por isso vive atrás do mesmo gate de telaAdmin.
+// Disponível pra QUALQUER organizador (não só ehAdmin()) — circuito agrupa torneios do próprio
+// organizador (ou de quem ele compartilhar acesso, ver usuariosPermitidos), não é uma função
+// administrativa. Admin enxerga os circuitos de todo mundo (auditoria), mas não é obrigatório
+// pra criar um.
 let telaCircuitos = null; // null | "lista" | id do circuito aberto
 let circuitosList = null;
 let circuitosLoading = false;
@@ -1609,6 +1611,53 @@ async function excluirCircuito(id, nome){
     await fetchCircuitosList();
   }catch(e){
     showToast(e.message || "Falha ao excluir circuito.");
+  }finally{
+    hideLoading();
+  }
+}
+
+// Mesmo padrão de adicionarUsuarioTorneio/removerUsuarioTorneio (item 14 do CLAUDE.md).
+async function adicionarUsuarioCircuito(circuitoId, novoEmail){
+  novoEmail = (novoEmail||"").trim().toLowerCase();
+  if(!novoEmail || !novoEmail.includes("@")){ showToast("Informe um e-mail válido."); return; }
+  showLoading("Adicionando usuário...");
+  try{
+    const res = await apiFetch("/api/circuito-usuario-adicionar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: circuitoId, novoEmail })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao adicionar usuário");
+    if(circuitosList){
+      const idx = circuitosList.findIndex(c=>c.id===circuitoId);
+      if(idx>=0) circuitosList[idx] = data.circuito;
+    }
+    showToast("Usuário adicionado.");
+    render();
+  }catch(e){
+    showToast(e.message || "Falha ao adicionar usuário.");
+  }finally{
+    hideLoading();
+  }
+}
+async function removerUsuarioCircuito(circuitoId, usuarioEmail){
+  if(!confirm(`Remover o acesso de ${usuarioEmail} a este circuito?`)) return;
+  showLoading("Removendo usuário...");
+  try{
+    const res = await apiFetch("/api/circuito-usuario-remover", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ id: circuitoId, usuarioEmail })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Falha ao remover usuário");
+    if(circuitosList){
+      const idx = circuitosList.findIndex(c=>c.id===circuitoId);
+      if(idx>=0) circuitosList[idx] = data.circuito;
+    }
+    showToast("Usuário removido.");
+    render();
+  }catch(e){
+    showToast(e.message || "Falha ao remover usuário.");
   }finally{
     hideLoading();
   }
@@ -4705,12 +4754,9 @@ function renderTorneiosScreen(){
     return html;
   }
 
-  // Circuito é uma feature admin-only (ver CLAUDE.md) — agrupa torneios de qualquer organizador
-  // num ranking oficial curado pela plataforma, por isso vive atrás de ehAdmin() e não da tela
-  // normal de Torneios de um organizador comum. Checagem defensiva aqui também (não só no botão
-  // que abre a tela) — se telaCircuitos ficou setado de uma sessão anterior como admin e a conta
-  // atual não é mais admin, não deve renderizar a tela mesmo assim.
-  if(telaCircuitos && ehAdmin()){
+  // Diferente das telas acima, disponível pra QUALQUER organizador — circuito agrupa torneios
+  // do próprio organizador (ou de quem ele compartilhar acesso), não é uma função administrativa.
+  if(telaCircuitos){
     html += renderCircuitosScreen();
     return html;
   }
@@ -4740,7 +4786,7 @@ function renderTorneiosScreen(){
   } else {
     html += `<div style="display:flex;gap:8px;margin-bottom:18px;">
       <button class="btn" id="btn-novo-torneio" style="flex:1;">➕ Criar novo torneio</button>
-      ${ehAdmin() ? `<button class="btn secondary" id="btn-abrir-circuitos" style="flex:1;">🏆 Circuitos</button>` : ""}
+      <button class="btn secondary" id="btn-abrir-circuitos" style="flex:1;">🏆 Circuitos</button>
     </div>`;
   }
 
@@ -4829,7 +4875,7 @@ function renderCircuitosScreen(){
 function renderCircuitosListaScreen(){
   let html = `<button class="btn ghost" id="btn-voltar-circuitos" style="width:auto;padding:6px 12px;margin-bottom:10px;">← Voltar</button>
     <div class="section-title">🏆 Circuitos</div>
-    <div class="section-sub">Agrupe torneios seus num circuito pra somar pontos por colocação final e gerar um ranking público entre eles.</div>`;
+    <div class="section-sub">${ehAdmin() ? "👑 Modo admin — exibindo os circuitos de todas as contas." : "Agrupe torneios seus num circuito pra somar pontos por colocação final e gerar um ranking público entre eles."}</div>`;
 
   if(mostrarFormNovoCircuito){
     html += `<div class="card" style="border:1.5px solid var(--ocean);">
@@ -4857,13 +4903,15 @@ function renderCircuitosListaScreen(){
   } else if(!circuitosList.length){
     html += `<div class="card empty"><span class="ball-icon">🏆</span>Nenhum circuito criado ainda.</div>`;
   } else {
+    const meuEmail = (auth && auth.email || "").trim().toLowerCase();
     circuitosList.slice().sort((a,b)=> (b.updatedAt||"").localeCompare(a.updatedAt||"")).forEach(c=>{
       const qtdTorneios = (c.torneioIds||[]).length;
+      const souDono = (c.ownerEmail||"").trim().toLowerCase() === meuEmail;
       html += `<div class="torneio-item" data-abrir-circuito="${c.id}">
         <div class="row">
           <span class="nome">${escapeHtml(c.nome)}</span>
         </div>
-        <div class="sub" style="margin-top:2px;">${qtdTorneios} torneio${qtdTorneios!==1?"s":""} vinculado${qtdTorneios!==1?"s":""}</div>
+        <div class="sub" style="margin-top:2px;">${qtdTorneios} torneio${qtdTorneios!==1?"s":""} vinculado${qtdTorneios!==1?"s":""}${!souDono ? ` · Dono: ${escapeHtml(c.ownerEmail||"—")}` : ""}</div>
       </div>`;
     });
   }
@@ -4936,6 +4984,37 @@ async function carregarRankingCircuitoInline(circuitoId, modo){
   render();
 }
 
+// Mesmo padrão de renderUsuariosPermitidosCard (torneio, ver item 14 do CLAUDE.md) — mas opera
+// sobre o objeto `circuito` recebido como parâmetro (não sobre `state`, que é do torneio aberto).
+function renderUsuariosPermitidosCircuitoCard(circuito){
+  const meuEmail = (auth && auth.email || "").trim().toLowerCase();
+  const souDono = !!meuEmail && meuEmail === (circuito.ownerEmail||"").trim().toLowerCase();
+  const lista = circuito.usuariosPermitidos || [];
+  if(!souDono && !ehAdmin()){
+    if(!lista.length) return "";
+    return `
+    <div class="card tg-settings">
+      <label>Usuários com acesso a este circuito</label>
+      <div class="hint" style="margin-bottom:8px;">Além do dono, essas contas também podem gerenciar este circuito.</div>
+      ${lista.map(e=>`<div class="status-pill" style="margin:0 6px 6px 0;display:inline-block;">${escapeHtml(e)}</div>`).join("")}
+    </div>`;
+  }
+  return `
+    <div class="card tg-settings">
+      <label>Usuários com acesso a este circuito</label>
+      <div class="hint" style="margin-bottom:8px;">Adicione e-mails de contas Google que também poderão editar nome, tabela de pontos e torneios vinculados deste circuito. Eles não podem excluir o circuito nem gerenciar esta lista.</div>
+      ${lista.length ? lista.map(e=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="flex:1;word-break:break-all;">${escapeHtml(e)}</span>
+          <button class="btn ghost btn-remover-usuario-circuito" data-circuito="${circuito.id}" data-email="${escapeHtml(e)}" style="flex:0 0 auto;width:auto;">Remover</button>
+        </div>`).join("") : `<div class="hint" style="margin-bottom:8px;">Nenhum usuário adicionado ainda.</div>`}
+      <div style="display:flex;gap:8px;">
+        <input type="email" id="input-novo-usuario-circuito" placeholder="email@exemplo.com" style="flex:1;">
+        <button class="btn secondary" id="btn-adicionar-usuario-circuito" data-circuito="${circuito.id}" style="flex:0 0 auto;width:auto;">Adicionar</button>
+      </div>
+    </div>`;
+}
+
 function renderCircuitoDetalheScreen(circuito){
   const vinculados = new Set(circuito.torneioIds||[]);
   const linkPublico = `${location.origin}${location.pathname}?ranking=1&circuito=${circuito.id}`;
@@ -4987,6 +5066,8 @@ function renderCircuitoDetalheScreen(circuito){
       </div>
       ${painelRankingInlineCircuito(circuito)}
     </div>
+
+    ${renderUsuariosPermitidosCircuitoCard(circuito)}
 
     <div class="card">
       <div style="font-weight:700;font-size:13px;color:var(--heading);margin-bottom:8px;">Torneios neste circuito</div>
@@ -6897,6 +6978,16 @@ function bindEvents(){
   const btnExcluirCircuito = document.getElementById("btn-excluir-circuito");
   if(btnExcluirCircuito) btnExcluirCircuito.addEventListener("click", ()=>{
     excluirCircuito(btnExcluirCircuito.dataset.circuito, btnExcluirCircuito.dataset.nome);
+  });
+  const btnAdicionarUsuarioCircuito = document.getElementById("btn-adicionar-usuario-circuito");
+  const inputNovoUsuarioCircuito = document.getElementById("input-novo-usuario-circuito");
+  if(btnAdicionarUsuarioCircuito && inputNovoUsuarioCircuito){
+    const disparar = ()=>{ const v = inputNovoUsuarioCircuito.value; inputNovoUsuarioCircuito.value = ""; adicionarUsuarioCircuito(btnAdicionarUsuarioCircuito.dataset.circuito, v); };
+    btnAdicionarUsuarioCircuito.addEventListener("click", disparar);
+    inputNovoUsuarioCircuito.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); disparar(); } });
+  }
+  main.querySelectorAll(".btn-remover-usuario-circuito").forEach(btn=>{
+    btn.addEventListener("click", ()=> removerUsuarioCircuito(btn.dataset.circuito, btn.dataset.email));
   });
   const btnNovoCupom = document.getElementById("btn-novo-cupom");
   if(btnNovoCupom) btnNovoCupom.addEventListener("click", ()=>{

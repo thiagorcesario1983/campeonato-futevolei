@@ -777,6 +777,35 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       direto, sem juntar nada — nunca produz `"X & X"`.
     - Nenhuma mudança no front — os dois modos só consomem o campo `nome` que a rota já devolve,
       então a correção inteira ficou contida no cálculo do servidor.
+37. **Circuito voltou a ser self-service — reverte o item 34** (pedido explícito, depois de usar
+    a versão admin-only na prática): qualquer organizador autenticado pode criar/gerenciar seus
+    próprios circuitos de novo; admin não cria, mas continua enxergando os circuitos de todo
+    mundo (`circuitosList` sem filtro por dono quando `ehAdmin()`) — usado pra auditoria/
+    curadoria, não como pré-requisito. Ganhou de quebra o mesmo mecanismo de **acesso
+    compartilhado** que torneios já tinham (item 14), agora espelhado em `Circuito`:
+    - **Novo campo `Circuito.usuariosPermitidos: string[]`** (mesmo formato de
+      `torneio.usuariosPermitidos`) e **`temAcessoCircuito(circuito, email, env)`** no worker,
+      mesma fórmula de `temAcessoTorneio`: dono, admin, ou e-mail na lista.
+    - **`circuitoAtualizar`** (editar nome/tabela de pontos/torneios vinculados) passou a aceitar
+      `temAcessoCircuito` no lugar de "só dono ou admin" — usuário com acesso compartilhado edita
+      o circuito como o dono.
+    - **`circuitoExcluir` e a gestão da própria lista de usuários continuam só dono+admin**
+      (novas rotas `/api/circuito-usuario-adicionar` e `/api/circuito-usuario-remover`, cópia
+      quase literal de `torneiosUsuarioAdicionar`/`Remover`) — mesma regra de "acesso operacional,
+      não controle total" já usada em torneios: quem foi adicionado não pode excluir o circuito
+      nem adicionar/remover outros usuários dessa lista.
+    - **`circuitoResultadoTorneio`** (envio automático de resultado ao finalizar um torneio
+      vinculado) também passou a usar `temAcessoCircuito` — sem isso, o envio automático de um
+      torneio vinculado por um usuário com acesso compartilhado (não o dono) seria silenciosamente
+      ignorado (`ignorado: true`) por não bater mais no filtro antigo `ownerEmail===solicitante`.
+    - **Front**: removido o gate `ehAdmin()` do botão "🏆 Circuitos" e da renderização de
+      `telaCircuitos` (`render()`); tela de listagem ganhou aviso "👑 Modo admin — exibindo os
+      circuitos de todas as contas" e mostra o dono de cada circuito quando quem está olhando não
+      é o dono (mesmo padrão do aviso já existente em Torneios). Novo card "Usuários com
+      acesso a este circuito" (`renderUsuariosPermitidosCircuitoCard`, cópia do
+      `renderUsuariosPermitidosCard` de torneio) dentro da tela de detalhe do circuito, com a
+      mesma UI de adicionar/remover e-mail — só visível/editável pro dono ou admin; quem tem
+      acesso compartilhado só vê a lista (somente leitura).
 
 ## Convenções
 
