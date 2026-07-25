@@ -2586,6 +2586,22 @@ interface Circuito {
       colocacoes: Array<{ posicao: 1 | 2 | 3 | 4 | "participacao"; duplaNome: string; jogadorNome: string; cpf: string | null }>;
     };
   };
+  // E-mails com acesso compartilhado a este circuito (além do dono) — mesmo padrão de
+  // torneio.usuariosPermitidos (ver temAcessoTorneio/torneiosUsuarioAdicionar). Gerenciado só
+  // por dono/admin (circuitoUsuarioAdicionar/Remover); quem está nesta lista pode editar o
+  // circuito (nome, tabela de pontos, torneios vinculados) mas não excluir o circuito nem
+  // gerenciar esta própria lista.
+  usuariosPermitidos: string[];
+}
+
+// Dono, admin do app, ou um dos e-mails com acesso compartilhado (usuariosPermitidos) — mesmo
+// espírito de temAcessoTorneio, cobre edição operacional do circuito (nome, tabela de pontos,
+// torneios vinculados). Excluir o circuito e gerenciar a lista de usuários continuam checando só
+// dono+admin, à parte (ver circuitoExcluir/circuitoUsuarioAdicionar/circuitoUsuarioRemover).
+function temAcessoCircuito(circuito: Circuito, email: string, env: Env): boolean {
+  if (ehAdmin(email, env)) return true;
+  if (normEmail(circuito?.ownerEmail) === email) return true;
+  return Array.isArray(circuito?.usuariosPermitidos) && circuito.usuariosPermitidos.includes(email);
 }
 
 async function getCircuitosIndex(env: Env): Promise<Circuito[]> {
@@ -2599,10 +2615,10 @@ async function saveCircuitosIndex(env: Env, lista: Circuito[]): Promise<void> {
   await env.DB.put("circuitos:index", JSON.stringify(lista));
 }
 
-// Circuito é uma feature admin-only (agrupa torneios de qualquer organizador num ranking
-// oficial curado pela plataforma) — só quem está em ADMIN_EMAILS pode criar/listar. O front já
-// esconde a aba inteira pra quem não é admin; esta checagem é a mesma regra aplicada no servidor
-// (nunca confiar só na UI, mesmo padrão do resto do app).
+// Circuito é criado por QUALQUER organizador autenticado (dono = quem criou) — admin não cria,
+// só enxerga/audita todos os circuitos de todo mundo (ver circuitosList) e mantém o mesmo poder
+// de backstop que tem em qualquer outro recurso do app (torneios, cupons): dono OU admin editam/
+// excluem/gerenciam acesso, nunca só o dono sozinho.
 async function circuitoCriar(request: Request, env: Env): Promise<Response> {
   let body: any;
   try {
@@ -2612,7 +2628,6 @@ async function circuitoCriar(request: Request, env: Env): Promise<Response> {
   }
   const solicitanteEmail = await emailAutenticado(request, env);
   if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Somente administradores podem criar circuitos" }, 403);
 
   const nome = String(body.nome || "").trim();
   if (!nome) return json({ error: "Informe o nome do circuito" }, 400);
@@ -2633,7 +2648,8 @@ async function circuitoCriar(request: Request, env: Env): Promise<Response> {
       quartoLugar: Number(pt.quartoLugar) || 40,
       participacao: Number(pt.participacao) || 10
     },
-    resultados: {}
+    resultados: {},
+    usuariosPermitidos: []
   };
 
   const lista = await getCircuitosIndex(env);
@@ -2644,12 +2660,14 @@ async function circuitoCriar(request: Request, env: Env): Promise<Response> {
 
 // Admin-only (ver comentário de circuitoCriar acima) — lista todos os circuitos, não só os que
 // o próprio admin criou (podem ter sido criados por outro admin da allowlist).
+// Organizador enxerga só os próprios circuitos + os que tiver acesso compartilhado; admin
+// enxerga todos, pra auditoria/curadoria geral (mesmo padrão de torneiosList).
 async function circuitosList(request: Request, env: Env): Promise<Response> {
   const solicitanteEmail = await emailAutenticado(request, env);
   if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
-  if (!ehAdmin(solicitanteEmail, env)) return json({ error: "Somente administradores podem ver circuitos" }, 403);
   const lista = await getCircuitosIndex(env);
-  return json({ circuitos: lista });
+  const meus = ehAdmin(solicitanteEmail, env) ? lista : lista.filter((c) => temAcessoCircuito(c, solicitanteEmail, env));
+  return json({ circuitos: meus });
 }
 
 async function circuitoAtualizar(request: Request, env: Env): Promise<Response> {
@@ -2666,7 +2684,7 @@ async function circuitoAtualizar(request: Request, env: Env): Promise<Response> 
   const idx = lista.findIndex((c) => c.id === body.id);
   if (idx < 0) return json({ error: "não encontrado" }, 404);
   const circuito = lista[idx];
-  if (circuito.ownerEmail !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+  if (!temAcessoCircuito(circuito, solicitanteEmail, env)) {
     return json({ error: "Sem permissão para editar este circuito" }, 403);
   }
 
@@ -2762,6 +2780,83 @@ async function circuitoExcluir(request: Request, env: Env): Promise<Response> {
   return json({ ok: true });
 }
 
+// Compartilhamento de acesso a um circuito — mesmo padrão de torneiosUsuarioAdicionar/Remover
+// (item 14 do CLAUDE.md): dono/admin pode adicionar e-mails que passam a editar o circuito
+// (nome, tabela de pontos, torneios vinculados) como o dono, mas não podem excluir o circuito
+// nem gerenciar esta própria lista (só dono/admin faz isso, de propósito).
+async function circuitoUsuarioAdicionar(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const id = body.id;
+  const novoEmail = normEmail(body.novoEmail);
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+  if (!novoEmail || !novoEmail.includes("@")) return json({ error: "Informe um e-mail válido" }, 400);
+
+  const lista = await getCircuitosIndex(env);
+  const idx = lista.findIndex((c) => c.id === id);
+  if (idx < 0) return json({ error: "não encontrado" }, 404);
+  const circuito = lista[idx];
+
+  if (circuito.ownerEmail !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Só o dono do circuito ou o admin podem adicionar usuários" }, 403);
+  }
+  if (novoEmail === normEmail(circuito.ownerEmail)) {
+    return json({ error: "Esse e-mail já é o dono do circuito" }, 400);
+  }
+
+  const usuarios: string[] = Array.isArray(circuito.usuariosPermitidos) ? circuito.usuariosPermitidos : [];
+  if (usuarios.includes(novoEmail)) {
+    return json({ error: "Esse e-mail já tem acesso a este circuito" }, 400);
+  }
+  usuarios.push(novoEmail);
+  circuito.usuariosPermitidos = usuarios;
+  circuito.updatedAt = new Date().toISOString();
+  await saveCircuitosIndex(env, lista);
+
+  return json({ ok: true, circuito });
+}
+
+async function circuitoUsuarioRemover(request: Request, env: Env): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "JSON inválido" }, 400);
+  }
+  const id = body.id;
+  const alvoEmail = normEmail(body.usuarioEmail);
+  if (!id) return json({ error: "id obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+  if (!alvoEmail) return json({ error: "usuarioEmail obrigatório" }, 400);
+
+  const lista = await getCircuitosIndex(env);
+  const idx = lista.findIndex((c) => c.id === id);
+  if (idx < 0) return json({ error: "não encontrado" }, 404);
+  const circuito = lista[idx];
+
+  if (circuito.ownerEmail !== solicitanteEmail && !ehAdmin(solicitanteEmail, env)) {
+    return json({ error: "Só o dono do circuito ou o admin podem remover usuários" }, 403);
+  }
+
+  const usuariosAntes: string[] = Array.isArray(circuito.usuariosPermitidos) ? circuito.usuariosPermitidos : [];
+  const usuarios = usuariosAntes.filter((e) => e !== alvoEmail);
+  if (usuarios.length === usuariosAntes.length) {
+    return json({ error: "Esse e-mail não estava na lista" }, 404);
+  }
+  circuito.usuariosPermitidos = usuarios;
+  circuito.updatedAt = new Date().toISOString();
+  await saveCircuitosIndex(env, lista);
+
+  return json({ ok: true, circuito });
+}
+
 function circuitoValidarColocacoes(colocacoes: any): colocacoes is Array<{ posicao: 1 | 2 | 3 | 4 | "participacao"; duplaNome: string; jogadorNome: string; cpf: string | null }> {
   if (!Array.isArray(colocacoes) || !colocacoes.length) return false;
   return colocacoes.every((c) =>
@@ -2795,7 +2890,7 @@ async function circuitoResultadoTorneio(request: Request, env: Env): Promise<Res
 
   const lista = await getCircuitosIndex(env);
   const circuitosAlvo = lista.filter((c) =>
-    (c.torneioIds || []).includes(torneioId) && (c.ownerEmail === solicitanteEmail || ehAdmin(solicitanteEmail, env))
+    (c.torneioIds || []).includes(torneioId) && temAcessoCircuito(c, solicitanteEmail, env)
   );
   if (!circuitosAlvo.length) return json({ ok: true, ignorado: true });
 
@@ -3355,6 +3450,12 @@ export default {
     }
     if (path === "/api/circuito-excluir") {
       return method === "POST" ? circuitoExcluir(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/circuito-usuario-adicionar") {
+      return method === "POST" ? circuitoUsuarioAdicionar(request, env) : new Response("Method not allowed", { status: 405 });
+    }
+    if (path === "/api/circuito-usuario-remover") {
+      return method === "POST" ? circuitoUsuarioRemover(request, env) : new Response("Method not allowed", { status: 405 });
     }
     if (path === "/api/circuito-resultado-torneio") {
       return method === "POST" ? circuitoResultadoTorneio(request, env) : new Response("Method not allowed", { status: 405 });
