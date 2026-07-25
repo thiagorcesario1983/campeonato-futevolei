@@ -831,6 +831,42 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     coral) — únicas cores disponíveis na paleta verde/vermelho do app (item 28: sem laranja).
     Único uso de `.stat`/`.stat-grid` no app é `renderResumo()`, então a mudança de CSS não
     afeta nenhuma outra tela.
+40. **"Torneios neste circuito" mostrava os torneios do usuário LOGADO, não os do circuito** —
+    pedido explícito depois do item 37 (acesso compartilhado): a lista pra vincular torneios a
+    um circuito deve mostrar sempre o MESMO conjunto pra qualquer um que abrir aquele circuito —
+    torneios do dono do circuito + torneios de cada usuário com acesso compartilhado a ele
+    (`circuito.usuariosPermitidos`) — nunca os torneios de quem está simplesmente olhando a tela
+    no momento (que podem ser um conjunto totalmente diferente, se for um colaborador ou o
+    admin auditando). Antes disso, `renderCircuitoDetalheScreen` reaproveitava `torneiosList`
+    (busca genérica de "meus torneios", escopada ao usuário logado via `temAcessoTorneio`) —
+    então um colaborador do circuito só via os PRÓPRIOS torneios pra linkar, não os do dono
+    (nem vice-versa), a não ser que também tivesse acesso compartilhado torneio a torneio.
+    - **Nova rota `GET /api/circuito-torneios-elegiveis?circuito=ID`** (`temAcessoCircuito`
+      obrigatório): filtra `torneios:index` por `ownerEmail` estar no conjunto {dono do circuito}
+      ∪ {usuariosPermitidos do circuito} — não pelo acesso do solicitante. Novo cache no front
+      (`circuitoTorneiosElegiveisCache`, chave = circuito.id) busca sob demanda, invalidado ao
+      trocar de circuito ou ao adicionar/remover um usuário compartilhado (o conjunto de donos
+      muda).
+    - **`circuitoAtualizar` também precisou mudar a checagem de autorização por torneio**: linkar
+      um torneio agora é permitido se o DONO do torneio está no mesmo conjunto de colaboradores
+      do circuito (`donosCircuito.has(dono do torneio)`) — **além de**, não no lugar de,
+      `temAcessoTorneio(torneio, solicitante)` (mantido pra cobrir admin linkando qualquer
+      torneio). Sem isso, o dono do circuito conseguia MARCAR a caixinha de um torneio de um
+      colaborador (a lista já mostrava certo), mas o `circuitoAtualizar` recusava silenciosamente
+      o vínculo (`continue` no loop), porque a checagem antiga só considerava acesso DIRETO do
+      solicitante àquele torneio específico.
+    - **Nova rota `GET /api/circuito-torneio-dados?circuito=ID&torneio=ID`**: achado só depois de
+      testar o fluxo ponta a ponta — mesmo com o vínculo funcionando, o cálculo automático do
+      resultado (`calcularResultadoRetroativo`) continuava batendo em `/api/torneios-get`, que
+      exige `temAcessoTorneio` do SOLICITANTE (não do circuito) — voltava 403 pro dono do
+      circuito tentando processar o torneio de um colaborador. A nova rota autoriza pelo mesmo
+      critério do link (`temAcessoCircuito` + dono do torneio no conjunto de colaboradores do
+      circuito), devolvendo o registro completo (`state` com duplas/CPFs) só pra esse uso
+      específico de leitura — `torneiosGet` continua exigindo acesso direto pra quem quer "abrir
+      o torneio" de verdade (editar duplas, jogos etc.), que é um caso de uso mais sensível.
+      `calcularResultadoRetroativo`/`enviarResultadoRetroativoParaTorneio` passaram a receber
+      `circuitoId` como parâmetro (antes só `torneioId`) — todo call site precisou repassar o
+      `circuito.id` já disponível via `data-circuito` nos botões.
 
 ## Convenções
 

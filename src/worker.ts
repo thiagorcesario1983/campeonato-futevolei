@@ -2670,6 +2670,69 @@ async function circuitosList(request: Request, env: Env): Promise<Response> {
   return json({ circuitos: meus });
 }
 
+// Torneios elegíveis pra vincular a UM circuito específico: só os que pertencem ao dono do
+// circuito ou a algum dos usuários com acesso compartilhado a ele (circuito.usuariosPermitidos)
+// — sempre o mesmo conjunto, não importa quem está olhando a tela (dono, colaborador ou admin
+// auditando). Diferente de torneiosList (que devolve os torneios do PRÓPRIO solicitante): aqui
+// filtra por dono do TORNEIO estar no grupo de colaboradores do CIRCUITO, então um colaborador
+// do circuito consegue enxergar (e linkar) os torneios do dono, e vice-versa, sem precisar
+// também compartilhar acesso torneio a torneio.
+async function circuitoTorneiosElegiveis(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const circuitoId = url.searchParams.get("circuito");
+  if (!circuitoId) return json({ error: "circuito obrigatório" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+
+  const listaCircuitos = await getCircuitosIndex(env);
+  const circuito = listaCircuitos.find((c) => c.id === circuitoId);
+  if (!circuito) return json({ error: "não encontrado" }, 404);
+  if (!temAcessoCircuito(circuito, solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para ver este circuito" }, 403);
+  }
+
+  const donos = new Set<string>([normEmail(circuito.ownerEmail), ...(circuito.usuariosPermitidos || []).map((e) => normEmail(e))]);
+  const index = await getIndex(env);
+  const torneios = index.filter((t: any) => donos.has(normEmail(t.ownerEmail)));
+  return json({ torneios });
+}
+
+// Devolve o registro COMPLETO (state inteiro, com duplas/jogador1/jogador2/cpf) de um torneio
+// pra calcular a colocação final dele pro ranking do circuito — usado por
+// calcularResultadoRetroativo no front quando quem está processando não tem acesso direto ao
+// torneio (torneiosGet normal exigiria temAcessoTorneio), mas TEM acesso ao circuito e o torneio
+// pertence a outro colaborador desse mesmo circuito (ver circuitoTorneiosElegiveis — mesmo
+// conjunto de donos). Diferente de torneiosGet, que serve pra "abrir o torneio pra operar" (edição
+// completa) e por isso continua exigindo acesso direto — aqui o uso é só leitura, pra montar as
+// colocações finais, e a autorização vem do circuito, não do torneio em si.
+async function circuitoTorneioDados(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const circuitoId = url.searchParams.get("circuito");
+  const torneioId = url.searchParams.get("torneio");
+  if (!circuitoId || !torneioId) return json({ error: "circuito e torneio obrigatórios" }, 400);
+  const solicitanteEmail = await emailAutenticado(request, env);
+  if (!solicitanteEmail) return json({ error: "Sessão inválida ou expirada — faça login novamente." }, 401);
+
+  const listaCircuitos = await getCircuitosIndex(env);
+  const circuito = listaCircuitos.find((c) => c.id === circuitoId);
+  if (!circuito) return json({ error: "circuito não encontrado" }, 404);
+  if (!temAcessoCircuito(circuito, solicitanteEmail, env)) {
+    return json({ error: "Sem permissão para ver este circuito" }, 403);
+  }
+
+  const raw = await env.DB.get(`torneio:${torneioId}`);
+  if (!raw) return json({ error: "torneio não encontrado" }, 404);
+  const dados = JSON.parse(raw);
+
+  const donosCircuito = new Set<string>([normEmail(circuito.ownerEmail), ...(circuito.usuariosPermitidos || []).map((e) => normEmail(e))]);
+  const permitido = donosCircuito.has(normEmail(dados.ownerEmail)) || temAcessoTorneio(dados, solicitanteEmail, env);
+  if (!permitido) {
+    return json({ error: "Este torneio não pertence a nenhum colaborador deste circuito" }, 403);
+  }
+
+  return json(dados);
+}
+
 async function circuitoAtualizar(request: Request, env: Env): Promise<Response> {
   let body: any;
   try {
@@ -2702,9 +2765,11 @@ async function circuitoAtualizar(request: Request, env: Env): Promise<Response> 
 
   // torneioIds: atualização cirúrgica com campo espelho em cada torneio.circuitoIds (mesmo
   // espírito do item 19 do CLAUDE.md — anotarNomesBracket: espelho só pra leitura). Só linka um
-  // torneio se o solicitante realmente tiver acesso a ele (temAcessoTorneio) — sem essa checagem,
-  // o dono de um circuito poderia colar o id de um torneio de OUTRO organizador e expor os
-  // nomes/CPFs das duplas dele no ranking público.
+  // torneio se ele pertencer a algum dos colaboradores DESTE circuito (dono ou
+  // usuariosPermitidos — mesmo conjunto usado em circuitoTorneiosElegiveis) OU se o solicitante
+  // tiver acesso direto a ele (temAcessoTorneio, ex: admin linkando qualquer torneio) — sem essa
+  // checagem, o dono de um circuito poderia colar o id de um torneio de QUALQUER organizador e
+  // expor os nomes/CPFs das duplas dele no ranking público.
   // Regra: um torneio só pode pertencer a UM circuito por vez (evita o mesmo torneio somando
   // pontos em dois rankings diferentes) — se o espelho circuitoIds já apontar pra outro circuito,
   // a vinculação é recusada aqui (defesa em profundidade; o front já desabilita a caixinha nesse
@@ -2716,12 +2781,14 @@ async function circuitoAtualizar(request: Request, env: Env): Promise<Response> 
     const adicionados = novosIdsBrutos.filter((id) => !antigosIds.includes(id));
     const removidos = antigosIds.filter((id) => !novosIdsBrutos.includes(id));
     const adicionadosAutorizados: string[] = [];
+    const donosCircuito = new Set<string>([normEmail(circuito.ownerEmail), ...(circuito.usuariosPermitidos || []).map((e) => normEmail(e))]);
 
     for (const torneioId of adicionados) {
       const raw = await env.DB.get(`torneio:${torneioId}`);
       if (!raw) continue;
       const dadosTorneio = JSON.parse(raw);
-      if (!temAcessoTorneio(dadosTorneio, solicitanteEmail, env)) continue;
+      const podeLinkar = donosCircuito.has(normEmail(dadosTorneio.ownerEmail)) || temAcessoTorneio(dadosTorneio, solicitanteEmail, env);
+      if (!podeLinkar) continue;
       const circuitoIdsExistentes: string[] = Array.isArray(dadosTorneio.circuitoIds) ? dadosTorneio.circuitoIds : [];
       const jaVinculadoOutro = circuitoIdsExistentes.find((cid: string) => cid !== circuito.id);
       if (jaVinculadoOutro) {
@@ -3444,6 +3511,12 @@ export default {
     }
     if (path === "/api/circuitos-list") {
       return circuitosList(request, env);
+    }
+    if (path === "/api/circuito-torneios-elegiveis") {
+      return circuitoTorneiosElegiveis(request, env);
+    }
+    if (path === "/api/circuito-torneio-dados") {
+      return circuitoTorneioDados(request, env);
     }
     if (path === "/api/circuito-atualizar") {
       return method === "POST" ? circuitoAtualizar(request, env) : new Response("Method not allowed", { status: 405 });
