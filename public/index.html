@@ -2910,14 +2910,20 @@ function pontosPorPosicaoCircuito(tabela, posicao){
 // parceiro entre torneios). Dupla sem jogador1/jogador2 detalhado vira um único item com o
 // próprio nome da dupla e cpf null (aparece no resultado deste torneio, mas nunca agrega com
 // outro torneio — ver CLAUDE.md).
+// Um jogador entra na lista se tiver nomeCompleto OU cpf preenchido — não os dois. Preencher só
+// o CPF é um fluxo real (o campo já vem com placeholder "usado no ranking por circuito", convite
+// direto pra alguém preencher só ele numa dupla que já tinha nome/telefone antigos). Exigir
+// nomeCompleto também pra "contar" o cpf jogava fora o CPF inteiro nesse caso — o jogador
+// aparecia como "sem CPF" mesmo tendo informado, e recalcular não resolvia porque o dado
+// realmente não estava sendo lido daquele jogador.
 function colocacoesParaDupla(nomeDupla, posicao){
   const idx = duplaIndexByName(nomeDupla);
   const dupla = idx>=0 ? state.duplas[idx] : null;
-  const jogadores = [dupla?.jogador1, dupla?.jogador2].filter(j=> j && (j.nomeCompleto||"").trim());
+  const jogadores = [dupla?.jogador1, dupla?.jogador2].filter(j=> j && ((j.nomeCompleto||"").trim() || (j.cpf||"").trim()));
   if(!jogadores.length){
     return [{ posicao, duplaNome: nomeDupla, jogadorNome: nomeDupla, cpf: null }];
   }
-  return jogadores.map(j=> ({ posicao, duplaNome: nomeDupla, jogadorNome: j.nomeCompleto.trim(), cpf: j.cpf ? j.cpf.replace(/\D/g,"") || null : null }));
+  return jogadores.map(j=> ({ posicao, duplaNome: nomeDupla, jogadorNome: (j.nomeCompleto||"").trim() || nomeDupla, cpf: j.cpf ? j.cpf.replace(/\D/g,"") || null : null }));
 }
 
 // Resolve a colocação final do torneio usando as mesmas funções já testadas de bracket

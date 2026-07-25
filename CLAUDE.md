@@ -738,6 +738,24 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       ao lado de "Copiar link"): mostra o mesmo ranking da página pública sem sair do app. Cache
       em memória (`circuitoRankingCache`, chave = circuitoId+modo) evita rebuscar a cada
       re-render — só busca de novo quando abre o painel pela primeira vez ou troca de modo.
+35. **CPF preenchido sumia do ranking quando `nomeCompleto` do jogador ficava em branco** —
+    reportado com print mostrando "sem CPF" no painel de auditoria mesmo com o CPF visivelmente
+    preenchido na dupla, e que "Recalcular" não resolvia. Causa: `colocacoesParaDupla()`
+    (`index.html`) só considerava um jogador (`dupla.jogador1`/`jogador2`) como "preenchido" — e
+    portanto elegível pra entrar na lista de colocações enviada ao circuito — quando
+    `nomeCompleto` estava presente; se só o `cpf` tivesse sido preenchido (fluxo real: o campo
+    CPF já tem o placeholder "usado no ranking por circuito", convite direto pra alguém
+    preencher só ele numa dupla cujo nome/telefone já existiam de antes), o jogador inteiro era
+    filtrado fora **antes mesmo de o cpf ser lido**, caindo no fallback de "dupla sem jogador
+    detalhado" (`cpf: null`). Como o cálculo é sempre refeito do zero a partir do `state.duplas`
+    atual (nunca cacheado), "Recalcular" repetia exatamente o mesmo resultado — não era um
+    problema de dado desatualizado, o dado real não estava sendo lido daquele jogador. Corrigido
+    trocando a condição pra "tem `nomeCompleto` **ou** `cpf`" — um jogador com só CPF agora entra
+    na lista (usando o nome da dupla como `jogadorNome` de exibição, já que não há nome
+    individual pra mostrar, mas o CPF real é preservado pra agregação). **Qualquer filtro que
+    decida se um jogador "conta" pro ranking deve considerar CPF e nome como critérios
+    independentes** — exigir os dois pra usar qualquer um deles descarta dado real que o
+    organizador informou de propósito.
 
 ## Convenções
 
