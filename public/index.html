@@ -637,17 +637,30 @@
     position:fixed;inset:0;background:var(--ocean-deep);color:var(--white);
     display:flex;flex-direction:column;align-items:center;
     font-family:'Work Sans',sans-serif;text-align:center;padding:30px;
+    /* Em telas curtas (celular em modo retrato, muitos patrocinadores, nome de árbitro etc.), o
+       conteúdo pode não caber inteiro na altura disponível. Antes disso ser scrollável, o
+       .tv-main abaixo (flex:1 + min-height:0) era espremido MENOR que o próprio conteúdo, e esse
+       conteúdo (que não encolhe) transbordava a caixa espremida pra cima E pra baixo — "para cima"
+       cortava o texto de status acima do topo da tela (inacessível, position:fixed não tem pra
+       onde rolar); "para baixo" sobrepunha a faixa de patrocinadores logo abaixo. Com scroll
+       habilitado aqui e sem forçar min-height:0 no conteúdo (ver .tv-main), o conteúdo nunca é
+       comprimido abaixo do próprio tamanho — na pior das hipóteses, a tela toda fica mais alta
+       que a viewport e dá pra rolar pra ver o resto, nunca corta nem sobrepõe nada. */
+    overflow-y:auto;
   }
   .tv-loading{font-size:22px;opacity:.8;}
   /* Conteúdo principal (status+label+placar+rodapé) fica num wrapper próprio (flex:1), que se
      centraliza sozinho no espaço que sobra DEPOIS da faixa de patrocinadores (flex:0 0 auto, ver
      .tv-sponsors abaixo). Diferente de position:absolute, isso reserva espaço de verdade pra
      faixa — sem essa reserva, "Apitado por" (linha extra no rodapé do conteúdo centralizado)
-     podia ficar espremido/sobreposto com "Patrocínio" quando há vários logos cadastrados. */
-  .tv-main{flex:1;width:100%;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-  /* Status da partida (aguardando/em andamento/finalizada) fica no TOPO do conteúdo principal,
-     acima do texto de grupo+jogo — mesma classe .tv-status de sempre (reaproveitada também pela
-     linha "Apitado por" no rodapé), só com margem invertida via .tv-status-top. */
+     podia ficar espremido/sobreposto com "Patrocinadores" quando há vários logos cadastrados.
+     SEM min-height:0 (propositalmente, ver comentário em .tv-screen acima) — isso faz esse
+     wrapper nunca encolher abaixo do tamanho natural do próprio conteúdo. */
+  .tv-main{flex:1;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:2vh;}
+  /* Status da partida (aguardando/em andamento/finalizada) fica perto do topo do conteúdo
+     principal, acima do texto de grupo+jogo (mas não colado na borda da tela, ver padding-top
+     acima) — mesma classe .tv-status de sempre (reaproveitada também pela linha "Apitado por" no
+     rodapé), só com margem invertida via .tv-status-top. */
   .tv-status-top{margin-top:0;margin-bottom:4vh;}
   .tv-label{
     font-family:'Bebas Neue',sans-serif;font-size:clamp(24px,4vw,44px);letter-spacing:.03em;
@@ -8018,14 +8031,14 @@ function renderTV(matchId){
     ${sponsorsTvHtml()}`;
 }
 
-// Faixa de logos de patrocinadores, no rodapé da tela (position:absolute, ver .tv-sponsors) —
-// usada nas duas variantes do Placar de TV (jogo único e grade de múltiplos jogos). Vazio quando
-// o torneio não tem nenhum patrocinador cadastrado (aba Configurações). Título "Patrocínio"
+// Faixa de logos de patrocinadores, no rodapé da tela (fluxo normal, ver .tv-sponsors) — usada
+// nas duas variantes do Placar de TV (jogo único e grade de múltiplos jogos). Vazio quando o
+// torneio não tem nenhum patrocinador cadastrado (aba Configurações). Título "Patrocinadores"
 // identifica a faixa antes dos logos.
 function sponsorsTvHtml(){
   if(!state.patrocinadores?.length) return "";
   return `<div class="tv-sponsors">
-    <div class="tv-sponsors-title">Patrocínio</div>
+    <div class="tv-sponsors-title">Patrocinadores</div>
     <div class="tv-sponsors-logos">${state.patrocinadores.map(p=>`<img src="${p.logo}" alt="${escapeHtml(p.nome||"Patrocinador")}" title="${escapeHtml(p.nome||"")}">`).join("")}</div>
   </div>`;
 }

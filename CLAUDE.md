@@ -1001,6 +1001,36 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       `padding-top` de `.tv-sponsors` de `14px` fixo pra `5vh` (escala com a altura da tela, igual
       às outras margens dessa tela que já usam `vh`) e, depois, dobrado de novo pra `10vh` (pedido
       explícito de mais espaço ainda).
+    - **"Patrocínio" virou "Patrocinadores"** (pedido explícito) — só o texto do título mudou,
+      classe/estilo iguais.
+    - **Bug real reportado depois de tudo isso: em celular no modo retrato (ou qualquer tela
+      curta), o texto de status ("Finalizada") aparecia cortado ACIMA do topo da tela (inacessível
+      — `.tv-screen` é `position:fixed`, então não tinha como rolar pra ver), e a linha "🎙️ Apitado
+      por" ficava sobreposta em cima do título "Patrocinadores".** Causa raiz: `.tv-main` tinha
+      `min-height:0` (necessário pra permitir que um item flex encolha via `flex-shrink`) — quando
+      o conteúdo central (status+label+placar+timer+"Apitado por") não cabia na altura disponível
+      (depois de reservado o espaço fixo da faixa de patrocinadores, ver acima), o `min-height:0`
+      deixava esse wrapper ser espremido MENOR que o próprio conteúdo — e conteúdo não encolhe
+      junto (fonte não diminui sozinha), só transborda a caixa espremida **simetricamente pra cima
+      E pra baixo** (efeito do `justify-content:center`): "pra cima" cortava o status acima de
+      `.tv-screen` (que enche exatamente o viewport, `position:fixed;inset:0`, sem scroll — nada
+      acima de `y=0` é alcançável); "pra baixo" sobrepunha a faixa de patrocinadores logo abaixo.
+      Corrigido em duas frentes: (1) removido `min-height:0` de `.tv-main` — sem ele, esse wrapper
+      nunca encolhe abaixo do tamanho natural (`min-content`) do próprio conteúdo, então ele passa
+      a TRANSBORDAR a altura disponível (crescer) em vez de comprimir o conteúdo dentro de uma
+      caixa pequena demais; (2) `.tv-screen` ganhou `overflow-y:auto` — na pior das hipóteses
+      (tela muito curta mesmo), a página toda fica mais alta que o viewport e dá pra rolar pra ver
+      o resto, mas nunca corta nem sobrepõe nada. Também adicionado `padding-top:2vh` em
+      `.tv-main`, só pra o status não ficar colado bem na borda quando cabe tudo sem rolagem.
+      Reproduzido e confirmado com Playwright numa viewport de 375×560 (bem mais curta que um
+      celular comum) antes e depois da correção. **A variante de múltiplos jogos (`.tv-multi-grid`)
+      não sofre desse mesmo bug** — cada `.tv-multi-cell` já tem `overflow:hidden` e usa unidades
+      de container query (`cqmin`) que encolhem o conteúdo de verdade junto com a célula, em vez de
+      só comprimir uma caixa e deixar o conteúdo por dentro do mesmo tamanho. **Qualquer novo
+      wrapper flex nessa tela cujo conteúdo não deva transbordar/sobrepor deve seguir esse mesmo
+      padrão — sem `min-height:0` forçado (deixa o item overflowar em vez de comprimir o
+      conteúdo) e com `overflow-y:auto` no ancestral `position:fixed` mais próximo (`.tv-screen`)
+      como rede de segurança.**
 
 ## Convenções
 
