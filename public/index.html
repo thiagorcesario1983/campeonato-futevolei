@@ -635,10 +635,20 @@
   /* ---------- Placar para TV ---------- */
   .tv-screen{
     position:fixed;inset:0;background:var(--ocean-deep);color:var(--white);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    display:flex;flex-direction:column;align-items:center;
     font-family:'Work Sans',sans-serif;text-align:center;padding:30px;
   }
   .tv-loading{font-size:22px;opacity:.8;}
+  /* Conteúdo principal (status+label+placar+rodapé) fica num wrapper próprio (flex:1), que se
+     centraliza sozinho no espaço que sobra DEPOIS da faixa de patrocinadores (flex:0 0 auto, ver
+     .tv-sponsors abaixo). Diferente de position:absolute, isso reserva espaço de verdade pra
+     faixa — sem essa reserva, "Apitado por" (linha extra no rodapé do conteúdo centralizado)
+     podia ficar espremido/sobreposto com "Patrocínio" quando há vários logos cadastrados. */
+  .tv-main{flex:1;width:100%;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  /* Status da partida (aguardando/em andamento/finalizada) fica no TOPO do conteúdo principal,
+     acima do texto de grupo+jogo — mesma classe .tv-status de sempre (reaproveitada também pela
+     linha "Apitado por" no rodapé), só com margem invertida via .tv-status-top. */
+  .tv-status-top{margin-top:0;margin-bottom:4vh;}
   .tv-label{
     font-family:'Bebas Neue',sans-serif;font-size:clamp(24px,4vw,44px);letter-spacing:.03em;
     opacity:.85;margin-bottom:4vh;
@@ -654,14 +664,28 @@
   .tv-footer{margin-top:6vh;}
   .tv-timer{font-family:'DM Mono',monospace;font-size:clamp(30px,5vw,60px);font-weight:600;}
   .tv-status{font-size:clamp(14px,2vw,20px);letter-spacing:.08em;text-transform:uppercase;opacity:.75;margin-top:6px;}
+  /* Faixa de patrocinadores no rodapé — em fluxo normal (flex:0 0 auto), não sobreposta, então
+     nunca invade o espaço do conteúdo principal acima dela, não importa quantos logos existam. */
   .tv-sponsors{
-    position:absolute;left:0;right:0;bottom:0;
-    display:flex;align-items:center;justify-content:center;gap:clamp(16px,3vw,32px);flex-wrap:wrap;
-    padding:14px 20px;
+    flex:0 0 auto;width:100%;
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    padding:14px 20px 18px;
   }
-  .tv-sponsors img{height:clamp(52px,8vh,108px);width:auto;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));}
+  .tv-sponsors-title{
+    font-family:'Bebas Neue',sans-serif;font-size:clamp(12px,1.8vw,18px);letter-spacing:.1em;
+    text-transform:uppercase;opacity:.6;
+  }
+  .tv-sponsors-logos{
+    display:flex;align-items:center;justify-content:center;gap:clamp(16px,3vw,32px);flex-wrap:wrap;
+  }
+  .tv-sponsors-logos img{height:clamp(52px,8vh,108px);width:auto;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));}
 
   /* ---------- Placar para TV — múltiplos jogos numa grade ---------- */
+  /* Wrapper que sobra depois dos patrocinadores (ver .tv-sponsors/.tv-main acima) — o grid em si
+     continua absoluto, só que agora relativo a este wrapper (flex:1) em vez do .tv-screen inteiro,
+     senão a faixa de patrocinadores no rodapé ficaria por baixo do grid (que preenchia a tela
+     inteira antes de existir essa reserva de espaço). */
+  .tv-main-grid{flex:1;width:100%;min-height:0;position:relative;}
   .tv-multi-grid{position:absolute;inset:16px;display:grid;gap:12px;}
   .tv-multi-cell{
     background:rgba(255,255,255,.06);border-radius:14px;min-width:0;min-height:0;
@@ -682,6 +706,9 @@
   .tv-multi-footer{margin-top:4px;text-align:center;}
   .tv-multi-timer{font-family:'DM Mono',monospace;font-weight:600;display:block;font-size:clamp(12px,8cqmin,32px);}
   .tv-multi-status{text-transform:uppercase;letter-spacing:.06em;opacity:.75;display:block;margin-top:2px;font-size:clamp(9px,4cqmin,16px);}
+  /* Status de cada partida movido pro topo de cada célula (mesma lógica de .tv-status-top na
+     variante de jogo único) — some do rodapé, que passa a ter só o timer. */
+  .tv-multi-status-top{margin-top:0;margin-bottom:2px;}
 
   /* ---------- Loading (spinner) ---------- */
   @keyframes girar{to{transform:rotate(360deg);}}
@@ -7920,7 +7947,7 @@ function renderTVMulti(matchIds){
     finalizada: "✅ Finalizada"
   };
 
-  let html = `<div class="tv-multi-grid" style="grid-template-columns:repeat(${cols}, 1fr);grid-template-rows:repeat(${rows}, 1fr);">`;
+  let html = `<div class="tv-main-grid"><div class="tv-multi-grid" style="grid-template-columns:repeat(${cols}, 1fr);grid-template-rows:repeat(${rows}, 1fr);">`;
   matchIds.forEach(matchId=>{
     const [a,b] = getMatchTeams(matchId);
     const label = getMatchLabel(matchId);
@@ -7928,6 +7955,7 @@ function renderTVMulti(matchIds){
     const tempoMs = tempoDecorridoMs(arb);
     const statusLabel = statusLabelMap[arb.status] || "";
     html += `<div class="tv-multi-cell">
+      <span class="tv-multi-status tv-multi-status-top">${statusLabel}</span>
       <div class="tv-multi-label">${escapeHtml(label)}</div>
       <div class="tv-multi-board">
         <div class="tv-multi-team">
@@ -7942,11 +7970,10 @@ function renderTVMulti(matchIds){
       </div>
       <div class="tv-multi-footer">
         <span class="tv-multi-timer" data-tv-timer="${matchId}">${formatTempo(tempoMs)}</span>
-        <span class="tv-multi-status">${statusLabel}</span>
       </div>
     </div>`;
   });
-  html += `</div>${sponsorsTvHtml()}`;
+  html += `</div></div>${sponsorsTvHtml()}`;
   screen.innerHTML = html;
 }
 
@@ -7967,32 +7994,38 @@ function renderTV(matchId){
 
   screen.dataset.loaded = "1";
   screen.innerHTML = `
-    <div class="tv-label">${escapeHtml(label)}</div>
-    <div class="tv-board">
-      <div class="tv-team">
-        <div class="tv-team-nome">${escapeHtml(a||"—")}</div>
-        <div class="tv-score">${arb.placarA}</div>
+    <div class="tv-main">
+      <div class="tv-status tv-status-top">${statusLabel}</div>
+      <div class="tv-label">${escapeHtml(label)}</div>
+      <div class="tv-board">
+        <div class="tv-team">
+          <div class="tv-team-nome">${escapeHtml(a||"—")}</div>
+          <div class="tv-score">${arb.placarA}</div>
+        </div>
+        <div class="tv-x">×</div>
+        <div class="tv-team">
+          <div class="tv-team-nome">${escapeHtml(b||"—")}</div>
+          <div class="tv-score">${arb.placarB}</div>
+        </div>
       </div>
-      <div class="tv-x">×</div>
-      <div class="tv-team">
-        <div class="tv-team-nome">${escapeHtml(b||"—")}</div>
-        <div class="tv-score">${arb.placarB}</div>
+      <div class="tv-footer">
+        <div class="tv-timer">${formatTempo(tempoMs)}</div>
       </div>
+      ${arb.arbitroNome ? `<div class="tv-status" style="margin-top:6px;opacity:.85;">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>` : ""}
     </div>
-    <div class="tv-footer">
-      <div class="tv-timer">${formatTempo(tempoMs)}</div>
-      <div class="tv-status">${statusLabel}</div>
-    </div>
-    ${arb.arbitroNome ? `<div class="tv-status" style="margin-top:6px;opacity:.85;">🎙️ Apitado por: ${escapeHtml(arb.arbitroNome)}</div>` : ""}
     ${sponsorsTvHtml()}`;
 }
 
-// Faixa de logos de patrocinadores, fixada na base da tela — usada nas duas variantes do
-// Placar de TV (jogo único e grade de múltiplos jogos). Vazio quando o torneio não tem
-// nenhum patrocinador cadastrado (aba Configurações).
+// Faixa de logos de patrocinadores, no rodapé da tela (position:absolute, ver .tv-sponsors) —
+// usada nas duas variantes do Placar de TV (jogo único e grade de múltiplos jogos). Vazio quando
+// o torneio não tem nenhum patrocinador cadastrado (aba Configurações). Título "Patrocínio"
+// identifica a faixa antes dos logos.
 function sponsorsTvHtml(){
   if(!state.patrocinadores?.length) return "";
-  return `<div class="tv-sponsors">${state.patrocinadores.map(p=>`<img src="${p.logo}" alt="${escapeHtml(p.nome||"Patrocinador")}" title="${escapeHtml(p.nome||"")}">`).join("")}</div>`;
+  return `<div class="tv-sponsors">
+    <div class="tv-sponsors-title">Patrocínio</div>
+    <div class="tv-sponsors-logos">${state.patrocinadores.map(p=>`<img src="${p.logo}" alt="${escapeHtml(p.nome||"Patrocinador")}" title="${escapeHtml(p.nome||"")}">`).join("")}</div>
+  </div>`;
 }
 
 /* ============================================================

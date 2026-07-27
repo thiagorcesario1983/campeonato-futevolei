@@ -966,6 +966,34 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     função `sponsorsTvHtml()`/classe CSS — nenhuma mudança de JS foi necessária, só CSS. Não afeta
     a imagem de Stories (`drawSponsorsSection`), que é uma peça de canvas separada e não tem faixa
     de fundo nenhuma pra remover.
+45. **Faixa de patrocinadores no Placar de TV ganhou um título "Patrocínio" acima dos logos, e o
+    status da partida (aguardando/em andamento/finalizada) moveu do rodapé pro topo da tela**
+    (pedido explícito — inicialmente cogitou-se mover a própria faixa de patrocinadores pro topo,
+    mas o pedido final foi manter ela no rodapé e mover só o texto de status). `sponsorsTvHtml()`
+    (`public/index.html`) passou a devolver `<div class="tv-sponsors"><div
+    class="tv-sponsors-title">Patrocínio</div><div class="tv-sponsors-logos">...</div></div>` (só
+    os logos ficaram na sub-div `.tv-sponsors-logos`, que herda a regra de tamanho do item 44). O
+    texto de status (`.tv-status`, reaproveitado também pela linha "🎙️ Apitado por" no rodapé)
+    saiu do `.tv-footer` e foi pro topo da página, acima de `.tv-label` (grupo+nome do jogo) —
+    `renderTV`/`renderTVMulti` (`.tv-multi-status`/`.tv-multi-status-top` na variante em grade,
+    um por célula) foram ajustados pra isso.
+    - **Risco de sobreposição encontrado durante a checagem visual (Playwright) e corrigido antes
+      de finalizar**: a primeira tentativa manteve `.tv-sponsors` com `position:absolute;bottom:0`
+      (jeito antigo, pré-item-44) — como o conteúdo central (`.tv-label`/`.tv-board`/`.tv-footer`/
+      "Apitado por") continuava centralizado via `justify-content:center` no `.tv-screen`, com 3
+      patrocinadores cadastrados E a linha "Apitado por" presentes ao mesmo tempo, o texto
+      "Patrocínio" ficava sobreposto por cima de "🎙️ Apitado por: ..." — exatamente o tipo de
+      sobreposição que o pedido original queria evitar, só que num ponto diferente do antecipado.
+      Corrigido trocando `position:absolute` por fluxo normal reservado: `.tv-screen` virou um
+      flex column sem `justify-content:center` própria; o conteúdo central foi envolvido num novo
+      wrapper `.tv-main`/`.tv-main-grid` (`flex:1`, com seu próprio `justify-content:center`), e
+      `.tv-sponsors` virou `flex:0 0 auto` — a faixa de patrocinadores sempre reserva o próprio
+      espaço no rodapé, então o conteúdo central nunca é empurrado por cima dela, não importa
+      quantos patrocinadores existam nem quantas linhas o rodapé do placar tenha. **Qualquer nova
+      faixa fixa no Placar de TV deve seguir esse padrão de reserva de espaço via flex (`flex:0 0
+      auto` + wrapper irmão com `flex:1`), nunca `position:absolute` sobrepondo conteúdo que pode
+      crescer** (linha de árbitro, múltiplos patrocinadores, nomes longos de dupla) — é exatamente
+      esse tipo de sobreposição que motivou a correção aqui.
 
 ## Convenções
 
