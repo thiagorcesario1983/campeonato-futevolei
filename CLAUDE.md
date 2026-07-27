@@ -937,6 +937,24 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       `.tv-screen` (overlays de tela cheia do apito e do placar de TV) continuam com fundo sólido
       escuro (`--ocean-deep`) por design — não é mais "o tema escuro do app", é só a cor de fundo
       imersiva desses dois overlays específicos, que sempre foi separada do restante da paleta.
+43. **Torneio elegível pra circuito não considerava acesso compartilhado ao TORNEIO, só
+    propriedade dele** — reportado: um usuário adicionado como colaborador de um torneio (`torneio.
+    usuariosPermitidos`, ver item 14) esperava que esse torneio aparecesse na lista de "torneios
+    elegíveis" ao criar/editar um circuito próprio, mas só torneios de que ele era **dono** (ou
+    dono/colaborador do circuito, ver item 40) apareciam. Causa: `circuitoTorneiosElegiveis`,
+    `circuitoAtualizar` (checagem `podeLinkar`) e `circuitoTorneioDados` filtravam só por
+    `donos.has(normEmail(torneio.ownerEmail))` — nunca olhavam pro `torneio.usuariosPermitidos`
+    do próprio torneio, só pro `circuito.usuariosPermitidos`. Corrigido com um novo helper
+    `torneioPertenceAoGrupo(torneio, grupoEmails)` (`worker.ts`) que considera o torneio parte do
+    grupo de colaboradores do circuito tanto se algum deles for o DONO quanto se algum deles tiver
+    acesso compartilhado ao torneio — usado nos três pontos acima no lugar da checagem que só via
+    `ownerEmail`. Efeito: assim que alguém ganha acesso a um torneio (dono ou admin adicionando o
+    e-mail dela via "Usuários com acesso a este torneio"), esse torneio já aparece elegível em
+    qualquer circuito que essa pessoa administre, sem precisar também virar dono do torneio nem
+    ser adicionado à parte como colaborador do circuito. **Qualquer nova checagem de "esse torneio
+    pertence a este grupo de gente" deve usar `torneioPertenceAoGrupo`**, nunca comparar só
+    `ownerEmail` direto — mesma categoria de risco do item 40 (o conjunto elegível precisa
+    refletir todo mundo com acesso real, não só quem é dono).
 
 ## Convenções
 

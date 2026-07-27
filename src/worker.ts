@@ -2604,6 +2604,18 @@ function temAcessoCircuito(circuito: Circuito, email: string, env: Env): boolean
   return Array.isArray(circuito?.usuariosPermitidos) && circuito.usuariosPermitidos.includes(email);
 }
 
+// Um torneio "pertence ao grupo" de colaboradores do circuito (dono + usuariosPermitidos do
+// circuito) tanto se algum deles for o DONO do torneio quanto se algum deles tiver acesso
+// compartilhado ao torneio (torneio.usuariosPermitidos, ver torneiosUsuarioAdicionar) — sem essa
+// segunda checagem, um usuário que só foi adicionado como colaborador de um torneio (não dono)
+// nunca via aquele torneio aparecer como elegível pra vincular a um circuito que ele próprio
+// administra, mesmo tendo acesso operacional real a ele.
+function torneioPertenceAoGrupo(torneio: any, grupoEmails: Set<string>): boolean {
+  if (grupoEmails.has(normEmail(torneio?.ownerEmail))) return true;
+  const permitidos: string[] = Array.isArray(torneio?.usuariosPermitidos) ? torneio.usuariosPermitidos : [];
+  return permitidos.some((e) => grupoEmails.has(normEmail(e)));
+}
+
 async function getCircuitosIndex(env: Env): Promise<Circuito[]> {
   try {
     const raw = await env.DB.get("circuitos:index");
@@ -2670,13 +2682,17 @@ async function circuitosList(request: Request, env: Env): Promise<Response> {
   return json({ circuitos: meus });
 }
 
-// Torneios elegíveis pra vincular a UM circuito específico: só os que pertencem ao dono do
+// Torneios elegíveis pra vincular a UM circuito específico: os que pertencem ao dono do
 // circuito ou a algum dos usuários com acesso compartilhado a ele (circuito.usuariosPermitidos)
-// — sempre o mesmo conjunto, não importa quem está olhando a tela (dono, colaborador ou admin
-// auditando). Diferente de torneiosList (que devolve os torneios do PRÓPRIO solicitante): aqui
-// filtra por dono do TORNEIO estar no grupo de colaboradores do CIRCUITO, então um colaborador
-// do circuito consegue enxergar (e linkar) os torneios do dono, e vice-versa, sem precisar
-// também compartilhar acesso torneio a torneio.
+// — seja como DONO do torneio, seja como usuário com acesso compartilhado AO torneio
+// (torneio.usuariosPermitidos, ver torneioPertenceAoGrupo) — sempre o mesmo conjunto, não importa
+// quem está olhando a tela (dono, colaborador ou admin auditando). Diferente de torneiosList (que
+// devolve os torneios do PRÓPRIO solicitante): aqui filtra por o TORNEIO estar acessível a algum
+// colaborador do CIRCUITO, então um colaborador do circuito consegue enxergar (e linkar) os
+// torneios do dono, e vice-versa, sem precisar também compartilhar acesso torneio a torneio — e
+// um torneio recém-compartilhado com alguém (torneiosUsuarioAdicionar) já aparece elegível nos
+// circuitos dessa pessoa, sem precisar virar dono nem ser adicionado de novo como colaborador do
+// circuito.
 async function circuitoTorneiosElegiveis(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const circuitoId = url.searchParams.get("circuito");
@@ -2693,7 +2709,7 @@ async function circuitoTorneiosElegiveis(request: Request, env: Env): Promise<Re
 
   const donos = new Set<string>([normEmail(circuito.ownerEmail), ...(circuito.usuariosPermitidos || []).map((e) => normEmail(e))]);
   const index = await getIndex(env);
-  const torneios = index.filter((t: any) => donos.has(normEmail(t.ownerEmail)));
+  const torneios = index.filter((t: any) => torneioPertenceAoGrupo(t, donos));
   return json({ torneios });
 }
 
@@ -2725,7 +2741,7 @@ async function circuitoTorneioDados(request: Request, env: Env): Promise<Respons
   const dados = JSON.parse(raw);
 
   const donosCircuito = new Set<string>([normEmail(circuito.ownerEmail), ...(circuito.usuariosPermitidos || []).map((e) => normEmail(e))]);
-  const permitido = donosCircuito.has(normEmail(dados.ownerEmail)) || temAcessoTorneio(dados, solicitanteEmail, env);
+  const permitido = torneioPertenceAoGrupo(dados, donosCircuito) || temAcessoTorneio(dados, solicitanteEmail, env);
   if (!permitido) {
     return json({ error: "Este torneio não pertence a nenhum colaborador deste circuito" }, 403);
   }
@@ -2765,11 +2781,12 @@ async function circuitoAtualizar(request: Request, env: Env): Promise<Response> 
 
   // torneioIds: atualização cirúrgica com campo espelho em cada torneio.circuitoIds (mesmo
   // espírito do item 19 do CLAUDE.md — anotarNomesBracket: espelho só pra leitura). Só linka um
-  // torneio se ele pertencer a algum dos colaboradores DESTE circuito (dono ou
-  // usuariosPermitidos — mesmo conjunto usado em circuitoTorneiosElegiveis) OU se o solicitante
-  // tiver acesso direto a ele (temAcessoTorneio, ex: admin linkando qualquer torneio) — sem essa
-  // checagem, o dono de um circuito poderia colar o id de um torneio de QUALQUER organizador e
-  // expor os nomes/CPFs das duplas dele no ranking público.
+  // torneio se ele pertencer (dono OU usuariosPermitidos do próprio torneio, ver
+  // torneioPertenceAoGrupo) a algum dos colaboradores DESTE circuito (dono ou usuariosPermitidos —
+  // mesmo conjunto usado em circuitoTorneiosElegiveis) OU se o solicitante tiver acesso direto a
+  // ele (temAcessoTorneio, ex: admin linkando qualquer torneio) — sem essa checagem, o dono de um
+  // circuito poderia colar o id de um torneio de QUALQUER organizador e expor os nomes/CPFs das
+  // duplas dele no ranking público.
   // Regra: um torneio só pode pertencer a UM circuito por vez (evita o mesmo torneio somando
   // pontos em dois rankings diferentes) — se o espelho circuitoIds já apontar pra outro circuito,
   // a vinculação é recusada aqui (defesa em profundidade; o front já desabilita a caixinha nesse
@@ -2787,7 +2804,7 @@ async function circuitoAtualizar(request: Request, env: Env): Promise<Response> 
       const raw = await env.DB.get(`torneio:${torneioId}`);
       if (!raw) continue;
       const dadosTorneio = JSON.parse(raw);
-      const podeLinkar = donosCircuito.has(normEmail(dadosTorneio.ownerEmail)) || temAcessoTorneio(dadosTorneio, solicitanteEmail, env);
+      const podeLinkar = torneioPertenceAoGrupo(dadosTorneio, donosCircuito) || temAcessoTorneio(dadosTorneio, solicitanteEmail, env);
       if (!podeLinkar) continue;
       const circuitoIdsExistentes: string[] = Array.isArray(dadosTorneio.circuitoIds) ? dadosTorneio.circuitoIds : [];
       const jaVinculadoOutro = circuitoIdsExistentes.find((cid: string) => cid !== circuito.id);
