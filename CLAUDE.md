@@ -999,7 +999,8 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       ficando visualmente colado no título "Patrocínio" logo abaixo — só reservar o espaço (acima)
       não bastava, faltava respiro de verdade entre os dois blocos. Corrigido aumentando o
       `padding-top` de `.tv-sponsors` de `14px` fixo pra `5vh` (escala com a altura da tela, igual
-      às outras margens dessa tela que já usam `vh`).
+      às outras margens dessa tela que já usam `vh`) e, depois, dobrado de novo pra `10vh` (pedido
+      explícito de mais espaço ainda).
 
 ## Convenções
 
