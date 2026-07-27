@@ -1042,6 +1042,23 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       considera também a largura da tela, então em telas estreitas os logos encolhem o suficiente
       pra caber os 3 numa linha só sem precisar rolar horizontalmente (na prática só cai pro
       `overflow-x:auto` com muitos patrocinadores cadastrados de uma vez).
+    - **O `10vh` de `padding-top` de `.tv-sponsors` (pedido explícito de "dobrar o espaço" antes)
+      sozinho já empurrava o total pra fora da altura de uma janela de navegador comum** —
+      reportado com print real em produção: mesmo sem tela curta de propósito (só uma janela
+      Chrome normal em laptop, ~750px de altura útil), "Patrocinadores" aparecia cortado no fim da
+      página, com barra de rolagem. Reproduzido com Playwright numa viewport de 1920×750: `10vh`
+      (75px) de respiro sozinho, somado às margens de `4-6vh` já existentes em `.tv-label`/
+      `.tv-status-top`/`.tv-footer`, ultrapassava os 750px disponíveis por poucos pixels — o
+      `overflow-y:auto` do item anterior evita que isso quebre visualmente (não corta nem
+      sobrepõe), mas faz o caso COMUM (não só o extremo de celular curto) precisar de scroll, o
+      que não deveria acontecer numa tela de placar pensada pra ser vista inteira de uma vez.
+      Corrigido reduzindo esse `padding-top` de volta pra `3vh` — respiro suficiente pra não colar
+      o timer no título (motivo original do espaçamento), mas pequeno o bastante pra não estourar
+      a altura de janelas de navegador comuns. Confirmado sem overflow em 1920×700 e 1920×750
+      (mesmos casos que antes estouravam). **Fica como referência**: ao ajustar espaçamento nessa
+      tela por pedido de "mais espaço", sempre testar numa viewport de navegador comum (não só
+      celular curto) — vh somado de vários elementos pode ultrapassar 100vh mesmo sem nenhum
+      elemento individual parecer exagerado.
 
 ## Convenções
 
