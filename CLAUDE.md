@@ -885,14 +885,67 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     disparar de novo antes da resposta chegar). Continua puramente em memória (mesma decisão do
     item 32) — só que agora se autocorrige sozinho a cada vez que a tela é aberta, em vez de
     depender de o usuário lembrar de clicar em "Verificar novamente" manualmente.
+42. **App voltou a ser sempre modo claro — reverte a decisão do item 29** (pedido explícito, com
+    print de referência de um outro app — "H.aRchers", dashboard de recrutamento — pedindo pra
+    usar as cores e o "modelo" de card/badge/avatar de lá). O bloco `[data-theme="dark"]` e o
+    script de boot que forçava `data-theme="dark"` incondicionalmente foram removidos por completo
+    (mesmo espírito do item 29 de remover código morto de propósito, só que na direção oposta) —
+    hoje só existe um `:root`, sem nenhum atributo de tema nem alternador.
+    - **Paleta nova, verde-água/teal** (inspirada no print, não uma cópia literal): `--ocean:
+      #2FAE8E`, `--ocean-deep:#1F8A70`, `--coral:#EF5A4C` (mantido pra erro/exclusão/urgência),
+      `--grass:#3EDBA6` (ajustado de um tom mais escuro inicial — `#34C495` tinha contraste ruim
+      contra `--ocean-deep` no texto "00:00" do cronômetro de partida finalizada, ver abaixo),
+      `--sand:#F3F6F5`/`--sand-dark:#E1E7E4` (cinza bem claro, fundo/bordas), `--white:#FFFFFF`,
+      `--ink:#1B211F`, `--muted:#8A9490`, `--heading:#1F8A70`. Nova variável `--shadow: 0 10px 30px
+      -12px rgba(27,45,40,.18)`, usada no lugar de borda em vários componentes (ver abaixo). As
+      variáveis do menu lateral (`--sidebar-*`, item 27) foram realinhadas pra essa mesma paleta
+      clara (fundo branco, destaque teal) em vez do preto/verde-neon anterior.
+    - **Cor da ação primária mudou de vermelho pra teal**: `.btn` (botão de ação principal em todo
+      o app) usava `var(--coral)` como fundo — decisão antiga que já não fazia sentido com o print
+      mostrando teal como cor de destaque principal; trocado pra `var(--ocean)` (sombra do botão
+      também ajustada pra um tom teal, `rgba(31,138,112,.55)`, em vez do laranja/vermelho antigo).
+      `.btn.secondary`/`.btn.ghost` não mudaram (já eram 100% `var(--algumacoisa)`).
+    - **Cards ganharam sombra em vez de borda**, imitando o visual "flutuante" do print:
+      `.card`, `.stat`, `.dupla-card`, `.group-card`, `.bracket-match`, `.torneio-item` trocaram
+      `border:1px/1.5px solid var(--sand-dark)` por `border:none;box-shadow:var(--shadow)` (alguns
+      também aumentaram o `border-radius` levemente, 12px→16px, pra ficar mais arredondado como no
+      print).
+    - **Badges de status (`.status-pill.criado/andamento/finalizado`) viraram pílulas sólidas com
+      texto branco** (`background:#0E7FB8`/`var(--coral)`/`var(--grass)`), copiando o estilo de
+      alto contraste do print (ex: "AVAILABLE"/"HIRED"). **Decisão deliberada de não mexer nos
+      badges gerados via JS com estilo inline** (`badgeAprovacao`, `badgePagamento`,
+      `badgeStatusGeral`, `badgeCupom`, `badgeStatusDupla`, badges do Fluxo de Jogos) — eles já
+      usavam tons pastel suaves apropriados pro tema claro (herdados de antes do app forçar modo
+      escuro), e converter todos pra "sólido" junto com os `.status-pill` deixaria a tela com
+      badge demais competindo por atenção. Mistura de estilos (uns sólidos, uns soft-tint) foi
+      aceita de propósito.
+    - **Avatar (`.user-chip img`) ganhou um anel** (`box-shadow:0 0 0 2px var(--white),0 0 0 3px
+      var(--sand-dark)`), parecido com o efeito dos avatares circulares do print.
+    - **Bug real encontrado durante a checagem visual (Playwright)**: `input[type=tel]`,
+      `input[type=email]` e `input[type=password]` não tinham nenhuma regra de `border-color` —
+      só `input[type=text]` tinha; a regra genérica `input,textarea,select{...}` cobria cor/fundo/
+      fonte mas nunca borda. Contra o fundo escuro antigo isso quase não aparecia (borda preta
+      default do navegador se perdia no fundo escuro); contra os cards brancos novos ficava bem
+      visível. Corrigido ampliando o seletor de borda pra incluir esses três tipos (e o `:focus`
+      correspondente). **Qualquer novo `<input>` de um tipo diferente de `text` precisa ser
+      conferido contra essa mesma lista de seletores**, senão herda só o estilo genérico sem
+      borda.
+    - **Fora do escopo, de propósito** (mesma exclusão do item 28): Placar de TV (`.tv-screen`) e
+      a imagem gerada pro Stories (constantes de cor `GREEN`/`GREEN_DEEP`/`GOLD_BG`/`CORAL` no
+      canvas) mantidos exatamente como estavam — têm identidade visual própria, pensada pra ser
+      vista de longe/postada, não fazem parte de nenhum pente-fino de tema. `.ref-screen`/
+      `.tv-screen` (overlays de tela cheia do apito e do placar de TV) continuam com fundo sólido
+      escuro (`--ocean-deep`) por design — não é mais "o tema escuro do app", é só a cor de fundo
+      imersiva desses dois overlays específicos, que sempre foi separada do restante da paleta.
 
 ## Convenções
 
 - Todo texto visível do app é em português (pt-BR).
-- Cores: paleta inspirada na Heineken (verde `#008200`/`#205527`, vermelho `#FF2B00`), com
+- Cores: paleta clara verde-água/teal (item 42 — reverteu a Heineken escura antiga), com
   variáveis CSS (`--ocean`, `--ocean-deep`, `--coral`, `--sand`, `--white`, `--ink`, `--muted`,
-  `--heading`) que mudam de valor em `[data-theme="dark"]` pra dar suporte ao modo escuro — nunca
-  usar cor fixa em componente novo, sempre `var(--algumacoisa)`, senão ele não acompanha o tema.
+  `--heading`, `--shadow`) definidas uma única vez em `:root` — não existe mais `[data-theme]`
+  nem alternador de tema. Mesmo assim, nunca usar cor fixa em componente novo, sempre
+  `var(--algumacoisa)` — mantém tudo consistente num único lugar caso a paleta mude de novo.
 - Toasts (`showToast`) pra feedback rápido; `showLoading()`/`hideLoading()` (overlay com spinner)
   pra ações que demoram (rede).
 - E-mails automáticos (aprovação, pagamento, novo torneio) são enviados via `enviarEmail()` no
