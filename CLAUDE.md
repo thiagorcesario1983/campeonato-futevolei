@@ -994,6 +994,12 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       auto` + wrapper irmão com `flex:1`), nunca `position:absolute` sobrepondo conteúdo que pode
       crescer** (linha de árbitro, múltiplos patrocinadores, nomes longos de dupla) — é exatamente
       esse tipo de sobreposição que motivou a correção aqui.
+    - **Ajuste fino de espaçamento** (reportado com print): quando o conteúdo central é curto (sem
+      "Apitado por"), o `.tv-main` flex:1 centraliza tudo no espaço disponível e o timer acabava
+      ficando visualmente colado no título "Patrocínio" logo abaixo — só reservar o espaço (acima)
+      não bastava, faltava respiro de verdade entre os dois blocos. Corrigido aumentando o
+      `padding-top` de `.tv-sponsors` de `14px` fixo pra `5vh` (escala com a altura da tela, igual
+      às outras margens dessa tela que já usam `vh`).
 
 ## Convenções
 
