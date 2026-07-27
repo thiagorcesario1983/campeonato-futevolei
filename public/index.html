@@ -4,13 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Futevôlei — Campeonato</title>
-<meta name="theme-color" content="#08090c" id="meta-theme-color">
-<script>
-// App sempre no modo escuro (visual "control room", pedido explícito — ver CLAUDE.md) — não
-// depende mais de preferência salva nem de prefers-color-scheme. O atributo continua existindo
-// só porque todo o CSS já é escrito em cima de [data-theme="dark"]/var(--algumacoisa).
-document.documentElement.setAttribute("data-theme", "dark");
-</script>
+<meta name="theme-color" content="#2FAE8E" id="meta-theme-color">
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <link rel="icon" href="./icons/icon-192.png">
@@ -20,63 +14,40 @@ document.documentElement.setAttribute("data-theme", "dark");
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@500&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    /* Paleta inspirada nas cores oficiais da Heineken (verde PMS 7739 C / PMS 7483 C,
-       vermelho e prata) — ver comentário completo mais abaixo, junto do modo escuro. */
-    --sand:#F1F3EF;
-    --sand-dark:#C9D2C6;
-    --ocean:#008200;
-    --ocean-deep:#205527;
-    --coral:#FF2B00;
-    --grass:#1AA31A;
+    /* Paleta clara inspirada num print de referência (dashboard "H.aRchers"): fundo branco/
+       cinza bem claro, verde-água/teal como cor de marca (títulos, botões primários, links,
+       badges positivos), cards brancos com sombra suave em vez de borda sólida. Reverte a
+       decisão de "app sempre escuro" (ver CLAUDE.md) — agora claro é o único modo do app,
+       mesmo espírito de antes (uma paleta só, sem alternador nem media query). */
+    --sand:#F3F6F5;
+    --sand-dark:#E1E7E4;
+    --ocean:#2FAE8E;
+    --ocean-deep:#1F8A70;
+    --coral:#EF5A4C;
+    --grass:#3EDBA6;
     --white:#FFFFFF;
-    --ink:#16241A;
-    --muted:#5C6B60;
-    --heading:#205527; /* usada em títulos/labels — mesma cor de sempre no modo claro */
-    --radius:16px;
-    --shadow: 0 10px 24px -12px rgba(22,36,26,.35);
-    /* Selos de "pendente"/"aguardando" usavam um par âmbar/pêssego (removido — ver CLAUDE.md).
-       Verde mais opaco/dessaturado que --ocean/--grass, só pra não parecer "aprovado" de
-       verdade enquanto ainda está esperando alguma coisa. */
-    --pending-bg:#E7F0E5;
-    --pending-text:#4B6B4F;
-    /* Fundo suave pareado com --coral (badges "ao vivo"/"em andamento") — antes era um pêssego
-       meio alaranjado (#FDF1E7), trocado por um tom realmente na família do coral. */
-    --coral-bg:#FDEDE8;
-    /* Menu lateral (sidebar): variáveis próprias (mesmos valores de --sand/--ocean/etc. do tema
-       escuro único do app, ver [data-theme="dark"] abaixo) — history: quando o app ainda tinha
-       alternador claro/escuro, essas cores precisavam ficar fixas aqui (o menu era sempre escuro
-       mesmo se o app estivesse no claro); o app virou 100% escuro depois, então hoje são
-       idênticas às gerais, mas mantidas separadas pra não acoplar o CSS do menu ao restante. */
-    --sidebar-bg:#08090c;
-    --sidebar-bg-hover:#13161d;
-    --sidebar-bg-active:#0e1712;
-    --sidebar-border:#181c24;
-    --sidebar-text:#eef1f5;
-    --sidebar-text-muted:#7a8290;
-    --sidebar-accent:#1FE075;
-    --sidebar-accent-deep:#0a5c34; /* só pro gradiente radial do badge do logo */
-  }
-  /* Modo escuro — ÚNICO modo do app agora (data-theme="dark" é setado sem condição no <head>,
-     ver script no topo do arquivo). Como o app inteiro já usa var(--sand)/var(--white)/var(--ink)
-     etc. em vez de cores fixas, só trocar esses valores já re-pinta o app inteiro — sem precisar
-     editar cada componente. Tons alinhados de propósito com --sidebar-* (mesmo preto de fundo,
-     mesmo verde vívido de destaque) — antes o menu lateral e o resto do app usavam dois tons de
-     escuro/verde ligeiramente diferentes; agora é uma paleta só. */
-  [data-theme="dark"]{
-    --sand:#08090c;
-    --sand-dark:#181c24;
-    --ocean:#1FE075;
-    --ocean-deep:#0a5c34;
-    --coral:#FF7A5C;
-    --grass:#3AD65A;
-    --white:#12151b;
-    --ink:#eef1f5;
-    --muted:#7a8290;
-    --heading:#1FE075; /* mesmo verde vívido de --ocean — antes era um tom levemente diferente */
-    --shadow: 0 10px 24px -12px rgba(0,0,0,.8);
-    --pending-bg:rgba(31,224,117,.14);
-    --pending-text:#8FE0A6;
-    --coral-bg:rgba(255,122,92,.16);
+    --ink:#1B211F;
+    --muted:#8A9490;
+    --heading:#1F8A70;
+    --radius:20px;
+    --shadow: 0 10px 30px -12px rgba(27,45,40,.18);
+    /* Selos de "pendente"/"aguardando" — verde-água bem dessaturado, só pra não parecer
+       "aprovado" de verdade enquanto ainda está esperando alguma coisa. */
+    --pending-bg:#E6F5F0;
+    --pending-text:#1F8A70;
+    /* Fundo suave pareado com --coral (badges "ao vivo"/"em andamento"). */
+    --coral-bg:#FDECEA;
+    /* Menu lateral (sidebar): variáveis próprias, agora claras (branco) acompanhando o resto do
+       app — mantidas separadas só pra não acoplar o CSS do menu ao restante, não porque tenham
+       um tema diferente (ver CLAUDE.md: já foram "sempre escuras" numa fase anterior do app). */
+    --sidebar-bg:#FFFFFF;
+    --sidebar-bg-hover:#F1F5F3;
+    --sidebar-bg-active:#E6F5F0;
+    --sidebar-border:#E1E7E4;
+    --sidebar-text:#1B211F;
+    --sidebar-text-muted:#8A9490;
+    --sidebar-accent:#2FAE8E;
+    --sidebar-accent-deep:#1F8A70; /* só pro gradiente radial do badge do logo */
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -248,7 +219,8 @@ document.documentElement.setAttribute("data-theme", "dark");
   /* ---------- Cards ---------- */
   .card{
     background:var(--white);
-    border:1px solid var(--sand-dark);
+    border:none;
+    box-shadow:var(--shadow);
     border-radius:var(--radius);
     padding:14px 16px;
     margin-bottom:12px;
@@ -262,8 +234,8 @@ document.documentElement.setAttribute("data-theme", "dark");
   .stat{
     border-radius:var(--radius);
     padding:14px;
-    background:transparent;
-    border:1.5px solid var(--sand-dark);
+    background:var(--white);
+    box-shadow:var(--shadow);
     position:relative;
     overflow:hidden;
   }
@@ -293,7 +265,7 @@ document.documentElement.setAttribute("data-theme", "dark");
     width:22px;text-align:center;color:var(--muted);font-size:13px;
   }
   .dupla-card{
-    border:1.5px solid var(--sand-dark);border-radius:12px;
+    border:none;box-shadow:var(--shadow);border-radius:16px;
     padding:10px 12px;margin-bottom:10px;background:var(--white);
   }
   .dupla-card .top-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
@@ -330,7 +302,7 @@ document.documentElement.setAttribute("data-theme", "dark");
     font-size:11px;color:var(--muted);text-align:center;margin-top:2px;opacity:0;transition:opacity .2s;
   }
   .copy-note.show{opacity:1;}
-  input[type=text]{
+  input[type=text],input[type=tel],input[type=email],input[type=password]{
     flex:1;
     border:1.5px solid var(--sand-dark);
     border-radius:10px;
@@ -340,7 +312,7 @@ document.documentElement.setAttribute("data-theme", "dark");
     color:var(--ink);
     background:var(--white);
   }
-  input[type=text]:focus{outline:none;border-color:var(--ocean);}
+  input[type=text]:focus,input[type=tel]:focus,input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var(--ocean);}
   /* Base pra qualquer outro campo (número, data, textarea, select) que não tenha estilo próprio —
      sem isso, esses campos ficavam com o branco/preto padrão do navegador, sem acompanhar o tema. */
   input, textarea, select{
@@ -352,11 +324,11 @@ document.documentElement.setAttribute("data-theme", "dark");
   input::placeholder, textarea::placeholder{color:var(--muted);opacity:1;}
   .btn{
     display:inline-flex;align-items:center;justify-content:center;gap:8px;
-    background:var(--coral);color:var(--white);border:none;
+    background:var(--ocean);color:var(--white);border:none;
     font-family:'Work Sans',sans-serif;font-weight:600;font-size:14px;
-    padding:13px 18px;border-radius:12px;width:100%;cursor:pointer;
+    padding:13px 18px;border-radius:14px;width:100%;cursor:pointer;
     transition:transform .15s ease, box-shadow .15s ease;
-    box-shadow:0 8px 18px -8px rgba(242,101,42,.6);
+    box-shadow:0 8px 18px -8px rgba(31,138,112,.55);
   }
   .btn:active{transform:scale(.97);}
   .btn.secondary{
@@ -367,7 +339,8 @@ document.documentElement.setAttribute("data-theme", "dark");
 
   .group-card{
     border-radius:var(--radius);
-    border:1px solid var(--sand-dark);
+    border:none;
+    box-shadow:var(--shadow);
     margin-bottom:10px;
     overflow:hidden;
   }
@@ -433,7 +406,7 @@ document.documentElement.setAttribute("data-theme", "dark");
   }
   .round-label:first-child{margin-top:0;}
   .bracket-match{
-    background:var(--white);border:1px solid var(--sand-dark);border-radius:12px;
+    background:var(--white);border:none;box-shadow:var(--shadow);border-radius:16px;
     padding:10px 12px;margin-bottom:10px;
   }
   .bracket-match .lbl{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:6px;}
@@ -567,11 +540,11 @@ document.documentElement.setAttribute("data-theme", "dark");
     padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:'Work Sans',sans-serif;
   }
   .user-chip{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
-  .user-chip img{width:42px;height:42px;border-radius:50%;}
+  .user-chip img{width:42px;height:42px;border-radius:50%;box-shadow:0 0 0 2px var(--white),0 0 0 3px var(--sand-dark);}
   .user-chip .name{font-weight:700;font-size:14px;color:var(--heading);}
   .user-chip .email{font-size:11px;color:var(--muted);}
   .torneio-item{
-    border:1.5px solid var(--sand-dark);border-radius:12px;padding:12px 14px;margin-bottom:10px;
+    border:none;box-shadow:var(--shadow);border-radius:16px;padding:12px 14px;margin-bottom:10px;
     cursor:pointer;background:var(--white);
   }
   .torneio-item .row{display:flex;justify-content:space-between;align-items:center;gap:10px;}
@@ -580,9 +553,9 @@ document.documentElement.setAttribute("data-theme", "dark");
   .status-pill{
     font-size:10.5px;font-weight:700;border-radius:20px;padding:4px 10px;white-space:nowrap;flex-shrink:0;
   }
-  .status-pill.criado{background:#E3F4FC;color:#0E7FB8;}
-  .status-pill.andamento{background:var(--coral-bg);color:var(--coral);}
-  .status-pill.finalizado{background:#E2EFDA;color:var(--grass);}
+  .status-pill.criado{background:#0E7FB8;color:#fff;}
+  .status-pill.andamento{background:var(--coral);color:#fff;}
+  .status-pill.finalizado{background:var(--grass);color:#fff;}
   .btn-excluir{
     background:none;border:none;color:#C0392B;font-size:11px;font-weight:600;
     font-family:'Work Sans',sans-serif;cursor:pointer;padding:4px 6px;flex-shrink:0;
