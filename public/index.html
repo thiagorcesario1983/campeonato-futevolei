@@ -690,10 +690,18 @@
     font-family:'Bebas Neue',sans-serif;font-size:clamp(12px,1.8vw,18px);letter-spacing:.1em;
     text-transform:uppercase;opacity:.6;
   }
+  /* Sempre em UMA linha horizontal, centralizada — nunca empilhado na vertical (flex-wrap:nowrap).
+     Em telas estreitas com muitos logos, em vez de quebrar linha (o que parecia empilhamento
+     vertical), a linha vira scrollável (overflow-x:auto) e cada logo encolhe até um piso mínimo
+     (clamp com termo em vw, não só vh) — prioriza manter todos na mesma linha. */
   .tv-sponsors-logos{
-    display:flex;align-items:center;justify-content:center;gap:clamp(16px,3vw,32px);flex-wrap:wrap;
+    display:flex;align-items:center;justify-content:center;flex-wrap:nowrap;
+    gap:clamp(12px,3vw,32px);width:100%;overflow-x:auto;
   }
-  .tv-sponsors-logos img{height:clamp(52px,8vh,108px);width:auto;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));}
+  .tv-sponsors-logos img{
+    height:clamp(36px,min(8vh,14vw),108px);width:auto;flex-shrink:0;
+    object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));
+  }
 
   /* ---------- Placar para TV — múltiplos jogos numa grade ---------- */
   /* Wrapper que sobra depois dos patrocinadores (ver .tv-sponsors/.tv-main acima) — o grid em si

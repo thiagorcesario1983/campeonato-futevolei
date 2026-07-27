@@ -1031,6 +1031,17 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
       padrão — sem `min-height:0` forçado (deixa o item overflowar em vez de comprimir o
       conteúdo) e com `overflow-y:auto` no ancestral `position:fixed` mais próximo (`.tv-screen`)
       como rede de segurança.**
+    - **Logos de patrocinador empilhando na vertical em telas estreitas** (reportado com o mesmo
+      print do bug acima — em 375px de largura, 3 logos não cabiam numa linha e `flex-wrap:wrap`
+      quebrava cada um pra sua própria linha, parecendo uma lista vertical em vez de uma faixa de
+      logos). Patrocinadores sempre devem ficar numa única linha horizontal centralizada — nunca
+      empilhados. Corrigido: `.tv-sponsors-logos` virou `flex-wrap:nowrap` (nunca quebra linha) +
+      `overflow-x:auto` (rede de segurança, mesmo padrão do `overflow-y:auto` acima, caso mesmo
+      assim não caibam); e a altura de cada logo (`.tv-sponsors-logos img`) passou de
+      `clamp(52px,8vh,108px)` pra `clamp(36px,min(8vh,14vw),108px)` — o termo `min(8vh,14vw)`
+      considera também a largura da tela, então em telas estreitas os logos encolhem o suficiente
+      pra caber os 3 numa linha só sem precisar rolar horizontalmente (na prática só cai pro
+      `overflow-x:auto` com muitos patrocinadores cadastrados de uma vez).
 
 ## Convenções
 
