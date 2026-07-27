@@ -1,0 +1,59 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Rodar local (wrangler dev)",
+      "type": "shell",
+      "command": "npx wrangler dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" },
+      "group": { "kind": "build", "isDefault": true },
+      "detail": "Sobe o app em http://localhost:8787 com KV local"
+    },
+    {
+      "label": "Rodar local com KV de produção (wrangler dev --remote)",
+      "type": "shell",
+      "command": "npx wrangler dev --remote",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" },
+      "detail": "Usa o banco de verdade — exige wrangler login"
+    },
+    {
+      "label": "Checar sintaxe do index.html",
+      "type": "shell",
+      "command": "npm run check",
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true },
+      "detail": "Rodar SEMPRE depois de editar public/index.html"
+    },
+    {
+      "label": "Type-check do worker",
+      "type": "shell",
+      "command": "npx tsc",
+      "problemMatcher": ["$tsc"],
+      "detail": "Verifica tipos de src/worker.ts (usa tsconfig.json)"
+    },
+    {
+      "label": "Login na Cloudflare",
+      "type": "shell",
+      "command": "npx wrangler login",
+      "problemMatcher": []
+    },
+    {
+      "label": "Listar secrets configurados",
+      "type": "shell",
+      "command": "npx wrangler secret list",
+      "problemMatcher": [],
+      "detail": "Mostra os nomes, nunca os valores"
+    },
+    {
+      "label": "Deploy manual",
+      "type": "shell",
+      "command": "npx wrangler deploy",
+      "problemMatcher": [],
+      "detail": "Normalmente desnecessário — o push no GitHub já publica"
+    }
+  ]
+}

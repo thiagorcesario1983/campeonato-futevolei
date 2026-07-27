@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "cloudflare.vscode-cloudflare"
+  ],
+  // Prettier/Beautify reformatariam o public/index.html inteiro num único commit.
+  "unwantedRecommendations": [
+    "esbenp.prettier-vscode",
+    "HookyQR.beautify"
+  ]
+}

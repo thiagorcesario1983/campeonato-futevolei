@@ -85,7 +85,7 @@ async function enviarEmail(env: Env, to: string, subject: string, html: string, 
     // motivo, isso afeta só o envio de e-mail — o resto do Worker (salvar torneio, placar de
     // TV, etc.) continua funcionando normalmente.
     const { connect } = await import("cloudflare:sockets");
-    let socket = connect({ hostname: host, port }, { secureTransport: port === 465 ? "on" : "starttls" });
+    let socket = connect({ hostname: host, port }, { secureTransport: port === 465 ? "on" : "starttls", allowHalfOpen: false });
     let writer = socket.writable.getWriter();
     let reader = socket.readable.getReader();
     const enc = new TextEncoder();
@@ -2531,7 +2531,7 @@ async function pixVerificar(request: Request, env: Env): Promise<Response> {
       headers: { Authorization: `Bearer ${env.MP_ACCESS_TOKEN}` }
     });
     if (!res.ok) return json({ ok: true, pagamento: dados.pagamento, aprovacaoStatus: dados.aprovacaoStatus, statusMercadoPago: null });
-    const pagamentoMP = await res.json();
+    const pagamentoMP: any = await res.json();
 
     if (pagamentoMP?.status === "approved") {
       const atualizado = await confirmarPagamentoAprovado(env, id, pagamentoMP);

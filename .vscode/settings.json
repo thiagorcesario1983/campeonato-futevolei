@@ -1,0 +1,32 @@
+{
+  // index.html tem ~4500 linhas com HTML+CSS+JS juntos. Formatar automaticamente
+  // reescreveria o arquivo inteiro e geraria um diff impossível de revisar.
+  "editor.formatOnSave": false,
+  "html.format.enable": false,
+
+  "files.encoding": "utf8",
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  "files.associations": {
+    "wrangler.jsonc": "jsonc",
+    ".dev.vars": "properties"
+  },
+
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.wrangler": true,
+    "**/package-lock.json": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.wrangler/**": true
+  },
+
+  // .dev.vars guarda secrets locais (SMTP_PASS, tokens do Mercado Pago/Telegram).
+  // Fica fora da árvore de arquivos pra não abrir sem querer numa gravação de tela.
+  "files.exclude": {
+    "**/.wrangler": true
+  }
+}

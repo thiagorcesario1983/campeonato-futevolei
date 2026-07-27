@@ -33,12 +33,11 @@ Não existe suíte de testes automatizada. Antes de considerar uma mudança pron
 2. Pra mudanças em funções específicas, vale simular a execução com um stub mínimo de
    `document`/`window`/`localStorage` e chamar a função diretamente com dados falsos, em vez de
    confiar só no `node --check` (sintaxe válida não significa que a função roda sem erro).
-3. Type-check do Worker:
+3. Type-check do Worker (usa `tsconfig.json` + `@cloudflare/workers-types`, já instalados como
+   devDependency):
    ```bash
-   npx tsc --noEmit --target es2022 --lib es2022,webworker --skipLibCheck src/worker.ts
+   npx tsc
    ```
-   (vai reclamar de `KVNamespace`/`Fetcher`/`ExecutionContext`/`cloudflare:sockets` faltando —
-   isso é só porque faltam os tipos do `@cloudflare/workers-types` no ambiente de teste, ignore.)
 
 ## Arquitetura
 
