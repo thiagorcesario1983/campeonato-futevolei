@@ -955,6 +955,17 @@ env)`). O front nunca guarda essa lista — recebe um `isAdmin: true/false` já 
     pertence a este grupo de gente" deve usar `torneioPertenceAoGrupo`**, nunca comparar só
     `ownerEmail` direto — mesma categoria de risco do item 40 (o conjunto elegível precisa
     refletir todo mundo com acesso real, não só quem é dono).
+44. **Faixa de patrocinadores no Placar de TV (`.tv-sponsors`, item 24) removeu o fundo sombreado
+    e dobrou o tamanho dos logos** (pedido explícito — a faixa `background:rgba(0,0,0,.28)`
+    ficava "pesada" e os logos pequenos demais pra serem lidos de longe, que é o cenário de uso
+    real dessa tela). Como os PNGs de patrocinador já têm fundo transparente (`processarLogoPatrocinador`,
+    item 24), a faixa escura era só um retângulo decorativo atrás — removida sem substituto (os
+    logos ficam direto sobre o fundo do Placar de TV). `.tv-sponsors img{height:...}` dobrado de
+    `clamp(26px,4vh,54px)` pra `clamp(52px,8vh,108px)`. Afeta as duas variantes do Placar de TV
+    (jogo único e grade de múltiplos jogos, `renderTV`/`renderTVMulti`), já que ambas usam a mesma
+    função `sponsorsTvHtml()`/classe CSS — nenhuma mudança de JS foi necessária, só CSS. Não afeta
+    a imagem de Stories (`drawSponsorsSection`), que é uma peça de canvas separada e não tem faixa
+    de fundo nenhuma pra remover.
 
 ## Convenções
 
